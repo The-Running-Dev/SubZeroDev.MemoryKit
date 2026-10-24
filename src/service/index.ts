@@ -196,12 +196,15 @@ class ServiceClient implements MemoryClient {
             operationId,
           });
         }
+        // Grants may have changed since the first attempt; a replay never returns what the
+        // caller could not write now.
+        const existing = await tx.load(prior.memoryId, {
+          patterns: permittedPatterns(this.principal, 'write'),
+        });
+        if (!existing) throw new NotFoundError('Memory not found', { id: prior.memoryId });
         const seqs = prior.seq === null ? [] : [prior.seq];
         if (prior.outcome) return { outcome: prior.outcome, seqs };
         // Recorded before schema 2 kept outcomes: the current row is the best answer left.
-        const existing = await tx.load(prior.memoryId, { patterns: ['*'] });
-        if (!existing)
-          throw new NotFoundError('The memory no longer exists', { id: prior.memoryId });
         return { outcome: { memory: existing.record, related: [] }, seqs };
       }
       const now = new Date().toISOString();

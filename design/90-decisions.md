@@ -10,6 +10,18 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-25 — Replays re-check write access; stored outcomes keep content (S2)
+
+- **Context:** review of S2 found a replay returned the stored outcome before any grant check, and that `operations.outcome` holds the full record whatever the namespace history policy.
+- **Chosen:** a replay re-loads the memory within the caller's current write grants and is NotFound when it is not visible. The stored outcome stays whole; it is local SQLite state under the same protection as the row itself, and S3's retention redaction and later purge clear it with the row.
+- **Rejected:** storing a policy-redacted outcome, which would make a replay differ from the first answer; skipping the check on replay, which lets a revoked principal read content.
+
+## 2026-10-25 — `supersedes` links stay plain links until S5 (S2)
+
+- **Context:** create and update accept any link type, so a `supersedes` link changes another record's derived `supersededBy` without a lifecycle transition, including a self-link.
+- **Chosen:** keep S2 as is; S5's supersede operation owns the transition, and from S5 a plain write that adds a `supersedes` link is refused.
+- **Rejected:** refusing `supersedes` in S2 before the operation that replaces it exists.
+
 ## 2026-10-25 — Replays return the stored outcome; schema 2 keeps it (S2)
 - **Context:** the design says a replayed operation returns its stored outcome, but schema 1's `operations` table kept only the memory id and revision, so a replay after a later write would have returned the later revision.
 - **Chosen:** schema 2 adds `operations.outcome`, the JSON of the memory record and related records as written. A replay returns it, with `supersededBy` derived and history status re-read at replay time. Operations recorded under schema 1 have no outcome and replay from the current row. Purge (S8) must clear `outcome` on the purged memory's operations, since it holds content.

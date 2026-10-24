@@ -391,6 +391,34 @@ describe('sdk', () => {
     assert.equal(count(path, 'operations'), 1);
   });
 
+  it('a replay after the write grant is removed is NotFound', async () => {
+    const path = tempDir();
+    await initStore({ path });
+    const writer = { id: 'agent', profile: 'local' as const };
+    const before = await openStore(
+      { path },
+      { ...writer, grants: [{ pattern: 'demo', permissions: ['read', 'write'] }] }
+    );
+    const input = { namespace: 'demo', kind: 'note', content: 'x' };
+    const created = await before.create(input, { operationId: 'op-c' });
+    const id = created.memory.id;
+    await before.update({ id, expectedRevision: 1, content: 'y' }, { operationId: 'op-u' });
+    await before.close();
+    const after = await openStore(
+      { path },
+      { ...writer, grants: [{ pattern: 'demo', permissions: ['read'] }] }
+    );
+    try {
+      await assert.rejects(
+        after.update({ id, expectedRevision: 1, content: 'y' }, { operationId: 'op-u' }),
+        NotFoundError
+      );
+      await assert.rejects(after.create(input, { operationId: 'op-c' }));
+    } finally {
+      await after.close();
+    }
+  });
+
   it('migrates a schema 1 store and replays its operations from the current row', async () => {
     const path = tempDir();
     await initStore({ path });

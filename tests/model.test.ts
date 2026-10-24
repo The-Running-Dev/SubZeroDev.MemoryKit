@@ -16,6 +16,7 @@ import {
   parseNamespace,
   toProblem,
   validateCreate,
+  validateUpdate,
 } from '../src/model/index.ts';
 import { EMBEDDED_PRINCIPAL, authorize, permittedPatterns } from '../src/access/index.ts';
 
@@ -112,6 +113,20 @@ describe('validateCreate', () => {
       target: newMemoryId(),
     }));
     assert.throws(() => validateCreate({ ...base, links }, DEFAULT_LIMITS), LimitExceededError);
+  });
+
+  it('an update reports a malformed field before an oversize one', () => {
+    const update = {
+      id: newMemoryId(),
+      expectedRevision: 1,
+      content: 'x'.repeat(DEFAULT_LIMITS.maxContentBytes + 1),
+      metadata: 'not an object',
+    };
+    assert.throws(() => validateUpdate(update, DEFAULT_LIMITS), ValidationFailedError);
+    assert.throws(
+      () => validateUpdate({ ...update, metadata: undefined }, DEFAULT_LIMITS),
+      LimitExceededError
+    );
   });
 
   it('accepts extension link types', () => {

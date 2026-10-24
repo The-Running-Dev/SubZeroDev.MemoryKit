@@ -240,20 +240,22 @@ export function validateUpdate(input: unknown, limits: Limits): NormalizedUpdate
   if (input.content !== undefined) {
     if (typeof input.content !== 'string') invalid('content', 'not_a_string');
     changes.content = input.content;
-    checkLimit('content', bytes(input.content), limits.maxContentBytes);
   }
   if (input.contentType !== undefined) changes.contentType = validateContentType(input.contentType);
-  if (input.metadata !== undefined) {
-    changes.metadata = validateMetadata(input.metadata);
+  if (input.metadata !== undefined) changes.metadata = validateMetadata(input.metadata);
+  if (input.links !== undefined) changes.links = validateLinks(input.links);
+  if (input.provenance !== undefined) changes.provenance = validateProvenance(input.provenance);
+
+  // Limits after shape, as in validateCreate, so a malformed field is reported first.
+  if (changes.content !== undefined) {
+    checkLimit('content', bytes(changes.content), limits.maxContentBytes);
+  }
+  if (changes.metadata !== undefined) {
     checkLimit('metadata', bytes(JSON.stringify(changes.metadata)), limits.maxMetadataBytes);
   }
-  if (input.links !== undefined) {
-    changes.links = validateLinks(input.links);
-    checkLimit('links', changes.links.length, limits.maxLinks);
-  }
-  if (input.provenance !== undefined) {
-    changes.provenance = validateProvenance(input.provenance);
+  if (changes.provenance !== undefined) {
     checkLimit('provenance', bytes(JSON.stringify(changes.provenance)), limits.maxMetadataBytes);
   }
+  if (changes.links !== undefined) checkLimit('links', changes.links.length, limits.maxLinks);
   return { id, expectedRevision, changes };
 }
