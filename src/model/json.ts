@@ -29,11 +29,14 @@ export function canonicalJson(value: unknown): string {
 function sortKeys(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortKeys);
   if (isPlainObject(value)) {
-    const sorted: Record<string, unknown> = {};
-    for (const key of Object.keys(value).sort()) {
-      if (value[key] !== undefined) sorted[key] = sortKeys(value[key]);
-    }
-    return sorted;
+    // fromEntries defines own properties, so a "__proto__" key is kept rather than
+    // replacing the prototype.
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .filter((key) => value[key] !== undefined)
+        .map((key) => [key, sortKeys(value[key])])
+    );
   }
   return value;
 }

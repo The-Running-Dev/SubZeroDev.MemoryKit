@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { EMBEDDED_PRINCIPAL, type Principal } from '../access/index.ts';
 import type { HistoryPolicy } from '../contracts/index.ts';
@@ -44,9 +44,21 @@ export async function initStore(config: StoreConfig): Promise<void> {
       reason: 'already_a_store',
     });
   }
-  mkdirSync(config.path, { recursive: true });
+  try {
+    mkdirSync(config.path, { recursive: true });
+  } catch {
+    throw new StoreUnavailableError('The store directory cannot be created', {
+      reason: 'open_failed',
+    });
+  }
   const storage = new SqliteStorage({ path: file });
-  await storage.open();
+  try {
+    await storage.open();
+  } catch (error) {
+    // Leave nothing behind that a later init would mistake for a store.
+    for (const suffix of ['', '-wal', '-shm']) rmSync(file + suffix, { force: true });
+    throw error;
+  }
   await storage.close();
 }
 

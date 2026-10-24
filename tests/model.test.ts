@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   DEFAULT_LIMITS,
+  ForbiddenError,
   LimitExceededError,
   NotFoundError,
   StoreBusyError,
@@ -14,7 +15,7 @@ import {
   toProblem,
   validateCreate,
 } from '../src/model/index.ts';
-import { EMBEDDED_PRINCIPAL, permittedPatterns } from '../src/access/index.ts';
+import { EMBEDDED_PRINCIPAL, authorize, permittedPatterns } from '../src/access/index.ts';
 
 describe('ids', () => {
   it('makes 26-character ULIDs that sort by time', () => {
@@ -157,5 +158,23 @@ describe('access', () => {
       ),
       []
     );
+  });
+
+  it('authorize throws Forbidden outside the grants', () => {
+    const p = {
+      id: 'p',
+      profile: 'local' as const,
+      grants: [{ pattern: 'team/*' as const, permissions: ['write' as const] }],
+    };
+    authorize(p, 'write', parseNamespace('team/notes'));
+    authorize(EMBEDDED_PRINCIPAL, 'purge', parseNamespace('any'));
+    assert.throws(
+      () => authorize(p, 'write', parseNamespace('other')),
+      (error: unknown) =>
+        error instanceof ForbiddenError &&
+        error.details.namespace === 'other' &&
+        error.details.permission === 'write'
+    );
+    assert.throws(() => authorize(p, 'read', parseNamespace('team/notes')), ForbiddenError);
   });
 });

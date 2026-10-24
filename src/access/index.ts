@@ -1,4 +1,5 @@
-import type { NamespacePattern, Permission } from '../model/index.ts';
+import { ForbiddenError, matchesPattern } from '../model/index.ts';
+import type { Namespace, NamespacePattern, Permission } from '../model/index.ts';
 
 export interface Grant {
   pattern: NamespacePattern;
@@ -24,4 +25,13 @@ export function permittedPatterns(p: Principal, permission: Permission): Namespa
   return p.grants
     .filter((grant) => grant.permissions.includes(permission))
     .map((grant) => grant.pattern);
+}
+
+// Throws Forbidden unless one of the principal's grants gives the permission on the namespace.
+export function authorize(p: Principal, permission: Permission, ns: Namespace): void {
+  if (permittedPatterns(p, permission).some((pattern) => matchesPattern(pattern, ns))) return;
+  throw new ForbiddenError('The namespace or permission is not granted', {
+    namespace: ns,
+    permission,
+  });
 }

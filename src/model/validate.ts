@@ -22,6 +22,8 @@ export const MAX_KIND_LENGTH = 128;
 export const MAX_OPERATION_ID_LENGTH = 128;
 
 const CONTROL = /\p{Cc}/u;
+// A lone surrogate cannot be encoded as UTF-8, so it would not round-trip through storage.
+const LONE_SURROGATE = /\p{Cs}/u;
 const LINK_EXTENSION = /^x-[a-z0-9][a-z0-9._-]{0,63}$/;
 const OPERATION_ID = /^[A-Za-z0-9._:-]+$/;
 
@@ -55,6 +57,21 @@ function label(value: unknown, field: string, maxLength: number): string {
   if (value.length > maxLength) invalid(field, 'too_long');
   if (CONTROL.test(value)) invalid(field, 'control_character');
   return value;
+}
+
+// Every string in the input, keys included, must be well-formed Unicode.
+function requireWellFormed(value: unknown, field: string): void {
+  if (typeof value === 'string') {
+    if (LONE_SURROGATE.test(value)) invalid(field, 'ill_formed_unicode');
+  } else if (Array.isArray(value)) {
+    value.forEach((item, index) => requireWellFormed(item, `${field}[${index}]`));
+  } else if (isPlainObject(value)) {
+    for (const [key, item] of Object.entries(value)) {
+      const path = field === '' ? key : `${field}.${key}`;
+      if (LONE_SURROGATE.test(key)) invalid(path, 'ill_formed_unicode');
+      requireWellFormed(item, path);
+    }
+  }
 }
 
 function bytes(text: string): number {
@@ -160,6 +177,7 @@ export function validateCreate(input: unknown, limits: Limits): NormalizedCreate
     ['namespace', 'key', 'kind', 'content', 'contentType', 'metadata', 'links', 'provenance'],
     ''
   );
+  requireWellFormed(input, '');
   if (typeof input.namespace !== 'string') invalid('namespace', 'required');
   const namespace = parseNamespace(input.namespace);
   const key = input.key === undefined ? null : label(input.key, 'key', MAX_KEY_LENGTH);

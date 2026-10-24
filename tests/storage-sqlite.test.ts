@@ -139,6 +139,10 @@ describe('SqliteStorage', () => {
       (error: unknown) =>
         error instanceof StoreUnavailableError && error.details.reason === 'foreign_database'
     );
+    const untouched = new DatabaseSync(foreign);
+    const mode = untouched.prepare('PRAGMA journal_mode').get() as { journal_mode: string };
+    untouched.close();
+    assert.equal(mode.journal_mode, 'delete', 'a refused database is not switched to WAL');
 
     const junk = join(tempDir(), 'memory.db');
     writeFileSync(
@@ -159,7 +163,8 @@ describe('SqliteStorage', () => {
       const inside = row('team/a_b/notes');
       const lookalike = row('team/axb');
       const sibling = row('team/a_bc');
-      for (const stored of [inside, lookalike, sibling]) await insert(storage, stored);
+      const base = row('team/a_b');
+      for (const stored of [inside, lookalike, sibling, base]) await insert(storage, stored);
 
       assert.ok(await storage.get(inside.record.id, { patterns: ['team/a_b/*'] }));
       assert.ok(await storage.get(inside.record.id, { patterns: ['*'] }));
@@ -168,6 +173,7 @@ describe('SqliteStorage', () => {
       assert.equal(await storage.get(lookalike.record.id, { patterns: ['team/a_b/*'] }), null);
       assert.equal(await storage.get(sibling.record.id, { patterns: ['team/a_b/*'] }), null);
       assert.ok(await storage.get(sibling.record.id, { patterns: ['team/a_b/*', 'team/a_bc'] }));
+      assert.ok(await storage.get(base.record.id, { patterns: ['team/a_b/*'] }));
     } finally {
       await storage.close();
     }

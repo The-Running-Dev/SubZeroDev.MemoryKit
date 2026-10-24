@@ -3,8 +3,10 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, it } from 'node:test';
 import {
+  ForbiddenError,
   NotFoundError,
   StoreUnavailableError,
+  StoreVersionTooNewError,
   ValidationFailedError,
   LimitExceededError,
   IdempotencyMismatchError,
@@ -154,6 +156,78 @@ describe('sdk', () => {
       });
       assert.deepEqual(await client.get(created.memory.id), created.memory);
       assert.equal(created.memory.key, 'k1');
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('S1.6 openStore refuses a schema newer than the code', async () => {
+    const path = tempDir();
+    await initStore({ path });
+    const db = new DatabaseSync(join(path, 'memory.db'));
+    db.exec('PRAGMA user_version = 2');
+    db.close();
+    await assert.rejects(openStore({ path }), StoreVersionTooNewError);
+  });
+
+  it('a create outside the grants is Forbidden and writes nothing', async () => {
+    const path = tempDir();
+    await initStore({ path });
+    const client = await openStore({ path }, { id: 'nobody', profile: 'local', grants: [] });
+    try {
+      await assert.rejects(
+        client.create({ namespace: 'demo', kind: 'note', content: 'x' }),
+        ForbiddenError
+      );
+    } finally {
+      await client.close();
+    }
+    for (const table of ['memories', 'namespaces', 'operations']) {
+      assert.equal(count(path, table), 0, table);
+    }
+  });
+
+  it('rejects ill-formed Unicode anywhere in the input', async () => {
+    const path = tempDir();
+    await initStore({ path });
+    const client = await openStore({ path });
+    const lone = String.fromCharCode(0xd800);
+    try {
+      for (const input of [
+        { namespace: 'demo', kind: 'note', content: `bad ${lone}` },
+        { namespace: 'demo', kind: 'note', content: 'x', key: lone },
+        { namespace: 'demo', kind: 'note', content: 'x', metadata: { tag: [lone] } },
+        { namespace: 'demo', kind: 'note', content: 'x', metadata: { [lone]: 1 } },
+      ]) {
+        await assert.rejects(
+          client.create(input),
+          (error: unknown) =>
+            error instanceof ValidationFailedError && error.details.reason === 'ill_formed_unicode'
+        );
+      }
+    } finally {
+      await client.close();
+    }
+    assert.equal(count(path, 'memories'), 0);
+  });
+
+  it('a __proto__ metadata key is part of the fingerprint', async () => {
+    const path = tempDir();
+    await initStore({ path });
+    const client = await openStore({ path });
+    try {
+      const input = { namespace: 'demo', kind: 'note', content: 'x' };
+      await client.create(
+        { ...input, metadata: JSON.parse('{"__proto__": {"a": 1}}') },
+        { operationId: 'op-proto' }
+      );
+      await assert.rejects(
+        client.create(
+          { ...input, metadata: JSON.parse('{"__proto__": {"a": 2}}') },
+          { operationId: 'op-proto' }
+        ),
+        IdempotencyMismatchError
+      );
     } finally {
       await client.close();
     }

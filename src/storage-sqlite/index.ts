@@ -86,6 +86,45 @@ function isBusy(error: unknown): boolean {
   return code !== null && ((code & 0xff) === SQLITE_BUSY || (code & 0xff) === SQLITE_LOCKED);
 }
 
+// SQLite primary result codes the storage maps to contract errors.
+const UNAVAILABLE: Record<number, string> = {
+  8: 'read_only',
+  10: 'io_error',
+  11: 'not_a_store',
+  13: 'disk_full',
+  14: 'open_failed',
+  26: 'not_a_store',
+};
+
+// Maps a SQLite failure to the contract's codes. Anything else is rethrown unless the caller
+// names a fallback reason, so an invariant violation still surfaces as Internal.
+function storageError(error: unknown, timeoutMs: number, fallback?: string): unknown {
+  if (error instanceof MemoryKitError) return error;
+  if (isBusy(error)) return new StoreBusyError('The store is busy', { timeoutMs });
+  const code = sqliteCode(error);
+  const reason = (code === null ? undefined : UNAVAILABLE[code & 0xff]) ?? fallback;
+  if (reason === undefined) return error;
+  return new StoreUnavailableError('The store cannot be used', { reason });
+}
+
+function requireStore(db: DatabaseSync, version: number): void {
+  if (version > SCHEMA_VERSION) {
+    throw new StoreVersionTooNewError('The store schema is newer than this MemoryKit', {
+      found: version,
+      supported: SCHEMA_VERSION,
+    });
+  }
+  if (version > 0) return;
+  const objects = db
+    .prepare("SELECT count(*) AS n FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")
+    .get() as Row;
+  if (Number(objects.n) > 0) {
+    throw new StoreUnavailableError('The database is not a MemoryKit store', {
+      reason: 'foreign_database',
+    });
+  }
+}
+
 // Scope as SQL. LIKE is avoided because "_" is legal in namespaces and is a LIKE wildcard.
 function scopeSql(scope: RowScope): { sql: string; params: SQLInputValue[] } {
   if (scope.patterns.includes('*')) return { sql: '1', params: [] };
@@ -154,22 +193,14 @@ export class SqliteStorage implements StorageProvider {
     }
     try {
       db.exec(`PRAGMA busy_timeout = ${Math.max(0, Math.floor(this.busyTimeoutMs))}`);
-      const version = this.userVersion(db);
-      if (version > SCHEMA_VERSION) {
-        throw new StoreVersionTooNewError('The store schema is newer than this MemoryKit', {
-          found: version,
-          supported: SCHEMA_VERSION,
-        });
-      }
+      // Refuse a foreign or newer database before anything changes it.
+      requireStore(db, this.userVersion(db));
       requireFeatures(probeFeatures(db));
       db.exec('PRAGMA foreign_keys = ON');
-      this.migrate(db, version);
+      this.migrate(db);
     } catch (error) {
       db.close();
-      if (error instanceof MemoryKitError) throw error;
-      throw new StoreUnavailableError('The store database cannot be opened', {
-        reason: 'not_a_store',
-      });
+      throw storageError(error, this.busyTimeoutMs, 'not_a_store');
     }
     this.db = db;
   }
@@ -186,25 +217,19 @@ export class SqliteStorage implements StorageProvider {
     return Number(row.user_version);
   }
 
-  private migrate(db: DatabaseSync, from: number): void {
-    if (from === SCHEMA_VERSION) return;
-    if (from === 0) {
-      const objects = db
-        .prepare("SELECT count(*) AS n FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'")
-        .get() as Row;
-      if (Number(objects.n) > 0) {
-        throw new StoreUnavailableError('The database is not a MemoryKit store', {
-          reason: 'foreign_database',
-        });
-      }
-    }
+  // The version is read again under the write lock, so concurrent first opens of a new
+  // store migrate it once.
+  private migrate(db: DatabaseSync): void {
+    if (this.userVersion(db) === SCHEMA_VERSION) return;
     db.exec('BEGIN IMMEDIATE');
     try {
+      const from = this.userVersion(db);
+      requireStore(db, from);
       for (let version = from; version < SCHEMA_VERSION; version++) db.exec(MIGRATIONS[version]!);
       db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
       db.exec('COMMIT');
     } catch (error) {
-      db.exec('ROLLBACK');
+      if (db.isTransaction) db.exec('ROLLBACK');
       throw error;
     }
   }
@@ -228,9 +253,7 @@ export class SqliteStorage implements StorageProvider {
       try {
         db.exec('BEGIN IMMEDIATE');
       } catch (error) {
-        if (isBusy(error))
-          throw new StoreBusyError('The store is busy', { timeoutMs: this.busyTimeoutMs });
-        throw error;
+        throw storageError(error, this.busyTimeoutMs);
       }
       try {
         const result = await fn(new SqliteTransaction(db));
@@ -238,9 +261,7 @@ export class SqliteStorage implements StorageProvider {
         return result;
       } catch (error) {
         if (db.isTransaction) db.exec('ROLLBACK');
-        if (isBusy(error))
-          throw new StoreBusyError('The store is busy', { timeoutMs: this.busyTimeoutMs });
-        throw error;
+        throw storageError(error, this.busyTimeoutMs);
       }
     });
   }

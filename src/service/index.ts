@@ -1,4 +1,4 @@
-import { permittedPatterns, type Principal } from '../access/index.ts';
+import { authorize, permittedPatterns, type Principal } from '../access/index.ts';
 import type {
   HistoryPolicy,
   HistoryProvider,
@@ -109,6 +109,7 @@ class ServiceClient implements MemoryClient {
   async create(input: CreateInput, opts: WriteOptions = {}): Promise<WriteOutcome> {
     const { storage, limits, history, defaultHistoryPolicy } = this.service;
     const normalized = validateCreate(input, limits);
+    authorize(this.principal, 'write', normalized.namespace);
     const operationId = validateOperationId(opts.operationId) ?? newMemoryId();
     const fingerprint = sha256Hex(canonicalJson({ operation: 'create', input: normalized }));
     const principalId = this.principal.id;

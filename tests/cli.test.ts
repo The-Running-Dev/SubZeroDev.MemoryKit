@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { describe, it } from 'node:test';
 import { newMemoryId } from '../src/model/index.ts';
 import { runCli, tempDir } from './helpers.ts';
@@ -79,5 +80,16 @@ describe('cli', () => {
     );
     assert.equal(runCli(['get', newMemoryId(), '--store', store, '--bogus']).status, 2);
     assert.equal(runCli(['--help']).status, 0);
+  });
+
+  it('S1.6 refuses a schema newer than the code', () => {
+    const store = tempDir();
+    assert.equal(runCli(['init', store]).status, 0);
+    const db = new DatabaseSync(join(store, 'memory.db'));
+    db.exec('PRAGMA user_version = 2');
+    db.close();
+    const result = runCli(['get', newMemoryId(), '--store', store]);
+    assert.equal(result.status, 1);
+    assert.equal(JSON.parse(result.stderr).code, 'StoreVersionTooNew');
   });
 });
