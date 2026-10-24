@@ -3,12 +3,88 @@
 Append-only. Newest at the top. The rejected alternatives are the point — without them, every future session relitigates the same choice.
 
 ## Open
-- Implementation language and runtime (D3) — to be chosen at `/design`'s approaches gate.
-- History retention profiles (full, metadata-only, no persistent content history) — whether v1 supports them.
-- Authentication profile for a local-only listener.
-- Which MCP protocol revisions the server answers.
+- npm package name and scope.
+- Which MCP protocol revisions besides 2026-07-28 the server answers — set by what the TypeScript SDK v2 server supports, checked in the MCP slice.
+
+Reopen any entry below only on a demonstrable contradiction or a genuine blocker (user, 2026-10-25).
 
 ---
+
+## 2026-10-25 — Memory identity is a core-generated ULID, with an optional application key
+- **Context:** the seed's identity-scheme question; concurrent creates must not duplicate an identity.
+- **Chosen:** the core generates a ULID for every memory. An application may also give a `key` that is unique per namespace, so concurrent creates for the same natural identity converge (`AlreadyExists` with the existing id). Namespaces are lowercase paths, immutable after create.
+- **Rejected:** application-supplied ids as the primary identity — collisions across applications, and no uniform format; UUIDv4 — not time-ordered; mixed-case namespaces — collide on case-insensitive filesystems in Git paths.
+
+## 2026-10-25 — Every mutation of an existing memory requires the expected revision
+- **Context:** premise 2 allows unguarded updates; a stale writer must not undo a tombstone.
+- **Chosen:** no unguarded updates. Every update, transition and purge names `expectedRevision`. Operation ids make retries idempotent per principal.
+- **Rejected:** an optional "force" or last-writer-wins mode — reintroduces silent overwrites.
+
+## 2026-10-25 — Links live on the record; supersede creates the replacement
+- **Chosen:** links are part of the source memory and are revised with it. `supersede` creates the replacement and moves the target to `superseded` in one transaction. Revisions number every change, including lifecycle changes.
+- **Rejected:** a separate link resource with its own revisions — two concurrency domains for one record; superseding with an existing memory — not needed for v1.
+
+## 2026-10-25 — Git export: bare repository, plumbing commits, compare-and-swap, trailers
+- **Context:** the outbox requires idempotent export with no duplicate commits, even if a drain lease expires while its holder is stalled.
+- **Chosen:**
+  - The repository is bare. Each revision is one commit built with plumbing commands, and the branch moves by an atomic `update-ref` compare-and-swap.
+  - Idempotency comes from a `MemoryKit-Operation` trailer, scanned back to the last acknowledged reference.
+  - Each memory is stored as `record.json` plus its content file, byte for byte.
+  - Global `seq` order applies; a permanently failing entry blocks the queue visibly until an operator retries it.
+- **Rejected:** a working-tree repository with `git commit` — hooks, index locks and a working tree users might edit; Markdown with front matter — lossy for JSON content, and Markdown is a later storage provider; per-memory export order that skips blocked entries — harder to reason about for v1; a custom lock file around Git — the custom locking already rejected.
+
+## 2026-10-25 — Ids outside the caller's grants are NotFound; named namespaces are Forbidden
+- **Chosen:** storage applies the caller's permitted patterns inside the query, so protected rows never leave the provider. An id outside them is `NotFound`; a request naming an ungranted namespace is `Forbidden`.
+- **Rejected:** `Forbidden` for ids — reveals that the id exists; loading and then checking — the provider returns protected data first (S-D).
+
+## 2026-10-25 — Purge, namespace policy and history sync are not MCP tools in v1
+- **Chosen:** MCP exposes the memory, search, history and operation tools. Purge and the administrative operations are available through the SDK, the CLI and HTTP only.
+- **Rejected:** every operation over MCP — puts destructive and administrative actions in agent tool lists for no v1 need. Revisit when an agent use case needs them.
+
+## 2026-10-25 — Remote grants come from the token scope, capped per issuer
+- **Chosen:** a JWT's `scope` claim carries `mk:<permission>:<pattern>` grants, intersected with a ceiling configured for the issuer. Local-service tokens are stored as SHA-256 hashes with their grants.
+- **Rejected:** a server-side table of principals to grants — duplicates the identity provider's job; trusting the scope with no ceiling — a misconfigured issuer could grant everything.
+
+## 2026-10-25 — Architecture selection is final for v1
+- **Context:** the approaches checkpoint, reviewed by the user with Codex and Sol.
+- **Chosen:** TypeScript/Node core; SQLite as the first storage provider; Git as the first history provider; embedded SDK, CLI, HTTP API and MCP over one service; every provider replaceable through MemoryKit contracts.
+- **Rejected:** further redesign rounds — no new evidence justifies them.
+
+## 2026-10-25 — TypeScript on Node is the v1 language
+- **Context:** D3. AgentKit and GodComplex (including its engine package) are TypeScript, so both can embed MemoryKit directly; other languages use HTTP, MCP or the CLI. All four Tier 1 MCP SDKs support the 2026-07-28 specification; the TypeScript v2 SDK needs an explicit opt-in to speak it.
+- **Chosen:** TypeScript on Node, minimum Node 22.18 to match AgentKit's floor. In-process providers are TypeScript in v1.
+- **Rejected:** Go — best single-binary distribution, but neither existing consumer could embed it; C#/.NET — strongest built-in authentication, but neither existing consumer could embed it; Python — weakest packaging for a CLI and service, no consumer fit.
+- **Revisit when:** a consumer that must embed MemoryKit is not JavaScript or TypeScript, or the out-of-process provider protocol is designed.
+
+## 2026-10-25 — SQLite is the first storage provider
+- **Context:** D4. The file-and-journal approach meant building a crash-safe store, write-ahead journal, cross-process locking, stale-lock recovery, revision checks, interrupted-write recovery and search — a database, reimplemented.
+- **Chosen:** SQLite in WAL mode: transactions, crash recovery, cross-process write serialisation and FTS5 lexical search. The database lives on a local filesystem; remote users reach it only through the service. Built-in `node:sqlite` is preferred, so there is no native dependency.
+- **Rejected:** files plus a custom journal and locking — reinvents SQLite; Markdown files as the store — kept as a possible later provider, not built in v1; one owner per store as a universal restriction — narrows the agreed concurrency premise.
+- **Revisit when:** `node:sqlite` lacks FTS5 or WAL behaviour on a supported Node version (fallback: a maintained native SQLite binding), or measurements show SQLite is the bottleneck.
+
+## 2026-10-25 — A transactional outbox carries revisions to history
+- **Context:** premise 1. Retrying "on next open" is too weak: pending history must survive crashes, keep the exact revision, and recover without duplicate commits.
+- **Chosen:** each write commits the memory change and an outbox entry holding the exact revision snapshot in one SQLite transaction. The history provider drains entries in sequence order, one drainer per store, and each export is idempotent by operation identity. A write reports history persisted only once its entry is exported.
+- **Rejected:** writing Git directly inside the request with no outbox — a crash between storage and Git loses the revision; one pending marker per memory — later updates overwrite earlier unexported revisions; distributed transactions — out of proportion.
+
+## 2026-10-25 — Git history is readable revision files
+- **Context:** inspectability without making Markdown the store.
+- **Chosen:** the Git provider writes one human-readable file per memory into its own repository and commits once per exported revision, with MemoryKit identifiers in commit trailers. It drives the installed `git` executable. No push in v1.
+- **Rejected:** a pure-JavaScript Git implementation — narrower feature coverage, and purge work later needs full Git; Git as canonical state — rejected with premise 1.
+
+## 2026-10-25 — Three security profiles, one authorisation model
+- **Context:** OIDC everywhere would make local use need an identity provider.
+- **Chosen:** embedded trusts the host process and OS; local service binds loopback only and authenticates with locally issued bearer tokens; remote service requires TLS and validates JWTs from a configured OIDC issuer. All three resolve to a principal with namespace grants, and authorisation is identical.
+- **Rejected:** OIDC for every mode — forces an identity provider on local users; no authentication for the local service — any local process could act as any principal; a custom identity provider — unnecessary.
+
+## 2026-10-25 — One service process hosts the HTTP API and remote MCP
+- **Chosen:** a single listener serves the versioned HTTP API and MCP over Streamable HTTP through the same service and authenticator. MCP over stdio runs embedded.
+- **Rejected:** separate API and MCP processes — two deployments enforcing one policy; MCP as the only remote interface — conventional applications would need an MCP client.
+
+## 2026-10-25 — Retention policy per namespace: full, metadata or none
+- **Context:** content must not enter permanent Git history when policy forbids it.
+- **Chosen:** each namespace has a history policy: `full` exports content, `metadata` exports everything except content and metadata values (recording a content hash), `none` exports nothing and history is not required. Default `full`.
+- **Rejected:** a single store-wide policy — namespaces mix sensitive and ordinary memory; deferring retention — the brief requires it before content reaches history.
 
 ## 2026-10-25 — `AGENTS.md` is the canonical instruction entry point
 - **Context:** `AGENTS.md` and `CLAUDE.md` both held scaffold content, so `ensure-project-files.ts` reported the shared-contract pointer as Ambiguous.
