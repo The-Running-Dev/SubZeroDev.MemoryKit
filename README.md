@@ -21,9 +21,35 @@ Brief description of what this project does and its main purpose.
    ```
 
 <!-- BEGIN project-commands -->
-## Implementation Stack
+## Install
 
-Not selected yet. Install, build, test, lint and run commands are added here when the implementation language is chosen.
+```bash
+npm install
+```
+
+## Build
+
+```bash
+npm run build
+```
+
+## Test
+
+```bash
+npm test
+```
+
+## Lint
+
+```bash
+npm run lint
+```
+
+## Run Locally
+
+```bash
+npm start
+```
 <!-- END project-commands -->
 
 ## Architecture

@@ -1,8 +1,5 @@
 name: CI
 
-# The project has no code yet, so the only check is whitespace across the whole tree.
-# S1 adds the Node install, typecheck and test steps.
-
 on:
   push:
     branches: [main]
@@ -27,3 +24,39 @@ jobs:
       - name: Whitespace
         # verification: true
         run: git diff --check "$(git hash-object -t tree /dev/null)" HEAD
+
+  node:
+    name: Node ${{ matrix.node }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ['22.18', '24']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        # verification: true
+        run: npm run typecheck
+
+      - name: Lint
+        # verification: true
+        run: npm run lint
+
+      - name: Test
+        # verification: true
+        run: npm test
