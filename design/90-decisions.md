@@ -10,6 +10,16 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-25 — Input bounds the contract leaves open (S1)
+- **Context:** the contract fixes namespaces and the four `Limits`, but not the length or alphabet of keys, kinds and operation ids, nor whether unknown input fields are accepted.
+- **Chosen:** `key` at most 512 characters and `kind` at most 128, neither empty nor containing control characters; operation ids match `[A-Za-z0-9._:-]{1,128}`; serialized provenance counts against `maxMetadataBytes`; unknown fields in a create input fail with `ValidationFailed`. Structural checks run before limit checks, so an input that is both malformed and oversize reports `ValidationFailed`.
+- **Rejected:** unbounded keys and kinds — they become Git path components and index entries; silently dropping unknown fields — a misspelt field would be lost without an error; a separate provenance limit — one more knob with no use case yet.
+
+## 2026-10-25 — Problem documents use `urn:memorykit:error:<Code>` as their type (S1)
+- **Context:** the contract defines the problem JSON fields but not the value of `type`, and the value is public on the CLI and HTTP surfaces.
+- **Chosen:** `type` is `urn:memorykit:error:` followed by the error code. A non-MemoryKit error is reported as `Internal` with the fixed title "Internal error", so no content or stack reaches a caller.
+- **Rejected:** `about:blank` — loses the code in the type field; an `https://` URL — implies a documentation site that does not exist.
+
 ## 2026-10-25 — Memory identity is a core-generated ULID, with an optional application key
 - **Context:** the seed's identity-scheme question; concurrent creates must not duplicate an identity.
 - **Chosen:** the core generates a ULID for every memory. An application may also give a `key` that is unique per namespace, so concurrent creates for the same natural identity converge (`AlreadyExists` with the existing id). Namespaces are lowercase paths, immutable after create.

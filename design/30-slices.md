@@ -3,7 +3,7 @@
 Ordered riskiest assumption first. Each slice is one reviewable PR and leaves the system runnable. Each slice adds its scenarios to the shared conformance suite, and that suite runs against every adapter that exists at the time. Criterion ids are stable.
 
 ## S1 — Persist and retrieve a memory without a server
-Status: todo
+Status: done
 Delivers: A conventional application, or a person at a terminal, creates a memory in a new store, exits, starts again and gets back the same memory with the same identity. No server runs and no model is involved.
 Touches: project setup (TypeScript on Node, test runner, project commands in AGENTS.md and CLAUDE.md through the organisation's add-project-language script); model (MemoryRecord, ids, namespaces, errors, Limits); contracts (StorageProvider, partial: open, write, get); storage-sqlite (schema 1: memories, links, memories_fts, namespaces, operations, migrations); service (create, get); sdk (initStore, openStore); cli (init, create, get, `--json`); conformance (harness, SDK and CLI drivers)
 Depends on: none
