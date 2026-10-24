@@ -1,5 +1,7 @@
 # Claude Code Project Instructions
 
+@AGENTS.md
+
 - **Project:** SubZeroDev.MemoryKit
 - **Last Updated:** 2026-10-25
 
