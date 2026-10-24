@@ -1,5 +1,13 @@
 # Project Working Agreement
 
+## Shared contract
+
+**Read `AGENTS.shared.md` completely before this file.** It holds the rules every repository using the kit shares, resolved from the `AGENTKIT_HOME` environment variable if set, else `.agent-kit` in the home directory.
+
+## Design
+
+`design/` is the spec: `00-brief.md`, `10-design.md`, `20-contract.md`, `30-slices.md`, with decisions in `90-decisions.md`.
+
 - **Project:** SubZeroDev.MemoryKit
 - **Last Updated:** 2026-10-25
 

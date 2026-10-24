@@ -3,7 +3,7 @@
 > The problem, the non-goals and the definition of done are mine. A model may interrogate this
 > file (`/brief`) or type it from my answers (`/interview`). It may not originate it from an idea.
 
-Source: *MemoryKit — Initial Requirements & Architecture Seed*, v0.1, supplied 2026-10-25. Everything outside `## Assumptions and open questions` is stated in that document.
+Sources: *MemoryKit — Initial Requirements & Architecture Seed*, v0.1, and *Design Checkpoint Handoff: Remote Access, Authorization, History and Premises*, both supplied 2026-10-25. Where they differ, the handoff wins. Everything outside `## Assumptions and open questions` is stated in one of them.
 
 ## Problem
 Software that needs persistent, contextual memory has no reusable way to get it. MemoryKit is a general-purpose memory platform that separates what memory means — identity, scope, lifecycle, provenance, relationships — from how it is stored, retrieved, versioned, learned from, captured and synchronised. Consumers use one versioned interface; providers behind it are interchangeable.
@@ -21,10 +21,53 @@ The core owns contracts and semantics. Providers implement them. Consumers decid
 6. **One implementation per capability for v1.** Prove the platform by using it; expand on observed need.
 7. **Automatic capture is a goal, separable from the core.** Applications without lifecycle hooks use explicit APIs.
 8. **Standalone open-source infrastructure.** Documented interfaces that others can implement; the core never assumes all providers are maintained by this project.
-9. **Ports and adapters.** Adapters (SDK, CLI, MCP, later others) expose one core; the MCP server is an adapter, never a second memory implementation.
+9. **Ports and adapters.** Adapters (embedded SDK, CLI, HTTP API, MCP, later others) expose one application service over one core; none implements its own business rules, and the MCP server is never a second memory implementation. A write through any adapter produces the same state transition as the equivalent authorized write through any other.
 10. **Memory is data, not authority.** Stored or generated memory is never a privileged instruction. A learning provider proposes candidates; it never overrides application policy or established facts. Consumers (e.g. AgentKit changing its own rules) keep that authority.
 11. **History is not validity.** The system distinguishes what was believed at a time, a later correction, a superseded memory, the current accepted interpretation, and a past event that remains true.
 12. **Retrieval relevance is not factual correctness**, and more retrieved information is not assumed better: bounded, on-demand retrieval of the minimum useful information.
+
+### Deployment modes (v1)
+MemoryKit runs in three modes with the same core memory semantics:
+
+| Mode | Description |
+|---|---|
+| Embedded/local | An application uses MemoryKit directly in its own process. No listener. |
+| Local service | Applications talk to a MemoryKit service on the same machine. |
+| Remote service | Applications and agents on other machines talk to a MemoryKit service over the network. |
+
+Multi-machine **access** is required in v1: one authoritative memory instance on one machine may serve many remote clients. Multi-node replication, clustering and distributed consensus are not. Remote access is not distributed storage. Embedded operation needs no background service; a remote endpoint necessarily needs a running listener or an equivalent hosting environment.
+
+Two or more clients — separate processes, different agent frameworks, clients on different machines, conventional applications — may use the same memory concurrently, without silent overwrites or corrupted history.
+
+### Interfaces (v1)
+- **Embedded SDK** — direct access to the core; no listener.
+- **HTTP API** — for applications on the same machine or over the network: versioned contract, authentication for protected operations, authorisation by operation and memory scope, structured errors, bounded requests and responses, optimistic concurrency, transport security for remote connections.
+- **MCP server** — the same supported operations for AI agents: local stdio where useful, remote Streamable HTTP, authentication and authorisation for remote connections, on the current official MCP specification supported by the chosen SDK, with protocol-version compatibility accounted for.
+- **CLI** — as in the seed.
+
+HTTP status codes and MCP protocol errors need not share a wire format; their domain meaning must match.
+
+### Authorisation
+- **Embedded:** a process with direct filesystem access can bypass checks made inside a library. MemoryKit validates logical scopes and operation requirements, the host application owns its execution identity, and the operating system provides isolation. The SDK does not claim to be a security boundary against its own host. Accepted for v1.
+- **Service:** the service is the enforcement boundary. It authenticates each request and authorises the operation before any provider is invoked; clients need no access to storage. Run it under an operating-system identity that owns the storage. If untrusted local processes share that identity's filesystem permissions, the bypass remains — documented, not hidden.
+- **Concepts:** principal (client identity), memory namespace, ownership or permitted access, operation permissions, authorisation failures. Permissions distinguish at least read, write, delete/tombstone, history access, purge, and administrative/provider operations. Purge and administration are never implied by write.
+- **Authentication:** a standard mechanism for the chosen runtime; no custom identity provider. Remote MCP prefers standards-compatible OAuth/OIDC or a supported authentication gateway. No unauthenticated remote writes; deny when identity or authorisation cannot be established; validate token issuer, audience and permissions for JWT/OIDC; TLS for remote access; validate HTTP `Origin` where applicable, particularly for MCP; a caller-supplied agent name is never proof of identity; a request cannot broaden its own scope. A local-only listener may use a different documented authentication profile when properly isolated.
+- A permission-filtered query never exposes unauthorised content or metadata. Authorisation is enforced identically across HTTP and MCP.
+
+### Deletion, tombstones and purge
+- **Tombstone** (ordinary delete): keeps the stable identifier; marks it deleted in current state; excludes it from ordinary active retrieval; cannot be undone by an outdated concurrent writer; stays inspectable through authorised history; keeps its revisions per the history provider's retention policy. Reversible when authorised.
+- **Purge** (privileged, separate): removes content from specified storage and history locations where providers support it, and reports exactly which boundaries were covered — current storage removed, local history removed, remote history not modified, clones or backups outside MemoryKit's control, provider does not support historical purge, partial failure needing an operator. A local purge is never reported as confirmed deletion from unknown copies.
+- **Git provider:** supports ordinary revisions and tombstones. An ordinary delete never rewrites shared history; purge never force-pushes as a side effect; destructive historical cleanup needs its own authorisation; remote cleanup and external-clone cleanup are distinct operations; unsupported or incomplete historical removal is reported. v1 may support tombstones and current-state purge while reporting full historical purge as unsupported — the contract is still defined in v1.
+- **Retention before history:** the configured retention policy applies before anything enters a history provider. A provider never silently writes content into permanent Git history when its policy forbids it. Encryption protects contents but is not erasure.
+- **Provider independence:** deletion semantics belong to MemoryKit's contract; each storage and history provider advertises the deletion and purge capabilities it actually has. Git's limits are not every provider's requirements.
+
+### Adjudicated design premises (2026-10-25)
+1. **Storage and history.** Storage owns live persisted state; the history provider records meaningful revisions. Under a history-required policy a write is not fully complete until history is satisfied. If storage succeeds and history fails: return an explicit partial outcome; record a durable pending-history operation holding the record identity, expected revision and operation identity; make recovery safely retryable without duplicate revisions; never report full success. Service start-up or an authorised recovery operation may reconcile. The contract distinguishes storage persisted, history persisted, history pending, operation failed. No distributed transactions for v1.
+2. **Concurrent writes.** Optimistic concurrency through expected revisions; the caller names the expected revision; conflicting updates are rejected; no silent last-writer-wins for guarded updates; concurrent creates cannot produce duplicate identities; locking and revision checks hold across processes sharing one store and for remote clients alike. Locks are provider-appropriate and never part of the public API. No distributed multi-node locking in v1.
+3. **Lifecycle and relationships.** The core interprets active, superseded, archived and tombstoned, and the `supersedes` relationship. Other relationships (`derived_from`, `contradicts`, `validated_by`, `depends_on`, application-defined) are typed links the core stores without interpreting; a future graph provider may traverse them. No graph processing for ordinary operations. Application metadata stays application-owned; the core validates record structure only.
+4. **Provider language.** v1 providers may be in-process, in the core's language. That is an explicit v1 limitation, not an invariant: future providers may run out of process behind a language-neutral protocol. No cross-language provider hosting in v1 unless genuinely necessary; no language-specific types in language-neutral contracts; a versioned external data representation; provider contracts able to evolve.
+5. **Adapter consistency.** SDK, CLI, HTTP API and MCP use the same core operations. Under equivalent authorisation and state they return equivalent records, keep stable identities, apply the same lifecycle and concurrency rules, produce equivalent domain errors and order queries consistently. Shared conformance tests cover embedded SDK, CLI, HTTP API, MCP stdio and MCP over HTTP, without duplicating acceptance logic per adapter.
+6. **Search.** Exact ID lookup, lexical matching, scope, lifecycle-state and metadata filters, bounded results, deterministic ordering, explicit complete/partial indicators. No mandatory embeddings, vector databases, graph engines or LLM ranking. A query that hits a resource limit reports possibly incomplete results.
 
 ### Primary capabilities (v1 and beyond)
 - Create, read, revise, supersede, archive, delete or tombstone, restore, and inspect the history of memories.
@@ -82,6 +125,21 @@ Acceptance is shown by running behaviour, not by passing unit tests or completed
 - **A11 Restart and recovery** — an interrupted operation is resumed or reported according to the documented durability contract.
 - **A12 Security and privacy** — namespace, authorisation, input validation and historical-retention behaviour satisfy the agreed v1 security contract.
 
+Design scenarios (from the checkpoint handoff; the design must demonstrate each):
+
+- **S-A Local embedded use** — a conventional application creates and retrieves memory without starting a server or using an LLM.
+- **S-B Remote API use** — an application on another machine authenticates with a MemoryKit service and performs authorised operations.
+- **S-C Remote MCP use** — an AI agent on another machine connects over the supported remote MCP transport and retrieves an authorised memory.
+- **S-D Unauthorised access** — a caller attempts another namespace without permission and is denied before the storage provider returns protected information.
+- **S-E Concurrent update** — two clients read the same revision; one updates; the second gets a conflict instead of overwriting.
+- **S-F History failure** — storage persists an update but Git history fails; the operation reports partial completion, the pending operation survives restart, and recovery does not duplicate revisions.
+- **S-G Tombstone** — a logically deleted memory no longer appears as active in ordinary retrieval, while authorised history inspection still works.
+- **S-H Purge** — a privileged purge reports exactly which storage and history locations were cleared and which could not be verified or controlled.
+- **S-I Non-Git history provider** — a test provider demonstrates the common history contract without importing or executing Git.
+- **S-J Cross-adapter consistency** — equivalent authorised requests through SDK, CLI, HTTP and MCP produce consistent state changes and results.
+
+Also: a remote client with valid permissions reaches authorised memory; an unauthorised client cannot read, modify, delete, inspect history of, or purge memory outside its permissions.
+
 And, overall:
 - a developer installs it without operating a database or AI service;
 - a conventional application creates and retrieves persistent memories;
@@ -97,14 +155,17 @@ Working memory persistence and retrieval — not an elaborate plugin architectur
 - one storage provider (Markdown/filesystem is the leading candidate, not selected);
 - one retrieval provider: deterministic lookup and search, no embeddings or model inference;
 - one history provider: Git, behind the history interface;
-- SDK, CLI and MCP server over the same core;
+- embedded SDK, CLI, HTTP API and MCP server (stdio and Streamable HTTP) over the same application service and core;
+- a service host for local-service and remote-service modes, enforcing authentication and authorisation at its boundary;
+- tombstone, and purge with its coverage report (full historical purge may be reported unsupported);
 - one small test implementation of a provider interface, proving replaceability.
 
-The first milestone is persistence and retrieval through the SDK and CLI; the rest builds on it.
+The first milestone is persistence and retrieval through the SDK and CLI; the rest builds on it. V1 proves the public API and the provider abstraction with a single working backend.
 
 ## Environment
 - **Platform:** portable; no OS-specific deployment model. The owner's host is Windows.
-- **Install footprint:** a basic installation needs no hosted database, vector database, graph server, LLM API, always-running daemon or cloud account. An optional provider may need more.
+- **Install footprint:** a basic installation needs no hosted database, vector database, graph server, LLM API or cloud account. Embedded use needs no background service; the local- and remote-service modes run a listener. No infrastructure is added only because remote access is supported. An optional provider may need more.
+- **Network:** remote access over TLS; one authoritative instance per store; no replication, clustering or consensus in v1.
 - **Online/offline:** retrieval works without a model or a network connection.
 - **Reliability:** failures are reported explicitly; the platform never silently loses memory, claims a revision that was not persisted, or returns incomplete results as complete.
 - **Security baseline:** namespace isolation, authorisation, input validation, provider trust boundaries, safe handling of retrieved content, secret detection where applicable, retention, deletion semantics, concurrent access, recovery. Removing a record from current storage may not remove it from history or remote copies; the v1 contract documents and correctly represents that.
@@ -114,16 +175,16 @@ The first milestone is persistence and retrieval through the SDK and CLI; the re
 - **Process:** built with AgentKit. Preserve established decisions; small verifiable slices; running code over speculative review; proportional, bounded review; record meaningful decisions.
 
 ## Lifespan
-Assumed: maintained for years, as standalone distributable open-source infrastructure (see below).
+Maintained and evolved over years. Public contracts are designed with versioning and provider compatibility in mind; that is not a reason to build hypothetical features in v1.
 
 ## Assumptions and open questions
-- Assumed: lifespan is long-term maintained, read from "standalone, distributable project" and "independent open-source infrastructure".
-- Assumed: v1 is single-machine and local-first; synchronisation between installations is out of v1 (distributed sync is deferred).
-- Assumed: A5's two agents may be separate processes on the same machine using the same memory location at the same time, so v1 needs defined behaviour for concurrent writers across processes — without a daemon.
-- Assumed: "illustrative" interfaces and record shapes in the seed (§4.1, §5) are inputs to `/design`, not contracts.
-- Scrutiny — authorisation without a daemon: with no always-running service, every consumer reads the store with its own operating-system permissions, so any process that can read the files can bypass an in-process authorisation check. v1 authorisation can therefore only be enforced at the API boundary for cooperating callers, with real isolation coming from the operating system (separate locations and file permissions). Recommended: the v1 security contract states this plainly; a daemon or service adapter is what later adds enforced authorisation. Affects A12.
-- Scrutiny — permanent deletion under Git: removing data from Git history needs history rewriting, and no local operation can guarantee removal from clones or remotes already holding it. Recommended: v1 distinguishes tombstone (current state), and purge (local history rewrite, reported as not covering remote copies). Affects A12 and D12.
-- Open, for `/design` (each named in the seed's decision backlog; none blocks starting `/design`):
+- The seed's TypeScript interfaces and record shapes (§4.1, §5) are illustrative inputs to `/design`. They select no language and define no final API. (Stated in the handoff.)
+- Deferred, not to be decided unless they block the first implementation: Markdown versus database storage; one memory repository versus several; cross-language provider runtime; vector and graph retrieval; automatic learning; distributed replication; advanced remote synchronisation; permanent deletion from independently controlled clones; API v2 capabilities. The language is decided at `/design`'s approaches gate, not before.
+- Open, from the handoff:
+  - History retention profiles — candidates, not API values: full version history, metadata-only history, no persistent content history. Whether v1 supports them.
+  - The documented authentication profile for a local-only listener.
+  - Which MCP protocol revisions the server answers (the current one, and whether earlier ones too).
+- Open, for `/design` (each named in the seed's decision backlog; none blocks starting `/design`; D5, D9, D10 and D12 are now constrained by the sections above):
   - D1 — what one memory is; which distinctions are core and which are application metadata.
   - D2 — mandatory fields; representation of identity, scope, state, content and provenance.
   - D3 — implementation language and runtime, chosen for consumer compatibility, portability, packaging, provider extensibility and existing infrastructure — not because agents are the first consumer.
