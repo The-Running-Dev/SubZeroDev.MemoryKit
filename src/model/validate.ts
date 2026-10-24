@@ -13,6 +13,7 @@ import {
   type Limits,
   type Link,
   type LinkType,
+  type MemoryId,
   type Namespace,
   type Provenance,
 } from './types.ts';
@@ -26,6 +27,14 @@ const CONTROL = /\p{Cc}/u;
 const LONE_SURROGATE = /\p{Cs}/u;
 const LINK_EXTENSION = /^x-[a-z0-9][a-z0-9._-]{0,63}$/;
 const OPERATION_ID = /^[A-Za-z0-9._:-]+$/;
+
+export interface NormalizedUpdate {
+  id: MemoryId;
+  expectedRevision: number;
+  changes: Partial<
+    Pick<NormalizedCreate, 'kind' | 'content' | 'contentType' | 'metadata' | 'links' | 'provenance'>
+  >;
+}
 
 export interface NormalizedCreate {
   namespace: Namespace;
@@ -170,6 +179,23 @@ function validateProvenance(value: unknown): Provenance {
   return provenance;
 }
 
+// Checked again after an update merges its changes, since either side may change.
+export function requireContentMatchesType(content: string, contentType: ContentType): void {
+  if (contentType !== 'application/json') return;
+  try {
+    JSON.parse(content);
+  } catch {
+    invalid('content', 'invalid_json');
+  }
+}
+
+export function validateRevision(value: unknown, field = 'expectedRevision'): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
+    invalid(field, 'not_a_revision');
+  }
+  return value;
+}
+
 export function validateCreate(input: unknown, limits: Limits): NormalizedCreate {
   if (!isPlainObject(input)) invalid('input', 'not_an_object');
   onlyFields(
@@ -185,13 +211,7 @@ export function validateCreate(input: unknown, limits: Limits): NormalizedCreate
   if (typeof input.content !== 'string') invalid('content', 'required');
   const content = input.content;
   const contentType = validateContentType(input.contentType);
-  if (contentType === 'application/json') {
-    try {
-      JSON.parse(content);
-    } catch {
-      invalid('content', 'invalid_json');
-    }
-  }
+  requireContentMatchesType(content, contentType);
   const metadata = validateMetadata(input.metadata);
   const links = validateLinks(input.links);
   const provenance = validateProvenance(input.provenance);
@@ -202,4 +222,38 @@ export function validateCreate(input: unknown, limits: Limits): NormalizedCreate
   checkLimit('links', links.length, limits.maxLinks);
 
   return { namespace, key, kind, content, contentType, metadata, links, provenance };
+}
+
+// Omitted fields keep their value; links and metadata are replaced whole.
+export function validateUpdate(input: unknown, limits: Limits): NormalizedUpdate {
+  if (!isPlainObject(input)) invalid('input', 'not_an_object');
+  onlyFields(
+    input,
+    ['id', 'expectedRevision', 'kind', 'content', 'contentType', 'metadata', 'links', 'provenance'],
+    ''
+  );
+  requireWellFormed(input, '');
+  const id = validateMemoryId(input.id);
+  const expectedRevision = validateRevision(input.expectedRevision);
+  const changes: NormalizedUpdate['changes'] = {};
+  if (input.kind !== undefined) changes.kind = label(input.kind, 'kind', MAX_KIND_LENGTH);
+  if (input.content !== undefined) {
+    if (typeof input.content !== 'string') invalid('content', 'not_a_string');
+    changes.content = input.content;
+    checkLimit('content', bytes(input.content), limits.maxContentBytes);
+  }
+  if (input.contentType !== undefined) changes.contentType = validateContentType(input.contentType);
+  if (input.metadata !== undefined) {
+    changes.metadata = validateMetadata(input.metadata);
+    checkLimit('metadata', bytes(JSON.stringify(changes.metadata)), limits.maxMetadataBytes);
+  }
+  if (input.links !== undefined) {
+    changes.links = validateLinks(input.links);
+    checkLimit('links', changes.links.length, limits.maxLinks);
+  }
+  if (input.provenance !== undefined) {
+    changes.provenance = validateProvenance(input.provenance);
+    checkLimit('provenance', bytes(JSON.stringify(changes.provenance)), limits.maxMetadataBytes);
+  }
+  return { id, expectedRevision, changes };
 }

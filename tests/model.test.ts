@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import {
   DEFAULT_LIMITS,
   ForbiddenError,
+  InvalidTransitionError,
   LimitExceededError,
   NotFoundError,
   StoreBusyError,
@@ -11,6 +12,7 @@ import {
   isMemoryId,
   matchesPattern,
   newMemoryId,
+  nextState,
   parseNamespace,
   toProblem,
   validateCreate,
@@ -176,5 +178,35 @@ describe('access', () => {
         error.details.permission === 'write'
     );
     assert.throws(() => authorize(p, 'read', parseNamespace('team/notes')), ForbiddenError);
+  });
+});
+
+describe('lifecycle', () => {
+  it('follows the transition table and refuses everything else', () => {
+    assert.equal(nextState('create', null, null), 'active');
+    for (const state of ['active', 'superseded', 'archived'] as const) {
+      assert.equal(nextState('update', state, null), state);
+      assert.equal(nextState('tombstone', state, null), 'tombstoned');
+    }
+    assert.equal(nextState('archive', 'active', null), 'archived');
+    assert.equal(nextState('supersede', 'archived', null), 'superseded');
+    assert.equal(nextState('restore', 'archived', null), 'active');
+    assert.equal(nextState('restore', 'tombstoned', 'superseded'), 'superseded');
+    for (const [op, from] of [
+      ['create', 'active'],
+      ['update', 'tombstoned'],
+      ['archive', 'archived'],
+      ['supersede', 'tombstoned'],
+      ['restore', 'active'],
+      ['purge', 'active'],
+    ] as const) {
+      assert.throws(
+        () => nextState(op, from, null),
+        (error: unknown) =>
+          error instanceof InvalidTransitionError &&
+          error.details.operation === op &&
+          error.details.state === from
+      );
+    }
   });
 });

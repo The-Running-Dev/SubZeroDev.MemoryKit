@@ -62,4 +62,70 @@ export const SCENARIOS: Scenario[] = [
       );
     },
   },
+  {
+    name: 'S2.6 update conflicts, replays and refuses a reused operation id',
+    async run(driver) {
+      const store = tempDir();
+      value(await driver.init(store));
+      const created = value(
+        await driver.create(store, { namespace: 'demo', kind: 'note', content: 'v1' })
+      );
+      const id = (created.memory as Record<string, unknown>).id as string;
+
+      // S2.1: a write against revision 1 lands at 2; a second one against 1 conflicts.
+      const won = value(
+        await driver.update(store, { id, expectedRevision: 1, content: 'winner' }, 'op-a')
+      );
+      const memory = won.memory as Record<string, unknown>;
+      assert.equal(memory.revision, 2);
+      assert.equal(memory.content, 'winner');
+      assert.equal(memory.kind, 'note');
+      const lost = await driver.update(store, { id, expectedRevision: 1, content: 'loser' });
+      problem(lost, 'RevisionConflict');
+      if (!lost.ok) assert.equal(lost.problem.details.currentRevision, 2);
+
+      // S2.2: the same operation id and body replays the stored outcome.
+      const again = value(
+        await driver.update(store, { id, expectedRevision: 1, content: 'winner' }, 'op-a')
+      );
+      assert.deepEqual(again, won);
+
+      // S2.3: the same operation id with another body is refused.
+      problem(
+        await driver.update(store, { id, expectedRevision: 1, content: 'other' }, 'op-a'),
+        'IdempotencyMismatch'
+      );
+      const current = value(await driver.get(store, id));
+      assert.equal(current.revision, 2);
+      assert.equal(current.content, 'winner');
+    },
+  },
+  {
+    name: 'update validates its input and maps an unknown id to NotFound',
+    async run(driver) {
+      const store = tempDir();
+      value(await driver.init(store));
+      problem(
+        await driver.update(store, { id: newMemoryId(), expectedRevision: 1, content: 'x' }),
+        'NotFound'
+      );
+      const created = value(
+        await driver.create(store, { namespace: 'demo', kind: 'note', content: '{}' })
+      );
+      const id = (created.memory as Record<string, unknown>).id as string;
+      problem(
+        await driver.update(store, { id, expectedRevision: 0, content: 'x' }),
+        'ValidationFailed'
+      );
+      problem(
+        await driver.update(store, {
+          id,
+          expectedRevision: 1,
+          contentType: 'application/json',
+          content: '{bad',
+        }),
+        'ValidationFailed'
+      );
+    },
+  },
 ];

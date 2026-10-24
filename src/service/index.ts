@@ -3,6 +3,8 @@ import type {
   HistoryPolicy,
   HistoryProvider,
   StorageProvider,
+  StorageTransaction,
+  StoredOutcome,
   StoredRow,
 } from '../contracts/index.ts';
 import {
@@ -10,10 +12,14 @@ import {
   IdempotencyMismatchError,
   InternalError,
   NotFoundError,
+  RevisionConflictError,
   canonicalJson,
   newMemoryId,
+  nextState,
+  requireContentMatchesType,
   sha256Hex,
   validateCreate,
+  validateUpdate,
   validateMemoryId,
   validateOperationId,
   type ContentType,
@@ -51,8 +57,20 @@ export interface CreateInput {
   provenance?: Provenance;
 }
 
+export interface UpdateInput {
+  id: MemoryId;
+  expectedRevision: number;
+  kind?: string;
+  content?: string;
+  contentType?: ContentType;
+  metadata?: Record<string, JsonValue>;
+  links?: Link[];
+  provenance?: Provenance; // omitted fields keep their value; links and metadata are replaced whole
+}
+
 export interface MemoryClient {
   create(input: CreateInput, opts?: WriteOptions): Promise<WriteOutcome>;
+  update(input: UpdateInput, opts?: WriteOptions): Promise<WriteOutcome>;
   get(id: MemoryId): Promise<MemoryRecord>;
 }
 
@@ -107,14 +125,70 @@ class ServiceClient implements MemoryClient {
   }
 
   async create(input: CreateInput, opts: WriteOptions = {}): Promise<WriteOutcome> {
-    const { storage, limits, history, defaultHistoryPolicy } = this.service;
-    const normalized = validateCreate(input, limits);
+    const normalized = validateCreate(input, this.service.limits);
     authorize(this.principal, 'write', normalized.namespace);
+    return this.mutate('create', normalized, opts, async (tx, now) => {
+      const record: StoredRow['record'] = {
+        id: newMemoryId(),
+        ...normalized,
+        state: nextState('create', null, null),
+        priorState: null,
+        revision: 1,
+        actor: this.principal.id,
+        createdAt: now,
+        updatedAt: now,
+      };
+      return { record, expected: null, policy: await this.policy(tx, record.namespace) };
+    });
+  }
+
+  async update(input: UpdateInput, opts: WriteOptions = {}): Promise<WriteOutcome> {
+    const normalized = validateUpdate(input, this.service.limits);
+    const scope = { patterns: permittedPatterns(this.principal, 'write') };
+    return this.mutate('update', normalized, opts, async (tx, now) => {
+      const current = await tx.load(normalized.id, scope);
+      if (!current) throw new NotFoundError('Memory not found', { id: normalized.id });
+      const before = current.record;
+      if (before.revision !== normalized.expectedRevision) {
+        throw new RevisionConflictError('The memory has changed since it was read', {
+          id: before.id,
+          currentRevision: before.revision,
+        });
+      }
+      const record: StoredRow['record'] = {
+        ...before,
+        ...normalized.changes,
+        state: nextState('update', before.state, before.priorState),
+        revision: before.revision + 1,
+        actor: this.principal.id,
+        updatedAt: now,
+      };
+      requireContentMatchesType(record.content, record.contentType);
+      return { record, expected: before.revision, policy: await this.policy(tx, record.namespace) };
+    });
+  }
+
+  private policy(tx: StorageTransaction, namespace: Namespace): Promise<HistoryPolicy> {
+    return tx.namespacePolicy(namespace, this.service.defaultHistoryPolicy);
+  }
+
+  // One write transaction: replay or refuse a known operation id, otherwise build the new
+  // revision, queue its history and record the operation with its outcome.
+  private async mutate(
+    operation: 'create' | 'update',
+    normalized: unknown,
+    opts: WriteOptions,
+    build: (
+      tx: StorageTransaction,
+      now: string
+    ) => Promise<{ record: StoredRow['record']; expected: number | null; policy: HistoryPolicy }>
+  ): Promise<WriteOutcome> {
+    const { storage, history } = this.service;
     const operationId = validateOperationId(opts.operationId) ?? newMemoryId();
-    const fingerprint = sha256Hex(canonicalJson({ operation: 'create', input: normalized }));
+    const fingerprint = sha256Hex(canonicalJson({ operation, input: normalized }));
     const principalId = this.principal.id;
 
-    const { row, seqs } = await storage.write(async (tx) => {
+    const { outcome, seqs } = await storage.write(async (tx) => {
       const prior = await tx.findOperation(principalId, operationId);
       if (prior) {
         if (prior.fingerprint !== fingerprint) {
@@ -122,26 +196,16 @@ class ServiceClient implements MemoryClient {
             operationId,
           });
         }
+        const seqs = prior.seq === null ? [] : [prior.seq];
+        if (prior.outcome) return { outcome: prior.outcome, seqs };
+        // Recorded before schema 2 kept outcomes: the current row is the best answer left.
         const existing = await tx.load(prior.memoryId, { patterns: ['*'] });
         if (!existing)
           throw new NotFoundError('The memory no longer exists', { id: prior.memoryId });
-        return { row: existing, seqs: prior.seq === null ? [] : [prior.seq] };
+        return { outcome: { memory: existing.record, related: [] }, seqs };
       }
-      const policy = await tx.namespacePolicy(normalized.namespace, defaultHistoryPolicy);
       const now = new Date().toISOString();
-      const created: StoredRow = {
-        record: {
-          id: newMemoryId(),
-          ...normalized,
-          state: 'active',
-          priorState: null,
-          revision: 1,
-          actor: principalId,
-          createdAt: now,
-          updatedAt: now,
-        },
-      };
-      const record = created.record;
+      const { record, expected, policy } = await build(tx, now);
       // History export arrives in S3; until a provider exists there is nothing to queue for.
       const outbox =
         history !== null && policy !== 'none'
@@ -149,8 +213,8 @@ class ServiceClient implements MemoryClient {
               {
                 operationId,
                 memoryId: record.id,
-                revision: 1,
-                operation: 'create' as const,
+                revision: record.revision,
+                operation,
                 actor: principalId,
                 at: now,
                 namespace: record.namespace,
@@ -159,24 +223,32 @@ class ServiceClient implements MemoryClient {
               },
             ]
           : [];
+      const outcome: StoredOutcome = { memory: record, related: [] };
       const result = await tx.commit(
         {
-          rows: [created],
+          rows: [{ record }],
           outbox,
-          operation: { principalId, operationId, fingerprint, memoryId: record.id, revision: 1 },
+          operation: {
+            principalId,
+            operationId,
+            fingerprint,
+            memoryId: record.id,
+            revision: record.revision,
+            outcome,
+          },
         },
-        [{ id: record.id, revision: null }]
+        [{ id: record.id, revision: expected }]
       );
-      return { row: created, seqs: result.seqs };
+      return { outcome, seqs: result.seqs };
     });
 
     return {
       operationId,
-      memory: await this.withDerived(row),
+      memory: await this.withDerived({ record: outcome.memory }),
       storage: 'persisted',
       history: seqs.length > 0 ? 'pending' : 'not_required',
       historyRef: null,
-      related: [],
+      related: await Promise.all(outcome.related.map((record) => this.withDerived({ record }))),
     };
   }
 

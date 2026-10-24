@@ -10,6 +10,16 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-25 — Replays return the stored outcome; schema 2 keeps it (S2)
+- **Context:** the design says a replayed operation returns its stored outcome, but schema 1's `operations` table kept only the memory id and revision, so a replay after a later write would have returned the later revision.
+- **Chosen:** schema 2 adds `operations.outcome`, the JSON of the memory record and related records as written. A replay returns it, with `supersededBy` derived and history status re-read at replay time. Operations recorded under schema 1 have no outcome and replay from the current row. Purge (S8) must clear `outcome` on the purged memory's operations, since it holds content.
+- **Rejected:** rebuilding the outcome from history — history may be `none` or `metadata`; returning the current row — a retry after a later write would report a revision the request never produced.
+
+## 2026-10-25 — What an update may change (S2)
+- **Context:** the contract lists the fields of `UpdateInput` but not what an update that names none of them does, nor how the CLI treats a malformed `--expected-revision`.
+- **Chosen:** `namespace` and `key` cannot be updated, so an input naming them fails with `ValidationFailed` (the CLI refuses the flags as a usage error). Provenance, like links and metadata, is replaced whole when given. An update that names no field still writes a new revision, which records the actor and time. A non-integer `--expected-revision` is passed through and fails as `ValidationFailed`, exit 1, matching the SDK.
+- **Rejected:** a no-op update returning the current revision unchanged — it would hide a client bug and break the revision-plus-one rule; key renames — the key is the natural identity that concurrent creates converge on.
+
 ## 2026-10-25 — Input bounds the contract leaves open (S1)
 - **Context:** the contract fixes namespaces and the four `Limits`, but not the length or alphabet of keys, kinds and operation ids, nor whether unknown input fields are accepted.
 - **Chosen:** `key` at most 512 characters and `kind` at most 128, neither empty nor containing control characters; operation ids match `[A-Za-z0-9._:-]{1,128}`; serialized provenance counts against `maxMetadataBytes`; unknown fields in a create input fail with `ValidationFailed`. Structural checks run before limit checks, so an input that is both malformed and oversize reports `ValidationFailed`.

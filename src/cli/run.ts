@@ -8,7 +8,13 @@ import {
   type LinkType,
 } from '../model/index.ts';
 import { initStore, openStore } from '../sdk/index.ts';
-import type { CreateInput, MemoryClient, WriteOutcome } from '../service/index.ts';
+import type {
+  CreateInput,
+  MemoryClient,
+  UpdateInput,
+  WriteOptions,
+  WriteOutcome,
+} from '../service/index.ts';
 import type { MemoryRecord } from '../model/index.ts';
 
 export interface CliIo {
@@ -28,6 +34,9 @@ Commands:
   create --store <dir> --namespace <ns> --kind <kind> --content <text>
          [--content-type <type>] [--key <key>] [--metadata <json>]
          [--link <type>:<id>]... [--operation-id <id>]
+  update <id> --store <dir> --expected-revision <n>
+         [--kind <kind>] [--content <text>] [--content-type <type>]
+         [--metadata <json>] [--link <type>:<id>]... [--operation-id <id>]
   get <id> --store <dir>
 
 Options:
@@ -46,6 +55,7 @@ const OPTIONS = {
   metadata: { type: 'string' },
   link: { type: 'string', multiple: true },
   'operation-id': { type: 'string' },
+  'expected-revision': { type: 'string' },
 } satisfies ParseArgsConfig['options'];
 
 type Values = ReturnType<typeof parse>['values'];
@@ -56,7 +66,10 @@ function parse(argv: string[]) {
   return parseArgs({ args: argv, options: OPTIONS, allowPositionals: true, strict: true });
 }
 
-function required(values: Values, name: 'store' | 'namespace' | 'kind' | 'content'): string {
+function required(
+  values: Values,
+  name: 'store' | 'namespace' | 'kind' | 'content' | 'expected-revision'
+): string {
   const value = values[name];
   if (value === undefined) throw new UsageError(`--${name} is required`);
   return value;
@@ -86,6 +99,15 @@ function parseLinks(items: string[] | undefined): Link[] | undefined {
     if (at <= 0) throw new UsageError(`--link must be <type>:<id>, got "${item}"`);
     return { type: item.slice(0, at) as LinkType, target: item.slice(at + 1) };
   });
+}
+
+// Passed through as given: the service rejects anything that is not a positive integer.
+function parseRevision(text: string): number {
+  return /^\d+$/.test(text) ? Number(text) : Number.NaN;
+}
+
+function writeOptions(values: Values): WriteOptions {
+  return values['operation-id'] === undefined ? {} : { operationId: values['operation-id'] };
 }
 
 function formatRecord(record: MemoryRecord): string {
@@ -160,10 +182,30 @@ export async function run(argv: string[], io: CliIo): Promise<number> {
         const links = parseLinks(values.link);
         if (links !== undefined) input.links = links;
         const outcome = await withStore(values, (client) =>
-          client.create(
-            input,
-            values['operation-id'] === undefined ? {} : { operationId: values['operation-id'] }
-          )
+          client.create(input, writeOptions(values))
+        );
+        print(outcome, formatOutcome(outcome));
+        return outcome.history === 'pending' ? EXIT_HISTORY_PENDING : EXIT_OK;
+      }
+      case 'update': {
+        const [id] = only(rest, 1, 'update <id>');
+        if (values.namespace !== undefined || values.key !== undefined) {
+          throw new UsageError('update cannot change --namespace or --key');
+        }
+        const input: UpdateInput = {
+          id: id!,
+          expectedRevision: parseRevision(required(values, 'expected-revision')),
+        };
+        if (values.kind !== undefined) input.kind = values.kind;
+        if (values.content !== undefined) input.content = values.content;
+        if (values['content-type'] !== undefined)
+          input.contentType = values['content-type'] as ContentType;
+        const metadata = parseMetadata(values.metadata);
+        if (metadata !== undefined) input.metadata = metadata;
+        const links = parseLinks(values.link);
+        if (links !== undefined) input.links = links;
+        const outcome = await withStore(values, (client) =>
+          client.update(input, writeOptions(values))
         );
         print(outcome, formatOutcome(outcome));
         return outcome.history === 'pending' ? EXIT_HISTORY_PENDING : EXIT_OK;

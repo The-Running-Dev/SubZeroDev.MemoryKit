@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, it } from 'node:test';
 import { newMemoryId } from '../src/model/index.ts';
+import { SCHEMA_VERSION } from '../src/storage-sqlite/schema.ts';
 import { runCli, tempDir } from './helpers.ts';
 
 describe('cli', () => {
@@ -82,11 +83,41 @@ describe('cli', () => {
     assert.equal(runCli(['--help']).status, 0);
   });
 
+  it('S2.6 update through the CLI, with its usage errors', () => {
+    const store = tempDir();
+    assert.equal(runCli(['init', store]).status, 0);
+    const created = runCli([
+      'create',
+      '--store',
+      store,
+      '--namespace',
+      'demo',
+      '--kind',
+      'note',
+      '--content',
+      'v1',
+      '--json',
+    ]);
+    const id = JSON.parse(created.stdout).memory.id as string;
+    const update = (...args: string[]) => runCli(['update', id, '--store', store, ...args]);
+
+    const human = update('--expected-revision', '1', '--content', 'v2');
+    assert.equal(human.status, 0, human.stderr);
+    assert.match(human.stdout, /revision 2 active/);
+    const conflict = update('--expected-revision', '1', '--content', 'v3');
+    assert.equal(conflict.status, 1);
+    assert.deepEqual(JSON.parse(conflict.stderr).details, { id, currentRevision: 2 });
+    assert.equal(JSON.parse(update('--expected-revision', 'two').stderr).code, 'ValidationFailed');
+    assert.equal(update('--content', 'x').status, 2);
+    assert.equal(update('--expected-revision', '2', '--namespace', 'other').status, 2);
+    assert.equal(runCli(['update', '--store', store, '--expected-revision', '2']).status, 2);
+  });
+
   it('S1.6 refuses a schema newer than the code', () => {
     const store = tempDir();
     assert.equal(runCli(['init', store]).status, 0);
     const db = new DatabaseSync(join(store, 'memory.db'));
-    db.exec('PRAGMA user_version = 2');
+    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION + 1}`);
     db.close();
     const result = runCli(['get', newMemoryId(), '--store', store]);
     assert.equal(result.status, 1);

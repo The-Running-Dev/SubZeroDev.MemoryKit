@@ -7,6 +7,15 @@ export type Result<T> = { ok: true; value: T } | { ok: false; problem: Problem }
 export interface Driver {
   readonly name: string;
   init(store: string): Promise<Result<null>>;
-  create(store: string, input: Record<string, unknown>): Promise<Result<Record<string, unknown>>>;
+  create(
+    store: string,
+    input: Record<string, unknown>,
+    operationId?: string
+  ): Promise<Result<Record<string, unknown>>>;
+  update(
+    store: string,
+    input: Record<string, unknown>,
+    operationId?: string
+  ): Promise<Result<Record<string, unknown>>>;
   get(store: string, id: string): Promise<Result<Record<string, unknown>>>;
 }
