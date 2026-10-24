@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { describe, it } from 'node:test';
 import { StoreUnavailableError, StoreVersionTooNewError, newMemoryId } from '../src/model/index.ts';
 import { SqliteStorage, isNetworkPath, requireFeatures } from '../src/storage-sqlite/index.ts';
+import { SCHEMA_VERSION } from '../src/storage-sqlite/schema.ts';
 import type { StoredRow } from '../src/contracts/index.ts';
 import { tempDir } from './helpers.ts';
 
@@ -43,6 +44,7 @@ async function insert(storage: SqliteStorage, stored: StoredRow): Promise<void> 
           fingerprint: 'f',
           memoryId: stored.record.id,
           revision: 1,
+          outcome: { memory: stored.record, related: [] },
         },
       },
       [{ id: stored.record.id, revision: null }]
@@ -51,7 +53,7 @@ async function insert(storage: SqliteStorage, stored: StoredRow): Promise<void> 
 }
 
 describe('SqliteStorage', () => {
-  it('S1.1 creates schema 1 in WAL mode with FTS5', async () => {
+  it('S1.1 creates the current schema in WAL mode with FTS5', async () => {
     const path = join(tempDir(), 'memory.db');
     const storage = new SqliteStorage({ path });
     await storage.open();
@@ -65,7 +67,7 @@ describe('SqliteStorage', () => {
       );
       assert.equal(
         (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version,
-        1
+        SCHEMA_VERSION
       );
       const names = (
         db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table')").all() as {
@@ -109,15 +111,15 @@ describe('SqliteStorage', () => {
     await storage.open();
     await storage.close();
     const db = new DatabaseSync(path);
-    db.exec('PRAGMA user_version = 2');
+    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION + 1}`);
     db.close();
 
     await assert.rejects(
       new SqliteStorage({ path }).open(),
       (error: unknown) =>
         error instanceof StoreVersionTooNewError &&
-        error.details.found === 2 &&
-        error.details.supported === 1
+        error.details.found === SCHEMA_VERSION + 1 &&
+        error.details.supported === SCHEMA_VERSION
     );
   });
 
@@ -197,6 +199,7 @@ describe('SqliteStorage', () => {
               fingerprint: 'f',
               memoryId: stored.record.id,
               revision: 1,
+              outcome: { memory: stored.record, related: [] },
             },
           },
           [{ id: stored.record.id, revision: null }]

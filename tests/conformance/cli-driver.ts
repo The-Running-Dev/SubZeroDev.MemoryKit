@@ -8,8 +8,17 @@ function parse<T>(exec: Exec, value: (stdout: string) => T): Result<T> {
   throw new Error(`CLI exited ${exec.status}: ${exec.stderr}`);
 }
 
-function createArgs(store: string, input: Record<string, unknown>): string[] {
-  const args = ['create', '--store', store, '--json'];
+function writeArgs(
+  head: string[],
+  store: string,
+  input: Record<string, unknown>,
+  operationId: string | undefined
+): string[] {
+  const args = [...head, '--store', store, '--json'];
+  if (operationId !== undefined) args.push('--operation-id', operationId);
+  if (input.expectedRevision !== undefined) {
+    args.push('--expected-revision', String(input.expectedRevision));
+  }
   const flags: Record<string, string> = {
     namespace: 'namespace',
     key: 'key',
@@ -18,7 +27,7 @@ function createArgs(store: string, input: Record<string, unknown>): string[] {
     contentType: 'content-type',
   };
   for (const [field, flag] of Object.entries(flags)) {
-    if (input[field] !== undefined) args.push(`--${flag}`, String(input[field]));
+    if (input[field] !== undefined) args.push(`--${flag}=${String(input[field])}`);
   }
   if (input.metadata !== undefined) args.push('--metadata', JSON.stringify(input.metadata));
   for (const link of (input.links as { type: string; target: string }[] | undefined) ?? []) {
@@ -30,8 +39,16 @@ function createArgs(store: string, input: Record<string, unknown>): string[] {
 export const cliDriver: Driver = {
   name: 'cli',
   init: async (store) => parse(runCli(['init', store, '--json']), () => null),
-  create: async (store, input) =>
-    parse(runCli(createArgs(store, input)), (out) => JSON.parse(out) as Record<string, unknown>),
+  create: async (store, input, operationId) =>
+    parse(
+      runCli(writeArgs(['create'], store, input, operationId)),
+      (out) => JSON.parse(out) as Record<string, unknown>
+    ),
+  update: async (store, { id, ...input }, operationId) =>
+    parse(
+      runCli(writeArgs(['update', String(id)], store, input, operationId)),
+      (out) => JSON.parse(out) as Record<string, unknown>
+    ),
   get: async (store, id) =>
     parse(
       runCli(['get', id, '--store', store, '--json']),

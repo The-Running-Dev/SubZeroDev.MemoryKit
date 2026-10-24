@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -31,6 +31,19 @@ export function runNode(script: string, args: string[]): Exec {
     encoding: 'utf8',
   });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+}
+
+// Like runNode, but returns at once so several processes can run side by side.
+export function runNodeAsync(script: string, args: string[]): Promise<Exec> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['--no-warnings', script, ...args]);
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => (stdout += chunk));
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => (stderr += chunk));
+    child.on('error', reject);
+    child.on('close', (status) => resolve({ status, stdout, stderr }));
+  });
 }
 
 export function runCli(args: string[]): Exec {

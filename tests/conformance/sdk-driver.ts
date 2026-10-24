@@ -1,6 +1,6 @@
 import { toProblem } from '../../src/model/index.ts';
 import { initStore, openStore } from '../../src/sdk/index.ts';
-import type { CreateInput } from '../../src/service/index.ts';
+import type { CreateInput, UpdateInput } from '../../src/service/index.ts';
 import type { Driver, Result } from './driver.ts';
 
 async function capture<T>(fn: () => Promise<T>): Promise<Result<T>> {
@@ -31,9 +31,21 @@ async function withClient<T>(
 export const sdkDriver: Driver = {
   name: 'sdk',
   init: (store) => capture(async () => (await initStore({ path: store }), null)),
-  create: (store, input) =>
+  create: (store, input, operationId) =>
     capture(async () =>
-      plain(await withClient(store, (c) => c.create(input as unknown as CreateInput)))
+      plain(
+        await withClient(store, (c) =>
+          c.create(input as unknown as CreateInput, operationId ? { operationId } : {})
+        )
+      )
+    ),
+  update: (store, input, operationId) =>
+    capture(async () =>
+      plain(
+        await withClient(store, (c) =>
+          c.update(input as unknown as UpdateInput, operationId ? { operationId } : {})
+        )
+      )
     ),
   get: (store, id) => capture(async () => plain(await withClient(store, (c) => c.get(id)))),
 };

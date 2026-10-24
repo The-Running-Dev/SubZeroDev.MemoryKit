@@ -5,6 +5,7 @@ import type {
   RowScope,
   StorageProvider,
   StorageTransaction,
+  StoredOutcome,
   StoredRow,
   WriteBatch,
 } from '../contracts/index.ts';
@@ -329,7 +330,7 @@ class SqliteTransaction implements StorageTransaction {
   async findOperation(principalId: string, operationId: string) {
     const row = this.db
       .prepare(
-        'SELECT fingerprint, memory_id, revision, seq FROM operations WHERE principal_id = ? AND operation_id = ?'
+        'SELECT fingerprint, memory_id, revision, seq, outcome FROM operations WHERE principal_id = ? AND operation_id = ?'
       )
       .get(principalId, operationId) as Row | undefined;
     if (!row) return null;
@@ -338,6 +339,7 @@ class SqliteTransaction implements StorageTransaction {
       memoryId: String(row.memory_id),
       revision: Number(row.revision),
       seq: row.seq === null ? null : Number(row.seq),
+      outcome: row.outcome === null ? null : (JSON.parse(String(row.outcome)) as StoredOutcome),
     };
   }
 
@@ -460,8 +462,8 @@ class SqliteTransaction implements StorageTransaction {
 
     const op = batch.operation;
     db.prepare(
-      `INSERT INTO operations (principal_id, operation_id, fingerprint, memory_id, revision, seq, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO operations (principal_id, operation_id, fingerprint, memory_id, revision, seq, created_at, outcome)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       op.principalId,
       op.operationId,
@@ -469,7 +471,8 @@ class SqliteTransaction implements StorageTransaction {
       op.memoryId,
       op.revision,
       seqs.length > 0 ? seqs[seqs.length - 1]! : null,
-      new Date().toISOString()
+      new Date().toISOString(),
+      JSON.stringify(op.outcome)
     );
     return { seqs };
   }

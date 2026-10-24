@@ -18,7 +18,7 @@ Acceptance:
 Out of scope: update, search, history, lifecycle, any listener.
 
 ## S2 — Concurrent updates never silently overwrite
-Status: todo
+Status: done
 Delivers: Two clients that read the same revision cannot both update it. The second gets a conflict, and retries of the same request are safe.
 Touches: service (update, idempotency, fingerprints); storage-sqlite (transactions, expected-revision checks, key uniqueness, operations table); model (RevisionConflict, AlreadyExists, IdempotencyMismatch); cli (update, `--operation-id`); conformance
 Depends on: S1

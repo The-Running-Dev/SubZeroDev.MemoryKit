@@ -41,6 +41,11 @@ export interface OutboxEntry {
   policy: Exclude<HistoryPolicy, 'none'>;
   payload: MemoryRecord | RedactedRecord | null;
 }
+// The records an operation returned, kept so a replay returns the same outcome.
+export interface StoredOutcome {
+  memory: StoredRow['record'];
+  related: StoredRow['record'][];
+}
 export interface WriteBatch {
   rows: StoredRow[];
   outbox: Omit<OutboxEntry, 'seq'>[];
@@ -50,6 +55,7 @@ export interface WriteBatch {
     fingerprint: string;
     memoryId: MemoryId;
     revision: number;
+    outcome: StoredOutcome;
   };
 }
 export interface StorageTransaction {
@@ -61,6 +67,7 @@ export interface StorageTransaction {
     memoryId: MemoryId;
     revision: number;
     seq: number | null;
+    outcome: StoredOutcome | null; // null for operations recorded by schema 1
   } | null>;
   load(id: MemoryId, scope: RowScope): Promise<StoredRow | null>;
   findByKey(ns: Namespace, key: string): Promise<MemoryId | null>;
