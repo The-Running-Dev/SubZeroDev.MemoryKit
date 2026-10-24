@@ -1,0 +1,29 @@
+name: CI
+
+# The project has no code yet, so the only check is whitespace across the whole tree.
+# S1 adds the Node install, typecheck and test steps.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Whitespace
+        # verification: true
+        run: git diff --check "$(git hash-object -t tree /dev/null)" HEAD
