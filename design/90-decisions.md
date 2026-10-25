@@ -9,6 +9,13 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-25 — No batched Git exports for now
+
+- Context: batching pending revisions into fewer commits was approved only if cutting git processes did not fix drain throughput. On CI Linux the baseline drained 15.6 revisions per second at 1k memories and 4.4 at 10k; with five processes per export and the revision index it drains 53.5 and 27.8, so 10k revisions take 6 minutes instead of 38.
+- Chosen: keep one commit per revision. Batching would add ordering, idempotency and per-revision addressing rules inside a commit to win back a factor below two.
+- Revisit when: drain at 10k falls under about 20 revisions per second on CI, or a workload needs bulk import at a higher rate. What still grows with the store is the per-export `update-index` and `write-tree` over the whole tree, which batching would amortize.
+- Rejected: batching now, as complexity the numbers do not call for.
+
 ## 2026-10-25 — Revision index for historical reads
 
 - Context: revision retrieval scanned the whole branch with `git log` and then ran `git show` per file, so it took 94 ms at 1k memories and 928 ms at 10k on CI Linux, growing with history.
