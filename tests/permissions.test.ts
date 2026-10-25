@@ -190,6 +190,12 @@ describe('permissions', () => {
         all.items.map((item) => item.supersededBy),
         [[hidden]]
       );
+      // Naming namespaces narrows the rows searched, not what supersededBy may name.
+      const named = await both.search({ namespaces: ['public'], states: ['superseded'] });
+      assert.deepEqual(
+        named.items.map((item) => item.supersededBy),
+        [[hidden]]
+      );
       const replayed = await owner.supersede(
         {
           id: target.id,
