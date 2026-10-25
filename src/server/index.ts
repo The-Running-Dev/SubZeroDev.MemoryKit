@@ -4,6 +4,7 @@
 import { readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createServer as createTlsServer } from 'node:https';
+import { createSecureContext } from 'node:tls';
 import type { AddressInfo } from 'node:net';
 import type { Grant } from '../access/index.ts';
 import { LocalTokenAuthenticator, type Authenticator } from '../authn/index.ts';
@@ -158,10 +159,31 @@ function readBody(req: IncomingMessage, res: ServerResponse): Promise<string> {
 }
 
 function readTls(tls: { certFile: string; keyFile: string }): { cert: Buffer; key: Buffer } {
+  let files: { cert: Buffer; key: Buffer };
   try {
-    return { cert: readFileSync(tls.certFile), key: readFileSync(tls.keyFile) };
+    files = { cert: readFileSync(tls.certFile), key: readFileSync(tls.keyFile) };
   } catch {
     throw invalid('tls', 'unreadable');
+  }
+  // Checked here, before the store opens, so a bad pair cannot leave the store held open.
+  try {
+    createSecureContext(files);
+  } catch {
+    throw invalid('tls', 'invalid');
+  }
+  return files;
+}
+
+// The challenge names the host the client used, so it can reach the metadata behind a wildcard
+// bind, a proxy or a port mapping; a Host that is not a bare host[:port] gets the bound address.
+function challengeBase(headers: Headers, scheme: string, bound: string): string {
+  const host = headers.get('host');
+  if (host === null || host === '') return bound;
+  try {
+    const parsed = new URL(`${scheme}://${host}`);
+    return parsed.host === host.toLowerCase() && parsed.pathname === '/' ? parsed.origin : bound;
+  } catch {
+    return bound;
   }
 }
 
@@ -185,13 +207,14 @@ export async function serve(opts: ServeOptions): Promise<{ url: string; close():
   const authenticator: Authenticator = oidc ?? new LocalTokenAuthenticator(tokens);
   const origins = new Set(opts.allowedOrigins ?? []);
   const inFlight = new Set<Promise<void>>();
-  // Set once listening; the metadata and the 401 challenge name it.
+  // Set once listening; the 401 challenge falls back to it.
   let url = '';
+  const scheme = tls === undefined ? 'http' : 'https';
 
   async function respond(req: IncomingMessage, res: ServerResponse): Promise<void> {
     let response: HttpResponse;
+    const headers = toHeaders(req);
     try {
-      const headers = toHeaders(req);
       // A browser page from another origin is refused before its token is looked at.
       const origin = headers.get('origin');
       if (origin !== null && !origins.has(origin)) {
@@ -222,7 +245,8 @@ export async function serve(opts: ServeOptions): Promise<{ url: string; close():
     } catch (error) {
       response = problemResponse(error);
       if (remote !== undefined && response.status === 401) {
-        response.headers['www-authenticate'] = `Bearer resource_metadata="${url}${METADATA_PATH}"`;
+        const base = challengeBase(headers, scheme, url);
+        response.headers['www-authenticate'] = `Bearer resource_metadata="${base}${METADATA_PATH}"`;
       }
     }
     send(res, response);
@@ -257,7 +281,7 @@ export async function serve(opts: ServeOptions): Promise<{ url: string; close():
 
   const address = server.address() as AddressInfo;
   const host = address.family === 'IPv6' ? `[${address.address}]` : address.address;
-  url = `${tls === undefined ? 'http' : 'https'}://${host}:${address.port}`;
+  url = `${scheme}://${host}:${address.port}`;
 
   // Exports that missed their write-time wait are retried in the background.
   const drainTimer = setInterval(() => {

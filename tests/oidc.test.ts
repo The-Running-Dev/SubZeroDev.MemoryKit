@@ -102,6 +102,17 @@ describe('S9 remote access', () => {
       assert.equal(body.details.reason, reason);
     }
     assert.equal((await trustingFetch(status)).status, 401);
+    // The challenge names the host the client used; a Host with a path gets the bound address.
+    const named = await trustingFetch(status, { headers: { host: 'Memory.Example:8443' } });
+    assert.equal(
+      named.headers.get('www-authenticate'),
+      'Bearer resource_metadata="https://memory.example:8443/.well-known/oauth-protected-resource"'
+    );
+    const odd = await trustingFetch(status, { headers: { host: 'memory.example/x' } });
+    assert.equal(
+      odd.headers.get('www-authenticate'),
+      `Bearer resource_metadata="${url}/.well-known/oauth-protected-resource"`
+    );
 
     // Keys this service already fetched keep working while the issuer is down.
     issuer.setOnline(false);
@@ -165,6 +176,7 @@ describe('S9 remote access', () => {
     const reasons: [Partial<ServeOptions>, string, string][] = [
       [{ tls: undefined }, 'tls', 'required'],
       [{ tls: { certFile: `${CERT_FILE}.missing`, keyFile: KEY_FILE } }, 'tls', 'unreadable'],
+      [{ tls: { certFile: KEY_FILE, keyFile: CERT_FILE } }, 'tls', 'invalid'],
       [
         {
           auth: {
@@ -232,6 +244,32 @@ describe('S9 remote access', () => {
     } finally {
       issuer.setOnline(true);
     }
+  });
+
+  it('keys over plain http or an empty key set are not used', async () => {
+    const discovery = { issuer: issuer.issuer, jwks_uri: 'http://idp.example/jwks' };
+    const served = (keys: unknown): typeof fetch =>
+      (async (input: string | URL | Request) =>
+        Response.json(String(input).endsWith('/jwks') ? keys : discovery)) as typeof fetch;
+    const unavailable = (error: unknown) =>
+      error instanceof AuthenticationUnavailableError &&
+      error.details.reason === 'jwks_unavailable';
+    const clear = new OidcAuthenticator({
+      issuer: issuer.issuer,
+      audience: AUDIENCE,
+      ceiling: DEMO,
+      fetch: served(await (await fetch(`${issuer.issuer}/jwks`)).json()),
+    });
+    const headers = new Headers(bearer(issuer.token()).headers);
+    await assert.rejects(clear.authenticate(headers), unavailable);
+    discovery.jwks_uri = 'https://idp.example/jwks';
+    const empty = new OidcAuthenticator({
+      issuer: issuer.issuer,
+      audience: AUDIENCE,
+      ceiling: DEMO,
+      fetch: served({ keys: [] }),
+    });
+    await assert.rejects(empty.authenticate(headers), unavailable);
   });
 
   it('CLI serve takes the TLS and OIDC flags', async () => {

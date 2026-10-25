@@ -113,8 +113,9 @@ export class OidcAuthenticator implements Authenticator {
       grants: opts.ceiling,
     }).grants;
     this.toleranceSec = opts.clockToleranceSec ?? DEFAULT_CLOCK_TOLERANCE_SEC;
-    this.keyTtlMs = opts.keyTtlMs ?? DEFAULT_KEY_TTL_MS;
     this.minRefreshMs = opts.minRefreshIntervalMs ?? DEFAULT_MIN_REFRESH_MS;
+    // Keys that expire before a refresh is allowed would leave guaranteed outage windows.
+    this.keyTtlMs = Math.max(opts.keyTtlMs ?? DEFAULT_KEY_TTL_MS, this.minRefreshMs);
     this.fetchFn = opts.fetch ?? globalThis.fetch;
   }
 
@@ -223,6 +224,7 @@ export class OidcAuthenticator implements Authenticator {
         `${this.issuer.replace(/\/+$/, '')}/.well-known/openid-configuration`
       );
       if (discovery.issuer !== this.issuer || typeof discovery.jwks_uri !== 'string') return false;
+      if (!fetchable(discovery.jwks_uri)) return false;
       const jwks = await this.getJson(discovery.jwks_uri);
       if (!Array.isArray(jwks.keys)) return false;
       const keys = new Map<string, CachedKey>();
@@ -240,6 +242,8 @@ export class OidcAuthenticator implements Authenticator {
           // A key Node cannot import cannot verify anything; skip it.
         }
       });
+      // A set with nothing usable is treated as a failed fetch, so the keys in hand stay.
+      if (keys.size === 0) return false;
       this.keys = keys;
       this.keysExpireAt = Date.now() + this.keyTtlMs;
       return true;
@@ -251,11 +255,28 @@ export class OidcAuthenticator implements Authenticator {
   private async getJson(url: string): Promise<Record<string, unknown>> {
     const response = await this.fetchFn(url, {
       headers: { accept: 'application/json' },
+      // A redirect could move the keys onto plain http, so none are followed.
+      redirect: 'error',
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new Error(`HTTP ${response.status}`);
+    }
     const value: unknown = await response.json();
     if (!isPlainObject(value)) throw new Error('not an object');
     return value;
+  }
+}
+
+// Keys fetched in clear could be swapped, so the key set needs https, or http on this host.
+function fetchable(text: string): boolean {
+  try {
+    const url = new URL(text);
+    const host = url.hostname.replace(/^\[|\]$/g, '');
+    const loopback = host === 'localhost' || host === '::1' || /^127\.\d+\.\d+\.\d+$/.test(host);
+    return url.protocol === 'https:' || (url.protocol === 'http:' && loopback);
+  } catch {
+    return false;
   }
 }

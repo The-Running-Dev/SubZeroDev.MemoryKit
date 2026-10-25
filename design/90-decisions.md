@@ -19,15 +19,16 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
   - `iss` must equal the configured issuer exactly, `aud` must include the audience, `exp` and `nbf` allow 60 seconds of clock skew, and `sub` (at most 256 characters) is the principal id.
   - Only `mk:<permission>:<pattern>` scope items grant anything; others are ignored. Each permission takes the narrower of its pattern and a ceiling pattern holding it. Patterns that only partly overlap grant nothing.
   - `OidcAuthenticator` also takes optional `keyTtlMs`, `minRefreshIntervalMs` and `fetch`, beyond the contract's options.
-  - The issuer must be https, or http on a loopback host (for tests and local issuers).
-  - Protected-resource metadata has `resource` set to the audience, one authorization server and header bearer only. Remote 401s carry `WWW-Authenticate: Bearer resource_metadata="…"`.
+  - The issuer must be https, or http on a loopback host (for tests and local issuers). The `jwks_uri` is held to the same rule, redirects are not followed, a key set with no usable key counts as a failed fetch, and the key TTL is never shorter than the refresh interval.
+  - Protected-resource metadata has `resource` set to the audience, one authorization server and header bearer only. Remote 401s carry `WWW-Authenticate: Bearer resource_metadata="…"`, built from the request's Host when it is a bare host[:port], else from the bound address, so a wildcard bind or a proxy still names a reachable URL.
   - TLS works with either profile; without it only loopback is allowed. CLI `serve` takes `--tls-cert`/`--tls-key` and `--oidc-issuer`/`--oidc-audience`/`--oidc-ceiling`, each group all or none.
-  - A self-signed localhost certificate is committed under `tests/fixtures/tls` (expires 2126).
+  - A self-signed localhost certificate is committed under `tests/fixtures/tls` (expires 2126). The certificate and key are checked as a pair before the store opens.
 - Rejected:
   - A JWT library: a runtime dependency for what Node's crypto already verifies.
   - Unioning partially overlapping patterns: it would grant namespaces neither side named alone.
   - Refetching keys on every miss: forged key ids or an outage would turn every request into an issuer call.
   - Generating the test certificate at test time: it needs openssl on every runner.
+  - A configured public base URL for the challenge: a contract option for what the Host already says; a spoofed Host only misleads the client that sent it.
 
 ## 2026-10-25 — HTTP service as built (S8)
 
