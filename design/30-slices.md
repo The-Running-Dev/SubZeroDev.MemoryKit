@@ -116,7 +116,7 @@ Acceptance:
 Out of scope: OIDC, TLS, MCP.
 
 ## S9 — Remote access over TLS with OIDC
-Status: todo
+Status: done
 Delivers: Applications on other machines reach the service over HTTPS with tokens from a standard identity provider, and can only do what their scopes grant.
 Touches: authn (OidcAuthenticator, scope parsing, ceiling); access (parseScopeClaim, intersectGrants); server (TLS, remote profile, protected-resource metadata); cli (serve with `--tls-cert`, `--tls-key`, `--oidc-issuer`, `--oidc-audience`, `--oidc-ceiling`); conformance (HTTP driver over TLS against a local test issuer)
 Depends on: S8

@@ -14,7 +14,13 @@ export {
   type OpenService,
   type StoreConfig,
 } from './sdk/index.ts';
-export { LocalTokenAuthenticator, bearerToken, type Authenticator } from './authn/index.ts';
+export {
+  LocalTokenAuthenticator,
+  OidcAuthenticator,
+  bearerToken,
+  type Authenticator,
+  type OidcOptions,
+} from './authn/index.ts';
 export { handle, problemResponse, type HttpRequest, type HttpResponse } from './http/index.ts';
 export { isLoopback, serve, type ServeOptions } from './server/index.ts';
 export { SqliteStorage, type SqliteStorageOptions } from './storage-sqlite/index.ts';

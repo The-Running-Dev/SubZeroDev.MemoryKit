@@ -10,6 +10,25 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-25 — Remote access as built (S9)
+
+- Context: S9 adds TLS, the remote profile and OIDC bearer tokens. The contract fixes the shapes but not the token rules, key handling or how scopes become grants.
+- Chosen:
+  - Signatures RS256/384/512, PS256/384/512, ES256/384 and EdDSA, with Node's crypto only. `none` and HMAC are refused.
+  - Keys come from the issuer's discovery document and JWKS. They are trusted for 10 minutes after a fetch and used until then even when the issuer is down. A key miss refreshes at most once every 30 seconds. With no usable key the answer is 503 `AuthenticationUnavailable`; an unknown key while keys are fresh is 401.
+  - `iss` must equal the configured issuer exactly, `aud` must include the audience, `exp` and `nbf` allow 60 seconds of clock skew, and `sub` (at most 256 characters) is the principal id.
+  - Only `mk:<permission>:<pattern>` scope items grant anything; others are ignored. Each permission takes the narrower of its pattern and a ceiling pattern holding it. Patterns that only partly overlap grant nothing.
+  - `OidcAuthenticator` also takes optional `keyTtlMs`, `minRefreshIntervalMs` and `fetch`, beyond the contract's options.
+  - The issuer must be https, or http on a loopback host (for tests and local issuers).
+  - Protected-resource metadata has `resource` set to the audience, one authorization server and header bearer only. Remote 401s carry `WWW-Authenticate: Bearer resource_metadata="…"`.
+  - TLS works with either profile; without it only loopback is allowed. CLI `serve` takes `--tls-cert`/`--tls-key` and `--oidc-issuer`/`--oidc-audience`/`--oidc-ceiling`, each group all or none.
+  - A self-signed localhost certificate is committed under `tests/fixtures/tls` (expires 2126).
+- Rejected:
+  - A JWT library: a runtime dependency for what Node's crypto already verifies.
+  - Unioning partially overlapping patterns: it would grant namespaces neither side named alone.
+  - Refetching keys on every miss: forged key ids or an outage would turn every request into an issuer call.
+  - Generating the test certificate at test time: it needs openssl on every runner.
+
 ## 2026-10-25 — HTTP service as built (S8)
 
 - **Context:** S8 serves the store over HTTP API v1 with local tokens. The design left the listen default, Origin handling, body limits, status mapping for non-exported history, and the token CLI shape to the build.

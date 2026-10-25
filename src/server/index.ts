@@ -1,16 +1,18 @@
-// The local service (S8): HTTP API v1 over node:http, local tokens, loopback only. TLS and
-// the remote profile arrive in S9.
+// The service: HTTP API v1 over node:http, or node:https with TLS. The local profile takes
+// local tokens; the remote profile (S9) takes OIDC bearer tokens and requires TLS.
 
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { readFileSync } from 'node:fs';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createServer as createTlsServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
 import type { Grant } from '../access/index.ts';
-import { LocalTokenAuthenticator } from '../authn/index.ts';
+import { LocalTokenAuthenticator, type Authenticator } from '../authn/index.ts';
+import { OidcAuthenticator } from '../authn/oidc.ts';
 import { handle, problemResponse, type HttpResponse } from '../http/index.ts';
 import {
   ForbiddenError,
   LimitExceededError,
   StoreUnavailableError,
-  UnsupportedError,
   ValidationFailedError,
 } from '../model/index.ts';
 import { openService, type StoreConfig } from '../sdk/index.ts';
@@ -48,14 +50,37 @@ function checkOptions(opts: ServeOptions): void {
   if (!Number.isInteger(listen.port) || listen.port < 0 || listen.port > 65535) {
     throw invalid('listen.port', 'invalid');
   }
-  if (opts.tls !== undefined || opts.auth?.profile === 'remote') {
-    throw new UnsupportedError('TLS and remote authentication are not available yet', {
-      capability: 'server.remote',
-    });
+  const tls = opts.tls;
+  if (
+    tls !== undefined &&
+    (typeof tls?.certFile !== 'string' ||
+      tls.certFile === '' ||
+      typeof tls.keyFile !== 'string' ||
+      tls.keyFile === '')
+  ) {
+    throw invalid('tls', 'invalid');
   }
-  if (opts.auth?.profile !== 'local') throw invalid('auth.profile', 'unsupported');
+  const auth = opts.auth;
+  if (auth?.profile === 'remote') {
+    if (tls === undefined) throw invalid('tls', 'required');
+    if (typeof auth.audience !== 'string' || auth.audience === '') {
+      throw invalid('auth.audience', 'required');
+    }
+    if (!Array.isArray(auth.ceiling)) throw invalid('auth.ceiling', 'not_a_list');
+    let issuer: URL;
+    try {
+      issuer = new URL(auth.issuer);
+    } catch {
+      throw invalid('auth.issuer', 'invalid');
+    }
+    // Keys fetched in clear could be swapped, so plain http is only for an issuer on this host.
+    const local = issuer.protocol === 'http:' && isLoopback(issuer.hostname);
+    if (issuer.protocol !== 'https:' && !local) throw invalid('auth.issuer', 'https_required');
+  } else if (auth?.profile !== 'local') {
+    throw invalid('auth.profile', 'unsupported');
+  }
   // Without TLS a token would cross the network in clear, so only loopback is allowed.
-  if (!isLoopback(listen.host)) throw invalid('tls', 'required');
+  if (tls === undefined && !isLoopback(listen.host)) throw invalid('tls', 'required');
   const origins = opts.allowedOrigins;
   if (
     origins !== undefined &&
@@ -132,13 +157,36 @@ function readBody(req: IncomingMessage, res: ServerResponse): Promise<string> {
   });
 }
 
+function readTls(tls: { certFile: string; keyFile: string }): { cert: Buffer; key: Buffer } {
+  try {
+    return { cert: readFileSync(tls.certFile), key: readFileSync(tls.keyFile) };
+  } catch {
+    throw invalid('tls', 'unreadable');
+  }
+}
+
+const METADATA_PATH = '/.well-known/oauth-protected-resource';
+
 export async function serve(opts: ServeOptions): Promise<{ url: string; close(): Promise<void> }> {
   checkOptions(opts);
+  const tls = opts.tls === undefined ? undefined : readTls(opts.tls);
+  const remote = opts.auth.profile === 'remote' ? opts.auth : undefined;
+  // Built before the store opens, so a bad ceiling fails without side effects.
+  const oidc =
+    remote === undefined
+      ? undefined
+      : new OidcAuthenticator({
+          issuer: remote.issuer,
+          audience: remote.audience,
+          ceiling: remote.ceiling,
+        });
   const opened = await openService(opts.store);
   const { service, tokens } = opened;
-  const authenticator = new LocalTokenAuthenticator(tokens);
+  const authenticator: Authenticator = oidc ?? new LocalTokenAuthenticator(tokens);
   const origins = new Set(opts.allowedOrigins ?? []);
   const inFlight = new Set<Promise<void>>();
+  // Set once listening; the metadata and the 401 challenge name it.
+  let url = '';
 
   async function respond(req: IncomingMessage, res: ServerResponse): Promise<void> {
     let response: HttpResponse;
@@ -149,33 +197,47 @@ export async function serve(opts: ServeOptions): Promise<{ url: string; close():
       if (origin !== null && !origins.has(origin)) {
         throw new ForbiddenError('The request origin is not allowed', { reason: 'origin' });
       }
+      const path = (req.url ?? '/').split('?')[0]!;
+      if (remote !== undefined && path === METADATA_PATH && req.method === 'GET') {
+        req.resume();
+        send(res, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            resource: remote.audience,
+            authorization_servers: [remote.issuer],
+            bearer_methods_supported: ['header'],
+          }),
+        });
+        return;
+      }
       const principal = await authenticator.authenticate(headers);
       const body = await readBody(req, res);
       response = await handle(service.as(principal), {
         method: req.method ?? 'GET',
-        path: (req.url ?? '/').split('?')[0]!,
+        path,
         headers,
         body,
       });
     } catch (error) {
       response = problemResponse(error);
+      if (remote !== undefined && response.status === 401) {
+        response.headers['www-authenticate'] = `Bearer resource_metadata="${url}${METADATA_PATH}"`;
+      }
     }
-    if (res.destroyed) return;
-    res.writeHead(response.status, {
-      ...response.headers,
-      'content-length': String(Buffer.byteLength(response.body)),
-    });
-    res.end(response.body);
+    send(res, response);
   }
 
-  const server = createServer((req, res) => {
+  const onRequest = (req: IncomingMessage, res: ServerResponse): void => {
     const pending = respond(req, res).catch(() => {
       if (!res.headersSent) res.writeHead(500);
       res.end();
     });
     inFlight.add(pending);
     void pending.finally(() => inFlight.delete(pending));
-  });
+  };
+  const server: Server =
+    tls === undefined ? createServer(onRequest) : createTlsServer(tls, onRequest);
 
   try {
     await new Promise<void>((resolve, reject) => {
@@ -195,7 +257,7 @@ export async function serve(opts: ServeOptions): Promise<{ url: string; close():
 
   const address = server.address() as AddressInfo;
   const host = address.family === 'IPv6' ? `[${address.address}]` : address.address;
-  const url = `http://${host}:${address.port}`;
+  url = `${tls === undefined ? 'http' : 'https'}://${host}:${address.port}`;
 
   // Exports that missed their write-time wait are retried in the background.
   const drainTimer = setInterval(() => {
@@ -217,4 +279,13 @@ export async function serve(opts: ServeOptions): Promise<{ url: string; close():
     return closing;
   };
   return { url, close };
+}
+
+function send(res: ServerResponse, response: HttpResponse): void {
+  if (res.destroyed) return;
+  res.writeHead(response.status, {
+    ...response.headers,
+    'content-length': String(Buffer.byteLength(response.body)),
+  });
+  res.end(response.body);
 }
