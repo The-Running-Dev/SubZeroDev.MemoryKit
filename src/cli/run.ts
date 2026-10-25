@@ -335,7 +335,13 @@ async function openClient(
   if (name !== undefined) {
     token = (deps.env ?? process.env)[name];
     if (token === undefined || token === '') {
-      throw new UsageError(`The environment variable ${name} is not set`);
+      // A token pasted in place of the name must not be echoed back.
+      const shown = /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) && !name.startsWith('mk_') ? name : '';
+      throw new UsageError(
+        shown === ''
+          ? '--token-env must name an environment variable that is set'
+          : `The environment variable ${shown} is not set`
+      );
     }
   }
   const client = (deps.connect ?? connect)(values.url, token === undefined ? {} : { token });

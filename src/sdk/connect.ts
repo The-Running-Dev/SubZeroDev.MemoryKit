@@ -52,6 +52,9 @@ export function connect(url: string, opts: ConnectOptions = {}): MemoryClient {
       reason: 'unsupported_scheme',
     });
   }
+  if (base.username !== '' || base.password !== '' || base.search !== '' || base.hash !== '') {
+    throw new ValidationFailedError('Invalid url: invalid', { field: 'url', reason: 'invalid' });
+  }
   const headers = new Headers({ accept: 'application/json' });
   if (opts.token !== undefined) {
     try {

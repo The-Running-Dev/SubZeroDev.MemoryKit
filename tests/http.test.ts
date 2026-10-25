@@ -264,6 +264,7 @@ describe('S8 local HTTP service', () => {
     assert.equal(response.status, 404);
     assert.equal((await problem(response)).code, 'NotFound');
     assert.throws(() => connect('ftp://example'), { code: 'ValidationFailed' });
+    assert.throws(() => connect(`${url}?x=1`), { code: 'ValidationFailed' });
     await assert.rejects(connect('http://127.0.0.1:1', { token: secret }).status(), {
       code: 'StoreUnavailable',
     });

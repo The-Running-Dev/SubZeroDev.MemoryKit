@@ -28,8 +28,11 @@ export interface ServeOptions {
 export const MAX_BODY_BYTES = 4 * 1024 * 1024;
 const DRAIN_INTERVAL_MS = 30_000;
 
+const bareHost = (host: string): string =>
+  host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+
 export function isLoopback(host: string): boolean {
-  const bare = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+  const bare = bareHost(host);
   return bare === 'localhost' || bare === '::1' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(bare);
 }
 
@@ -177,7 +180,7 @@ export async function serve(opts: ServeOptions): Promise<{ url: string; close():
   try {
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
-      server.listen(opts.listen.port, opts.listen.host, () => {
+      server.listen(opts.listen.port, bareHost(opts.listen.host), () => {
         server.off('error', reject);
         resolve();
       });
