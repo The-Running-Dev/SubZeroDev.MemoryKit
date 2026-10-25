@@ -337,6 +337,8 @@ Domain errors return `isError: true` with `structuredContent: { code, retryable,
 
 The commands are `init`, `create`, `get`, `update`, `archive`, `restore`, `tombstone`, `supersede`, `purge`, `search`, `history`, `revision`, `operation`, `status`, `namespace get|set`, `history-sync`, `token create|list|revoke`, `serve` and `mcp` (stdio).
 
+`create`, `update`, `supersede`, `archive`, `restore` and `tombstone` take `--provenance <json>`, the service's `Provenance` object; the service validates it like any other input. `purge` and `search` refuse it as a usage error.
+
 `search` rejects `--operation-id`, `--expected-revision` and `--budget-ms` as usage errors
 (exit 2), before opening a store or connecting to a service. These flags do not affect search.
 

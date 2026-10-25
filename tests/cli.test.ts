@@ -130,6 +130,118 @@ describe('cli', () => {
     assert.equal(runCli(['update', '--store', store, '--expected-revision', '2']).status, 2);
   });
 
+  it('provenance on create, update, supersede and transitions, refused on purge and search', () => {
+    const store = tempDir();
+    assert.equal(runCli(['init', store]).status, 0);
+    const provenance = {
+      origin: { kind: 'agent', name: 'claude-code', version: '2.1' },
+      reason: 'chosen in review',
+      evidence: [{ ref: 'git:abc123:design/10-design.md', note: 'section 4' }],
+    };
+    const created = runCli([
+      'create',
+      '--store',
+      store,
+      '--namespace',
+      'demo',
+      '--kind',
+      'decision',
+      '--content',
+      'v1',
+      '--provenance',
+      JSON.stringify(provenance),
+      '--json',
+    ]);
+    assert.equal(created.status, 0, created.stderr);
+    const id = JSON.parse(created.stdout).memory.id as string;
+    const read = () => JSON.parse(runCli(['get', id, '--store', store, '--json']).stdout);
+    assert.deepEqual(read().provenance, provenance);
+
+    const updated = { reason: 'reworded', evidence: [] };
+    const update = runCli([
+      'update',
+      id,
+      '--store',
+      store,
+      '--expected-revision',
+      '1',
+      '--content',
+      'v2',
+      '--provenance',
+      JSON.stringify(updated),
+    ]);
+    assert.equal(update.status, 0, update.stderr);
+    assert.deepEqual(read().provenance, updated);
+
+    const archived = { reason: 'replaced soon', evidence: [] };
+    const archive = runCli([
+      'archive',
+      id,
+      '--store',
+      store,
+      '--expected-revision',
+      '2',
+      '--provenance',
+      JSON.stringify(archived),
+    ]);
+    assert.equal(archive.status, 0, archive.stderr);
+    assert.deepEqual(read().provenance, archived);
+    assert.equal(runCli(['restore', id, '--store', store, '--expected-revision', '3']).status, 0);
+
+    const correction = { reason: 'corrected', evidence: [{ ref: `memory:${id}` }] };
+    const superseded = runCli([
+      'supersede',
+      id,
+      '--store',
+      store,
+      '--expected-revision',
+      '4',
+      '--kind',
+      'decision',
+      '--content',
+      'v3',
+      '--provenance',
+      JSON.stringify(correction),
+      '--json',
+    ]);
+    assert.equal(superseded.status, 0, superseded.stderr);
+    assert.deepEqual(JSON.parse(superseded.stdout).memory.provenance, correction);
+
+    // Bad JSON and unknown fields are domain errors; purge and search refuse the flag.
+    const invalid = (text: string) =>
+      runCli([
+        'create',
+        '--store',
+        store,
+        '--namespace',
+        'demo',
+        '--kind',
+        'note',
+        '--content',
+        'x',
+        '--provenance',
+        text,
+      ]);
+    const notJson = invalid('{');
+    assert.equal(notJson.status, 1);
+    assert.equal(JSON.parse(notJson.stderr).details.field, 'provenance');
+    const unknown = invalid('{"author": "x"}');
+    assert.equal(unknown.status, 1);
+    assert.equal(JSON.parse(unknown.stderr).code, 'ValidationFailed');
+    const purge = runCli([
+      'purge',
+      id,
+      '--store',
+      store,
+      '--expected-revision',
+      '5',
+      '--provenance',
+      '{}',
+    ]);
+    assert.equal(purge.status, 2);
+    assert.equal(runCli(['search', '--store', store, '--provenance', '{}']).status, 2);
+  });
+
   it('S3.2 a write with history pending exits 3, and history-sync reports the queue', async () => {
     const store = tempDir();
     assert.equal(runCli(['init', store]).status, 0);

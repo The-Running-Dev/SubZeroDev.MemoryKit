@@ -19,6 +19,7 @@ import {
   type LinkType,
   type MemoryState,
   type Permission,
+  type Provenance,
   type SearchQuery,
   type SearchResult,
 } from '../model/index.ts';
@@ -29,6 +30,7 @@ import type {
   CreateInput,
   MemoryClient,
   SupersedeInput,
+  TransitionInput,
   UpdateInput,
   WriteOptions,
   WriteOutcome,
@@ -66,15 +68,16 @@ Commands:
   init <dir>                       Create a store in <dir>
   create --store <dir> --namespace <ns> --kind <kind> --content <text>
          [--content-type <type>] [--key <key>] [--metadata <json>]
-         [--link <type>:<id>]... [--operation-id <id>]
+         [--link <type>:<id>]... [--provenance <json>] [--operation-id <id>]
   update <id> --store <dir> --expected-revision <n>
          [--kind <kind>] [--content <text>] [--content-type <type>]
-         [--metadata <json>] [--link <type>:<id>]... [--operation-id <id>]
-  archive|restore|tombstone <id> --store <dir> --expected-revision <n>
+         [--metadata <json>] [--link <type>:<id>]... [--provenance <json>]
          [--operation-id <id>]
+  archive|restore|tombstone <id> --store <dir> --expected-revision <n>
+         [--provenance <json>] [--operation-id <id>]
   supersede <id> --store <dir> --expected-revision <n> --kind <kind> --content <text>
          [--namespace <ns>] [--content-type <type>] [--key <key>] [--metadata <json>]
-         [--link <type>:<id>]... [--operation-id <id>]
+         [--link <type>:<id>]... [--provenance <json>] [--operation-id <id>]
                                    Replace <id> with a new memory that supersedes it
   purge <id> --store <dir> --expected-revision <n> [--operation-id <id>]
                                    Remove a memory and report each place it was held
@@ -100,6 +103,9 @@ Commands:
   token list --store <dir>
   token revoke <token-id> --store <dir>
 
+--provenance takes {"origin": {"kind", "name", "version"}, "reason", "evidence": [{"ref",
+"note"}]}, every field optional.
+
 Exit codes: 0 success, 3 success with history pending, 1 domain error, 2 usage error.
 
 Options:
@@ -117,6 +123,7 @@ const OPTIONS = {
   'content-type': { type: 'string' },
   metadata: { type: 'string' },
   link: { type: 'string', multiple: true },
+  provenance: { type: 'string' },
   'operation-id': { type: 'string' },
   'expected-revision': { type: 'string' },
   'history-policy': { type: 'string' },
@@ -181,6 +188,19 @@ function parseMetadata(text: string | undefined): CreateInput['metadata'] {
   }
 }
 
+// Shaped like the service's provenance; the service checks every field.
+function parseProvenance(text: string | undefined): Provenance | undefined {
+  if (text === undefined) return undefined;
+  try {
+    return JSON.parse(text) as Provenance;
+  } catch {
+    throw new ValidationFailedError('Invalid provenance: invalid_json', {
+      field: 'provenance',
+      reason: 'invalid_json',
+    });
+  }
+}
+
 function parseLinks(items: string[] | undefined): Link[] | undefined {
   if (items === undefined) return undefined;
   return items.map((item) => {
@@ -232,6 +252,8 @@ function newMemory(values: Values): Omit<CreateInput, 'namespace'> {
   if (metadata !== undefined) input.metadata = metadata;
   const links = parseLinks(values.link);
   if (links !== undefined) input.links = links;
+  const provenance = parseProvenance(values.provenance);
+  if (provenance !== undefined) input.provenance = provenance;
   return input;
 }
 
@@ -541,6 +563,8 @@ export async function run(
         if (metadata !== undefined) input.metadata = metadata;
         const links = parseLinks(values.link);
         if (links !== undefined) input.links = links;
+        const provenance = parseProvenance(values.provenance);
+        if (provenance !== undefined) input.provenance = provenance;
         const outcome = await withStore(values, deps, (client) =>
           client.update(input, writeOptions(values))
         );
@@ -553,10 +577,12 @@ export async function run(
         const [id] = only(rest, 1, `${command} <id>`);
         const flag = RECORD_FLAGS.find((name) => values[name as keyof Values] !== undefined);
         if (flag !== undefined) throw new UsageError(`${command} does not take --${flag}`);
-        const input = {
+        const input: TransitionInput = {
           id: id!,
           expectedRevision: parseRevision(required(values, 'expected-revision')),
         };
+        const provenance = parseProvenance(values.provenance);
+        if (provenance !== undefined) input.provenance = provenance;
         const outcome = await withStore(values, deps, (client) =>
           client[command](input, writeOptions(values))
         );
@@ -582,7 +608,8 @@ export async function run(
       case 'purge': {
         const [id] = only(rest, 1, 'purge <id>');
         const flag = RECORD_FLAGS.find((name) => values[name as keyof Values] !== undefined);
-        if (flag !== undefined) throw new UsageError(`purge does not take --${flag}`);
+        const purgeFlag = flag ?? (values.provenance === undefined ? undefined : 'provenance');
+        if (purgeFlag !== undefined) throw new UsageError(`purge does not take --${purgeFlag}`);
         const input = {
           id: id!,
           expectedRevision: parseRevision(required(values, 'expected-revision')),
@@ -607,6 +634,7 @@ export async function run(
           'content',
           'content-type',
           'link',
+          'provenance',
           'operation-id',
           'expected-revision',
           'budget-ms',
