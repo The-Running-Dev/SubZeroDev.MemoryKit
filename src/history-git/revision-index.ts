@@ -39,16 +39,31 @@ export class RevisionIndex {
   private offset = 0; // bytes of the file already read
   private head: string | null = null; // the commit the chain below ends at
   private chain = new Map<string, IndexEntry[]>(); // by dir, oldest first
+  private readonly verified = new WeakSet<IndexEntry>();
+  private readonly unchecked = new Set<IndexEntry>(); // on this chain, not yet checked against Git
 
   constructor(path: string) {
     this.path = path;
   }
 
-  // The entries for a directory on the branch whose head is `head`, oldest first, or null when
-  // the index cannot tell: some commit between `head` and the root is not in it.
-  lookup(head: string, dir: string): IndexEntry[] | null {
+  // Candidate entries for a directory, oldest first, plus all unchecked entries on the indexed
+  // chain. Null when a commit on that chain is missing. The caller must verify the unchecked
+  // labels and parent links against Git before treating a candidate set as complete.
+  lookup(
+    head: string,
+    dir: string
+  ): { entries: IndexEntry[]; unchecked: ReadonlySet<IndexEntry> } | null {
     if (head !== this.head && !this.advance(head)) return null;
-    return this.chain.get(dir) ?? [];
+    return { entries: this.chain.get(dir) ?? [], unchecked: this.unchecked };
+  }
+
+  // Only the caller's successful comparison with Git can establish completeness. A checksum
+  // cannot: a well-formed entry can mislabel a commit or skip its real parent.
+  confirm(entries: IndexEntry[]): void {
+    for (const entry of entries) {
+      this.verified.add(entry);
+      this.unchecked.delete(entry);
+    }
   }
 
   // Records a commit this process has just put on the branch. A failure only costs a rebuild.
@@ -71,6 +86,7 @@ export class RevisionIndex {
     for (const entry of commits) this.entries.set(entry.commit, entry);
     this.head = null;
     this.chain = new Map();
+    this.unchecked.clear();
     const text = HEADER + commits.map(line).join('');
     const temporary = `${this.path}.${process.pid}.tmp`;
     try {
@@ -104,8 +120,12 @@ export class RevisionIndex {
       walked.push(entry);
       commit = entry.parent;
     }
-    if (commit === null) this.chain = new Map();
+    if (commit === null) {
+      this.chain = new Map();
+      this.unchecked.clear();
+    }
     for (const entry of walked.reverse()) {
+      if (!this.verified.has(entry)) this.unchecked.add(entry);
       const list = this.chain.get(entry.dir);
       if (list) list.push(entry);
       else this.chain.set(entry.dir, [entry]);

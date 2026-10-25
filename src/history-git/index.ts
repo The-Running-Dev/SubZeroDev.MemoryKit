@@ -343,9 +343,9 @@ export class GitHistory implements HistoryProvider {
   }
 
   // A memory's revisions, oldest first, or only the one asked for. The revision index names the
-  // commits; each is then read from Git and checked against its index entry. An index with a gap
-  // is rebuilt from the branch, and one that disagrees with a commit is rebuilt and tried once
-  // more before the branch is scanned as if there were no index.
+  // commits; each is then read from Git and checked against its index entry. Listing also checks
+  // every unverified branch entry before excluding commits. An index with a gap or a mismatch
+  // is rebuilt and tried once more before the branch is scanned as if there were no index.
   private async revisions(
     memoryId: MemoryId,
     ns: Namespace,
@@ -369,11 +369,17 @@ export class GitHistory implements HistoryProvider {
           entries = this.index.lookup(head, dir);
           if (entries === null) break;
         }
-        const chosen = wanted(entries);
+        const chosen = wanted(entries.entries);
         // A revision the index does not hold is looked for on the branch itself.
         if (revision !== null && chosen.length === 0) break;
-        const loaded = await this.load(chosen, dir, revision !== null);
-        if (loaded !== null) return loaded;
+        // Before list can exclude any commit, check the whole indexed chain, including parent
+        // links. Otherwise a valid-checksum wrong memory/directory can silently hide a revision.
+        const unchecked = revision === null ? [...entries.unchecked] : [];
+        const loaded = await this.load(chosen, dir, revision !== null, unchecked);
+        if (loaded !== null) {
+          this.index.confirm(unchecked);
+          return loaded;
+        }
         await this.rebuildIndex(head);
       }
       const scanned = (await this.log([head, '--', `${dir}/record.json`])).reverse();
@@ -418,27 +424,47 @@ export class GitHistory implements HistoryProvider {
   }
 
   // Reads each entry's commit and record.json, and its content when asked, with one cat-file
-  // process. Null when a commit is not the revision its entry names.
+  // process, together with any branch entries whose labels and parents still need verification.
+  // Null when a commit is not the revision its entry names or its indexed parent is wrong.
   private async load(
     entries: IndexEntry[],
     dir: string,
-    content: boolean
+    content: boolean,
+    unchecked: IndexEntry[] = []
   ): Promise<Loaded[] | null> {
-    if (entries.length === 0) return [];
+    if (entries.length === 0 && unchecked.length === 0) return [];
     const files = content
       ? Object.values(EXTENSIONS).map((extension) => `content.${extension}`)
       : [];
-    const specs = entries.flatMap(({ commit }) => [
-      commit,
-      `${commit}:${dir}/record.json`,
-      ...files.map((file) => `${commit}:${dir}/${file}`),
-    ]);
+    const specs = [
+      ...unchecked.map(({ commit }) => commit),
+      ...entries.flatMap(({ commit }) => [
+        commit,
+        `${commit}:${dir}/record.json`,
+        ...files.map((file) => `${commit}:${dir}/${file}`),
+      ]),
+    ];
     const objects = await this.batch(specs);
+    for (const [i, entry] of unchecked.entries()) {
+      const object = objects[i];
+      const commit = object == null ? null : parseCommit(entry.commit, object);
+      const headers = object?.slice(0, object.indexOf('\n\n'));
+      const parent = /^parent ([0-9a-f]+)$/m.exec(headers ?? '')?.[1] ?? null;
+      if (
+        commit === null ||
+        commit.memoryId !== entry.memoryId ||
+        commit.revision !== entry.revision ||
+        commit.dir !== entry.dir ||
+        parent !== entry.parent
+      ) {
+        return null;
+      }
+    }
     const loaded: Loaded[] = [];
     for (const [i, entry] of entries.entries()) {
       const [object, json, ...contents] = objects.slice(
-        i * (2 + files.length),
-        (i + 1) * (2 + files.length)
+        unchecked.length + i * (2 + files.length),
+        unchecked.length + (i + 1) * (2 + files.length)
       );
       const commit = object == null ? null : parseCommit(entry.commit, object);
       if (
