@@ -175,16 +175,16 @@ The drain runs:
 6. **Repeat** until no entries are left or the time budget is spent.
 
 **Git provider.** The repository is bare, and every change goes through plumbing commands:
-1. Read the branch head H.
-2. Scan the commits from H back to `after` for a `MemoryKit-Operation` trailer matching the entry. If one is found, return that commit.
+1. Read the branch head H. When `after` is the commit this provider last moved the branch to, H is taken to be `after` without reading it.
+2. Scan the commits from H back to `after` for a `MemoryKit-Operation` trailer matching the entry. If one is found, return that commit. When H is `after` there is nothing to scan.
 3. Otherwise:
-   1. Write the record and content blobs.
-   2. Build the tree in a temporary index.
+   1. Write the record and content blobs with one `hash-object`. The format file is written only with the first commit.
+   2. Build the tree in a temporary index. The provider keeps the index between exports and reads H's tree into it again only when H is not its own last commit.
    3. Create the commit with `commit-tree`, using a fixed author and committer and the revision's timestamp.
    4. Move the branch from H to the new commit with an atomic compare-and-swap (`update-ref <new> <H>`).
-4. If the compare-and-swap fails, re-read and start again from step 1.
+4. If the compare-and-swap fails, re-read and start again from step 1. A failed export or a refused compare-and-swap discards the kept index.
 
-Hooks are disabled for these commands.
+A provider runs its exports one at a time. Hooks are disabled for these commands.
 
 **What each crash window leaves behind:**
 - **Before the storage commit:** the transaction is rolled back. Nothing is persisted and nothing is pending.

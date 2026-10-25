@@ -366,6 +366,110 @@ describe('git history', () => {
     assert.equal(existsSync(foreign), false);
   });
 
+  it('two drainers taking turns rescan when the other moved the branch, and keep every revision', async () => {
+    const recording = new RecordingHistory();
+    const service = await openService(tempDir(), recording);
+    const ids: string[] = [];
+    try {
+      const client = service.as(EMBEDDED_PRINCIPAL);
+      for (const ns of ['demo', 'other']) {
+        const created = await client.create({ namespace: ns, kind: 'note', content: 'r1' });
+        ids.push(created.memory.id);
+        for (let revision = 1; revision < 4; revision++) {
+          await client.update({
+            id: created.memory.id,
+            expectedRevision: revision,
+            content: `r${revision + 1}`,
+          });
+        }
+      }
+    } finally {
+      await service.close();
+    }
+    const entries = recording.handed;
+    assert.equal(entries.length, 8);
+    const repository = join(tempDir(), 'history.git');
+    const a = new GitHistory({ repository });
+    const b = new GitHistory({ repository });
+    await a.open();
+    await b.open();
+
+    // A, A, B, A, ... with `after` the last marked ref. Entry 5 was committed by B, which
+    // crashed before the mark: A, whose own commit is still `after`, takes that commit as the
+    // head, is refused by the compare-and-swap, and then finds B's commit.
+    const moves: string[] = [];
+    const git = (a as unknown as { git: (args: string[], exec?: object) => Promise<unknown> }).git;
+    (a as unknown as { git: typeof git }).git = function (this: unknown, args, exec) {
+      if (args[0] === 'update-ref') moves.push(args[2]!);
+      return git.call(this, args, exec);
+    };
+    const drainer = [a, a, b, a, a, b, a, a];
+    let after: string | null = null;
+    for (const [i, entry] of entries.entries()) {
+      if (i === 5) {
+        const crashed = await b.record({ ...entry, after });
+        moves.length = 0;
+        const found = await a.record({ ...entry, after });
+        assert.equal(found.historyRef, crashed.historyRef);
+        assert.equal(moves.length, 1, 'one refused compare-and-swap');
+        after = found.historyRef;
+        continue;
+      }
+      after = (await drainer[i]!.record({ ...entry, after })).historyRef;
+    }
+    // A replay of every entry against its own `after` makes no commit.
+    let previous: string | null = null;
+    for (const entry of entries) {
+      previous = (await b.record({ ...entry, after: previous })).historyRef;
+    }
+    assert.equal(previous, after);
+    assert.equal(commitCount(repository), 8);
+    for (const [i, id] of ids.entries()) {
+      const ns = i === 0 ? 'demo' : 'other';
+      const listed = await a.list(id, ns);
+      assert.deepEqual(
+        listed.map((item) => item.revision),
+        [1, 2, 3, 4]
+      );
+      for (const revision of [1, 2, 3, 4]) {
+        const snapshot = await b.get(id, ns, revision);
+        assert.equal(
+          snapshot !== null && 'content' in snapshot.record ? snapshot.record.content : null,
+          `r${revision}`
+        );
+      }
+    }
+    await a.close();
+    await b.close();
+  });
+
+  it('an export survives its scratch directory being removed, and close removes it', async () => {
+    const recording = new RecordingHistory();
+    const service = await openService(tempDir(), recording);
+    try {
+      const client = service.as(EMBEDDED_PRINCIPAL);
+      const created = await client.create({ namespace: 'demo', kind: 'note', content: 'a' });
+      await client.update({ id: created.memory.id, expectedRevision: 1, content: 'b' });
+      await client.update({ id: created.memory.id, expectedRevision: 2, content: 'c' });
+    } finally {
+      await service.close();
+    }
+    const repository = join(tempDir(), 'history.git');
+    const history = new GitHistory({ repository });
+    await history.open();
+    const scratch = () => (history as unknown as { scratch: string | null }).scratch;
+    let after: string | null = null;
+    for (const [i, entry] of recording.handed.entries()) {
+      if (i === 1) rmSync(scratch()!, { recursive: true, force: true });
+      after = (await history.record({ ...entry, after })).historyRef;
+    }
+    assert.equal(commitCount(repository), 3);
+    const last = scratch();
+    assert.ok(last !== null && existsSync(last));
+    await history.close();
+    assert.equal(existsSync(last), false);
+  });
+
   it('a missing git executable never blocks the queue', async () => {
     const dir = tempDir();
     const service = new MemoryService(

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -16,7 +16,6 @@ import {
 import {
   InternalError,
   UnsupportedContractVersionError,
-  newMemoryId,
   type ContentType,
   type MemoryId,
   type MemoryRecord,
@@ -72,6 +71,11 @@ export class GitHistory implements HistoryProvider {
   private readonly gitPath: string;
   private readonly author: { name: string; email: string };
   private ready = false;
+  // A scratch directory for the temporary index and blob files, and the commit whose tree that
+  // index holds: one this provider moved the branch to, or null when it must be read again.
+  private scratch: string | null = null;
+  private indexed: string | null = null;
+  private queue: Promise<unknown> = Promise.resolve();
 
   constructor(opts: GitHistoryOptions) {
     this.repository = opts.repository;
@@ -91,18 +95,38 @@ export class GitHistory implements HistoryProvider {
     }
   }
 
-  async close(): Promise<void> {}
+  async close(): Promise<void> {
+    await this.queue;
+    if (this.scratch !== null) rmSync(this.scratch, { recursive: true, force: true });
+    this.scratch = null;
+    this.indexed = null;
+  }
 
-  async record(entry: HistoryEntry): Promise<{ historyRef: string }> {
+  // Exports run one at a time per provider, since they share the temporary index.
+  record(entry: HistoryEntry): Promise<{ historyRef: string }> {
+    const run = this.queue.then(() => this.export(entry));
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async export(entry: HistoryEntry): Promise<{ historyRef: string }> {
     await this.ensureReady();
     if (entry.payload === null && entry.operation !== 'purge') {
       throw new InternalError('A history entry has no snapshot', { seq: entry.seq });
     }
     let refused = '';
     for (let attempt = 0; attempt < CAS_ATTEMPTS; attempt++) {
-      const head = await this.head();
-      const found = await this.findCommit(entry, head);
-      if (found) return { historyRef: found };
+      // When the previous export was this provider's own commit, that commit is taken as the
+      // head: nothing lies between it and `after`. If another writer has moved the branch since,
+      // the compare-and-swap is refused and the next attempt reads the head and scans.
+      let head: string | null;
+      if (attempt === 0 && this.indexed !== null && this.indexed === entry.after) {
+        head = this.indexed;
+      } else {
+        head = await this.head();
+        const found = await this.findCommit(entry, head);
+        if (found) return { historyRef: found };
+      }
       let commit: string;
       try {
         commit = await this.commit(entry, entry.payload, head);
@@ -120,7 +144,10 @@ export class GitHistory implements HistoryProvider {
       const moved = await this.git(['update-ref', this.ref, commit, head ?? ''], {
         allow: [128],
       });
-      if (moved.code === 0) return { historyRef: commit };
+      if (moved.code === 0) {
+        this.indexed = commit;
+        return { historyRef: commit };
+      }
       refused = moved.stderr.trim();
       if (!CAS_REFUSED.test(refused)) {
         throw new HistoryProviderError(`git update-ref failed: ${refused}`, true, {
@@ -209,9 +236,10 @@ export class GitHistory implements HistoryProvider {
   }
 
   // The commit already recorded for this entry, scanning back from the head to the previously
-  // exported commit, or the whole branch when that commit is not on it.
+  // exported commit, or the whole branch when that commit is not on it. Nothing lies between
+  // them when the head is that commit.
   private async findCommit(entry: HistoryEntry, head: string | null): Promise<string | null> {
-    if (head === null) return null;
+    if (head === null || head === entry.after) return null;
     const range = [head];
     if (entry.after !== null && (await this.isAncestor(entry.after, head))) {
       range.push(`^${entry.after}`);
@@ -243,58 +271,68 @@ export class GitHistory implements HistoryProvider {
     head: string | null
   ): Promise<string> {
     const dir = `${entry.namespace}/${entry.memoryId}`;
-    const index = join(tmpdir(), `memorykit-index-${newMemoryId()}`);
-    const env = { GIT_INDEX_FILE: index };
-    try {
+    if (this.scratch === null || !existsSync(this.scratch)) {
+      this.scratch = mkdtempSync(join(tmpdir(), 'memorykit-export-'));
+      this.indexed = null;
+    }
+    const scratch = this.scratch;
+    const env = { GIT_INDEX_FILE: join(scratch, 'index') };
+    // The index already holds the head's tree when this provider made that commit. From here it
+    // matches no commit until the compare-and-swap succeeds.
+    const indexed = this.indexed;
+    this.indexed = null;
+    if (indexed !== head || head === null) {
       if (head !== null) await this.git(['read-tree', head], { env });
       else await this.git(['read-tree', '--empty'], { env });
-      const files: [string, string][] = [
-        [FORMAT_PATH, `${FORMAT}\n`],
-        [
-          `${dir}/record.json`,
-          payload === null
-            ? recordJson({
-                id: entry.memoryId,
-                namespace: entry.namespace,
-                purged: true,
-                at: entry.at,
-              })
-            : recordJson(payload),
-        ],
-      ];
-      if (payload !== null && 'content' in payload) {
-        files.push([`${dir}/content.${EXTENSIONS[payload.contentType]}`, payload.content]);
-      }
-      const lines: string[] = [];
-      // A changed content type, or a policy that stopped keeping content, leaves no stale file.
-      for (const extension of Object.values(EXTENSIONS)) {
-        lines.push(`0 ${'0'.repeat(40)}\t${dir}/content.${extension}`);
-      }
-      for (const [path, text] of files) {
-        const blob = await this.git(['hash-object', '-w', '--no-filters', '--stdin'], {
-          stdin: text,
-        });
-        lines.push(`100644 ${blob.stdout.trim()}\t${path}`);
-      }
-      await this.git(['update-index', '--index-info'], { env, stdin: lines.join('\n') + '\n' });
-      const tree = (await this.git(['write-tree'], { env })).stdout.trim();
-      const parents = head === null ? [] : ['-p', head];
-      const message =
-        `${entry.operation} ${dir} r${entry.revision}\n\n` +
-        `MemoryKit-Operation: ${entry.operationId}\n` +
-        `MemoryKit-Memory: ${entry.memoryId}\n` +
-        `MemoryKit-Revision: ${entry.revision}\n` +
-        `MemoryKit-Actor: ${encodeURIComponent(entry.actor)}\n` +
-        `MemoryKit-Seq: ${entry.seq}\n`;
-      const dates = { GIT_AUTHOR_DATE: entry.at, GIT_COMMITTER_DATE: entry.at };
-      const created = await this.git(['commit-tree', '--no-gpg-sign', tree, ...parents], {
-        stdin: message,
-        env: dates,
-      });
-      return created.stdout.trim();
-    } finally {
-      rmSync(index, { force: true });
     }
+    // An existing head's tree already has the format file, which open() checked.
+    const files: [string, string][] = head === null ? [[FORMAT_PATH, `${FORMAT}\n`]] : [];
+    files.push([
+      `${dir}/record.json`,
+      payload === null
+        ? recordJson({ id: entry.memoryId, namespace: entry.namespace, purged: true, at: entry.at })
+        : recordJson(payload),
+    ]);
+    if (payload !== null && 'content' in payload) {
+      files.push([`${dir}/content.${EXTENSIONS[payload.contentType]}`, payload.content]);
+    }
+    const lines: string[] = [];
+    // A changed content type, or a policy that stopped keeping content, leaves no stale file.
+    for (const extension of Object.values(EXTENSIONS)) {
+      lines.push(`0 ${'0'.repeat(40)}\t${dir}/content.${extension}`);
+    }
+    // One hash-object writes every blob, read from files, and prints their ids in order.
+    const sources = files.map(([, text], i) => {
+      const source = join(scratch, `blob-${i}`);
+      writeFileSync(source, text, 'utf8');
+      return source;
+    });
+    const blobs = await this.git(['hash-object', '-w', '--no-filters', '--stdin-paths'], {
+      stdin: sources.join('\n') + '\n',
+    });
+    const ids = blobs.stdout.trim().split('\n');
+    if (ids.length !== files.length) {
+      throw new HistoryProviderError('git hash-object returned the wrong number of ids', true, {
+        reason: 'git_failed',
+      });
+    }
+    files.forEach(([path], i) => lines.push(`100644 ${ids[i]!.trim()}\t${path}`));
+    await this.git(['update-index', '--index-info'], { env, stdin: lines.join('\n') + '\n' });
+    const tree = (await this.git(['write-tree'], { env })).stdout.trim();
+    const parents = head === null ? [] : ['-p', head];
+    const message =
+      `${entry.operation} ${dir} r${entry.revision}\n\n` +
+      `MemoryKit-Operation: ${entry.operationId}\n` +
+      `MemoryKit-Memory: ${entry.memoryId}\n` +
+      `MemoryKit-Revision: ${entry.revision}\n` +
+      `MemoryKit-Actor: ${encodeURIComponent(entry.actor)}\n` +
+      `MemoryKit-Seq: ${entry.seq}\n`;
+    const dates = { GIT_AUTHOR_DATE: entry.at, GIT_COMMITTER_DATE: entry.at };
+    const created = await this.git(['commit-tree', '--no-gpg-sign', tree, ...parents], {
+      stdin: message,
+      env: dates,
+    });
+    return created.stdout.trim();
   }
 
   private async revisions(memoryId: MemoryId, ns: Namespace): Promise<Revision[]> {

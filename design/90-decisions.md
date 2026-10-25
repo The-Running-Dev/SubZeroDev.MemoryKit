@@ -9,6 +9,17 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-25 — Fewer git processes per exported revision
+
+- Context: the S12 baseline drained 15.6 revisions per second at 1k memories and 4.4 at 10k on CI Linux, and about 1.3 on Windows. A profile at 200 memories showed eleven `git` processes per export, each costing 66 to 84 ms on Windows, and a `read-tree` of the whole tree per export that grows with the repository.
+- Chosen:
+  - The provider remembers the commit it last moved the branch to and keeps its temporary index, which holds that commit's tree. When the entry's `after` is that commit, it skips reading the head, the scan and `read-tree`, and uses the commit as the compare-and-swap's old value. If another writer has moved the branch, the compare-and-swap is refused and the next attempt reads the head and scans as before, so a commit made by a drainer that crashed before its mark is still found.
+  - The scan is skipped whenever the head is `after`, since the range between them is empty.
+  - One `hash-object --stdin-paths` writes every blob, from files in the provider's scratch directory. The format file is written only with the first commit; later trees already hold it.
+  - Exports run one at a time per provider, since they share the index. Any failure or refused compare-and-swap discards the kept index.
+  - The happy path is five processes: `hash-object`, `update-index`, `write-tree`, `commit-tree` and `update-ref`. `bench/baseline.ts` now counts processes per exported and per retrieved revision and checks that every revision is a commit addressable by memory and revision.
+- Rejected: `git fast-import`, which writes one pack per run and has no compare-and-swap of its own; `update-index --add` from a worktree, which brings line-ending and filter conversion back; writing objects in-process, against plumbing-only access to the repository.
+
 ## 2026-10-25 — Package and baseline as built (S12)
 
 - Context: S12 needs an installed package exercised end to end on the CI matrix, a consumer limited to the public entry, and committed baseline numbers. Exporting each revision to Git spawns about ten `git` processes, which on the Windows development machine drains about 1.4 revisions per second, so 10k memories would take about two hours there.
