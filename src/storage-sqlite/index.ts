@@ -1,4 +1,6 @@
+import { randomBytes } from 'node:crypto';
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
+import type { Grant, Principal } from '../access/index.ts';
 import type {
   HistoryPolicy,
   HistoryQueue,
@@ -13,12 +15,15 @@ import type {
   StorageTransaction,
   StoredOutcome,
   StoredRow,
+  TokenInfo,
+  TokenStore,
   WriteBatch,
 } from '../contracts/index.ts';
 import {
   AlreadyExistsError,
   InternalError,
   MemoryKitError,
+  NotFoundError,
   RevisionConflictError,
   StoreBusyError,
   StoreUnavailableError,
@@ -234,7 +239,7 @@ function metadataText(metadata: Record<string, JsonValue>): string {
   return parts.join(' ');
 }
 
-export class SqliteStorage implements StorageProvider {
+export class SqliteStorage implements StorageProvider, TokenStore {
   readonly descriptor: ProviderDescriptor = {
     id: 'storage-sqlite',
     version: '0.1.0',
@@ -356,6 +361,74 @@ export class SqliteStorage implements StorageProvider {
         throw storageError(error, this.busyTimeoutMs);
       }
     });
+  }
+
+  // Tokens. The secret is random and only its SHA-256 is stored, so a lookup by hash
+  // compares nothing a caller controls against a stored secret.
+  issue(principalId: string, grants: Grant[]): Promise<{ tokenId: string; secret: string }> {
+    const tokenId = 'tok_' + randomBytes(12).toString('hex');
+    const secret = 'mk_' + randomBytes(32).toString('base64url');
+    return this.immediate((db) => {
+      db.prepare(
+        'INSERT INTO tokens (token_id, principal_id, grants, secret_hash, created_at) VALUES (?, ?, ?, ?, ?)'
+      ).run(
+        tokenId,
+        principalId,
+        JSON.stringify(grants),
+        sha256Hex(secret),
+        new Date().toISOString()
+      );
+      return { tokenId, secret };
+    });
+  }
+
+  verify(secret: string): Promise<Principal | null> {
+    return this.read((db) => {
+      const row = db
+        .prepare(
+          'SELECT principal_id, grants FROM tokens WHERE secret_hash = ? AND revoked_at IS NULL'
+        )
+        .get(sha256Hex(secret)) as Row | undefined;
+      if (!row) return null;
+      return {
+        id: String(row.principal_id),
+        profile: 'local',
+        grants: JSON.parse(String(row.grants)) as Grant[],
+      };
+    });
+  }
+
+  // Revoking a token twice is not an error; the first revocation time is kept.
+  revoke(tokenId: string): Promise<void> {
+    return this.immediate((db) => {
+      const row = db.prepare('SELECT revoked_at FROM tokens WHERE token_id = ?').get(tokenId) as
+        Row | undefined;
+      if (!row) throw new NotFoundError('Token not found', { tokenId });
+      if (row.revoked_at === null) {
+        db.prepare('UPDATE tokens SET revoked_at = ? WHERE token_id = ?').run(
+          new Date().toISOString(),
+          tokenId
+        );
+      }
+    });
+  }
+
+  list(): Promise<TokenInfo[]> {
+    return this.read((db) =>
+      (
+        db
+          .prepare(
+            'SELECT token_id, principal_id, grants, created_at, revoked_at FROM tokens ORDER BY created_at, token_id'
+          )
+          .all() as Row[]
+      ).map((row) => ({
+        tokenId: String(row.token_id),
+        principalId: String(row.principal_id),
+        grants: JSON.parse(String(row.grants)) as Grant[],
+        createdAt: String(row.created_at),
+        revokedAt: row.revoked_at === null ? null : String(row.revoked_at),
+      }))
+    );
   }
 
   write<T>(fn: (tx: StorageTransaction) => Promise<T>): Promise<T> {

@@ -1,6 +1,7 @@
 // Typed errors. Every error carries a code, whether it is retryable, and details that never
 // hold content or metadata values (invariant 18).
 
+import { isPlainObject } from './json.ts';
 import type { JsonValue } from './types.ts';
 
 export type ErrorCode =
@@ -130,6 +131,52 @@ export interface Problem {
   code: ErrorCode;
   retryable: boolean;
   details: ErrorDetails;
+}
+
+type ErrorClass = new (
+  message: string,
+  details?: ErrorDetails,
+  retryable?: boolean
+) => MemoryKitError;
+
+const ERRORS: Record<ErrorCode, ErrorClass> = {
+  ValidationFailed: ValidationFailedError,
+  LimitExceeded: LimitExceededError,
+  Unauthenticated: UnauthenticatedError,
+  AuthenticationUnavailable: AuthenticationUnavailableError,
+  Forbidden: ForbiddenError,
+  NotFound: NotFoundError,
+  AlreadyExists: AlreadyExistsError,
+  RevisionConflict: RevisionConflictError,
+  InvalidTransition: InvalidTransitionError,
+  IdempotencyMismatch: IdempotencyMismatchError,
+  HistoryNotRetained: HistoryNotRetainedError,
+  HistoryUnavailable: HistoryUnavailableError,
+  Unsupported: UnsupportedError,
+  UnsupportedContractVersion: UnsupportedContractVersionError,
+  StoreBusy: StoreBusyError,
+  StoreUnavailable: StoreUnavailableError,
+  StoreVersionTooNew: StoreVersionTooNewError,
+  Internal: InternalError,
+};
+
+// The typed error a problem body describes, so a remote client throws what an embedded one
+// would. A body that is not a MemoryKit problem is Internal.
+export function fromProblem(problem: unknown, status?: number): MemoryKitError {
+  if (
+    isPlainObject(problem) &&
+    typeof problem.code === 'string' &&
+    Object.hasOwn(ERRORS, problem.code)
+  ) {
+    const ErrorType = ERRORS[problem.code as ErrorCode];
+    const title = typeof problem.title === 'string' ? problem.title : problem.code;
+    const details = isPlainObject(problem.details) ? (problem.details as ErrorDetails) : {};
+    return new ErrorType(title, details, problem.retryable === true);
+  }
+  return new InternalError(
+    'The service returned an unexpected response',
+    status === undefined ? {} : { status }
+  );
 }
 
 // RFC 9457 problem body for an error. Anything that is not a MemoryKitError is Internal,

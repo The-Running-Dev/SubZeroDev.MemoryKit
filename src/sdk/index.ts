@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { EMBEDDED_PRINCIPAL, type Principal } from '../access/index.ts';
-import type { HistoryPolicy, HistoryProvider } from '../contracts/index.ts';
+import type { HistoryPolicy, HistoryProvider, TokenStore } from '../contracts/index.ts';
 import { StoreUnavailableError, UnsupportedError, ValidationFailedError } from '../model/index.ts';
 import { MemoryService, type MemoryClient, type ServiceConfig } from '../service/index.ts';
 import { SqliteStorage } from '../storage-sqlite/index.ts';
@@ -80,19 +80,61 @@ export async function initStore(config: StoreConfig): Promise<void> {
   await history?.close();
 }
 
-export async function openStore(
-  config: StoreConfig,
-  principal: Principal = EMBEDDED_PRINCIPAL
-): Promise<MemoryClient & { close(): Promise<void> }> {
+function existingDatabase(config: StoreConfig): string {
   const file = databasePath(config);
   if (!existsSync(file)) {
     throw new StoreUnavailableError('The directory is not a store', { reason: 'not_a_store' });
   }
+  return file;
+}
+
+export interface OpenService {
+  service: MemoryService;
+  tokens: TokenStore;
+  close(): Promise<void>;
+}
+
+// The service with its token store, for hosts that serve several principals.
+export async function openService(config: StoreConfig): Promise<OpenService> {
+  const file = existingDatabase(config);
   const history = await historyProvider(config);
-  const service = new MemoryService(new SqliteStorage({ path: file }), history, {
+  const storage = new SqliteStorage({ path: file });
+  const service = new MemoryService(storage, history, {
     ...config.service,
     defaultHistoryPolicy: config.defaultHistoryPolicy ?? config.service?.defaultHistoryPolicy,
   });
   await service.open();
-  return Object.assign(service.as(principal), { close: () => service.close() });
+  return { service, tokens: storage, close: () => service.close() };
 }
+
+export async function openStore(
+  config: StoreConfig,
+  principal: Principal = EMBEDDED_PRINCIPAL
+): Promise<MemoryClient & { close(): Promise<void> }> {
+  const { service, close } = await openService(config);
+  let client: MemoryClient;
+  try {
+    client = service.as(principal);
+  } catch (error) {
+    await close();
+    throw error;
+  }
+  return Object.assign(client, { close });
+}
+
+// The token store alone, for issuing and revoking tokens without opening history.
+export async function openTokenStore(
+  config: StoreConfig
+): Promise<TokenStore & { close(): Promise<void> }> {
+  const storage = new SqliteStorage({ path: existingDatabase(config) });
+  await storage.open();
+  return {
+    issue: (principalId, grants) => storage.issue(principalId, grants),
+    verify: (secret) => storage.verify(secret),
+    revoke: (tokenId) => storage.revoke(tokenId),
+    list: () => storage.list(),
+    close: () => storage.close(),
+  };
+}
+
+export { connect, type ConnectOptions } from './connect.ts';
