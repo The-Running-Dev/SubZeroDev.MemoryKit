@@ -109,13 +109,18 @@ export const SCENARIOS: Scenario[] = [
         await driver.create(store, { namespace: 'demo', kind: 'note', content: 'x' }, 'op-1')
       );
       const memory = created.memory as Record<string, unknown>;
-      assert.deepEqual(value(await driver.operation(store, 'op-1')), {
+      // A slow export can outlast historyWaitMs, so the write may report pending; the export
+      // still finishes before the store closes.
+      const operation = value(await driver.operation(store, 'op-1'));
+      assert.equal(typeof operation.historyRef, 'string');
+      if (created.history === 'persisted') assert.equal(operation.historyRef, created.historyRef);
+      assert.deepEqual(operation, {
         operationId: 'op-1',
         memoryId: memory.id,
         revision: 1,
         storage: 'persisted',
         history: 'persisted',
-        historyRef: created.historyRef,
+        historyRef: operation.historyRef,
       });
       problem(await driver.operation(store, 'op-unknown'), 'NotFound');
       const revisions = value(await driver.history(store, memory.id as string)) as unknown[];
