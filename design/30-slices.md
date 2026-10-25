@@ -47,7 +47,7 @@ Acceptance:
 Out of scope: Git, lifecycle operations other than create and update.
 
 ## S4 — Git records the history, and survives crashes without duplicate commits
-Status: todo
+Status: done
 Delivers: Revisions become readable commits in a bare Git repository. A crash at any point recovers without losing or duplicating a revision.
 Touches: history-git; sdk (git default, init creates `history.git`); service (provider health in status); conformance
 Depends on: S3

@@ -45,7 +45,7 @@ describe('cli', () => {
     assert.equal(create.status, 0, create.stderr);
     assert.equal(create.stderr, '');
     const outcome = JSON.parse(create.stdout);
-    assert.equal(outcome.history, 'not_required');
+    assert.equal(outcome.history, 'persisted', 'Git history is the default');
 
     const get = runCli(['get', outcome.memory.id, '--store', store, '--json']);
     assert.equal(get.status, 0, get.stderr);
@@ -184,7 +184,7 @@ describe('cli', () => {
     history.failing = false;
     const synced = await cli('history-sync', '--store', store, '--json');
     assert.equal(synced.status, 0, synced.stderr);
-    assert.deepEqual(JSON.parse(synced.stdout), { pending: 0, blocked: null });
+    assert.deepEqual(JSON.parse(synced.stdout), { pending: 0, blocked: null, lastError: null });
     const listed = await cli('history', outcome.memory.id, '--store', store);
     assert.equal(listed.status, 0, listed.stderr);
     assert.match(listed.stdout, /^1 {2}create /);
@@ -214,7 +214,7 @@ describe('cli', () => {
     assert.equal(blocked.status, 3, 'a blocked write exits 3 too');
   });
 
-  it('status, namespace and history commands without a history provider', () => {
+  it('status, namespace and history commands', () => {
     const store = tempDir();
     assert.equal(runCli(['init', store]).status, 0);
     const status = runCli(['status', '--store', store, '--json']);
@@ -222,8 +222,8 @@ describe('cli', () => {
     const parsed = JSON.parse(status.stdout);
     assert.equal(parsed.contractVersion, 1);
     assert.equal(parsed.storage.id, 'storage-sqlite');
-    assert.equal(parsed.history, null);
-    assert.deepEqual(parsed.historyQueue, { pending: 0, blocked: null });
+    assert.equal(parsed.history.id, 'history-git');
+    assert.deepEqual(parsed.historyQueue, { pending: 0, blocked: null, lastError: null });
 
     const set = runCli([
       'namespace',
@@ -256,6 +256,10 @@ describe('cli', () => {
       2
     );
 
+    assert.equal(
+      runCli(['namespace', 'set', 'demo', '--history-policy', 'none', '--store', store]).status,
+      0
+    );
     const created = runCli([
       'create',
       '--store',

@@ -10,6 +10,30 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-25 — Git export hardening from the S4 review (S4)
+- **Context:** Review of the S4 provider found ways an export could duplicate commits, write outside the repository, crash the host or block on an outage.
+- **Chosen:**
+  - The actor is percent-encoded in its `MemoryKit-Actor` trailer and decoded on read, so a principal id with a line break or comma cannot forge a trailer.
+  - Inherited `GIT_*` variables are dropped from the git environment; only the identity, index and prompt variables the provider sets are passed.
+  - Only an `update-ref` refusal that names a moved, existing or locked ref counts as contention; any other exit 128 fails with `git_failed`. The format check uses `ls-tree`, so a failed read is not taken as a missing format file.
+  - A failed object write during an attempt (two drainers writing the same loose object collide on Windows) retries the attempt.
+  - A provider error may carry `details.outage: true`. The drainer never blocks an entry for an outage, however many attempts it takes; `git_unavailable` is one.
+- **Rejected:**
+  - Rejecting control characters in principal ids at the service: tokens and OIDC subjects arrive in S8 and S9, and the provider should not depend on that.
+
+## 2026-10-25 — Git history as built (S4)
+- **Context:** S4 makes Git the default history and needs provider health in status; building it settled details the design left open.
+- **Chosen:**
+  - With no `history` config a store uses Git at `<path>/history.git`. `initStore` creates the repository, and providers load by dynamic import, so a store on `memory` or `none` never loads the Git module (S3.1 still holds).
+  - Provider health is `historyQueue.lastError`: the code of the oldest pending entry's last failed export (`git_unavailable`, `git_failed`, `contention`), read from the outbox. It is a contract addition to `HistoryQueue`, so it reaches `status()`, `syncHistory()` and the CLI (`history error:` line).
+  - The branch moves with `update-ref <ref> <new> <old>` (empty old value when the branch is absent). A refused swap exits 128; the export rescans for its commit and retries up to 8 times, then fails retryably with `contention`.
+  - A revision's `at` comes from `record.json` `updatedAt`, since Git dates keep whole seconds.
+  - A missing `git` executable does not stop a store opening: exports stay pending with `git_unavailable`. A repository of an unknown format does stop it, and `MemoryService.open` closes storage when the history provider fails to open.
+  - Every git call passes `-c core.hooksPath=<repo>/memorykit-no-hooks -c commit.gpgSign=false` and uses plumbing only.
+- **Rejected:**
+  - Holding the last provider error in the service: a CLI `status` in another process would never see it.
+  - `update-ref --stdin` transactions: the same compare-and-swap with more code.
+
 ## 2026-10-25 — Outbox and history surfaces as built (S3)
 
 - **Context:** S3 needed contract details the design leaves open: how the drain lease ends, how old operations go, how retries are counted, and who may call the new admin and status surfaces.

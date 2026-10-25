@@ -34,7 +34,7 @@ export const SCENARIOS: Scenario[] = [
         })
       );
       assert.equal(outcome.storage, 'persisted');
-      assert.equal(outcome.history, 'not_required');
+      assert.equal(outcome.history, 'persisted', 'Git history is the default');
       const memory = outcome.memory as Record<string, unknown>;
       assert.equal(memory.revision, 1);
       assert.equal(memory.state, 'active');
@@ -114,17 +114,18 @@ export const SCENARIOS: Scenario[] = [
         memoryId: memory.id,
         revision: 1,
         storage: 'persisted',
-        history: 'not_required',
-        historyRef: null,
+        history: 'persisted',
+        historyRef: created.historyRef,
       });
       problem(await driver.operation(store, 'op-unknown'), 'NotFound');
-      problem(await driver.history(store, memory.id as string), 'HistoryNotRetained');
+      const revisions = value(await driver.history(store, memory.id as string)) as unknown[];
+      assert.equal(revisions.length, 1);
 
       const status = value(await driver.status(store));
       assert.equal(status.contractVersion, 1);
       assert.equal((status.storage as Record<string, unknown>).id, 'storage-sqlite');
-      assert.equal(status.history, null);
-      assert.deepEqual(status.historyQueue, { pending: 0, blocked: null });
+      assert.equal((status.history as Record<string, unknown>).id, 'history-git');
+      assert.deepEqual(status.historyQueue, { pending: 0, blocked: null, lastError: null });
 
       assert.deepEqual(value(await driver.getNamespace(store, 'demo')), {
         name: 'demo',

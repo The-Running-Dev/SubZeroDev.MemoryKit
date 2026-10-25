@@ -190,7 +190,10 @@ function formatQueue(queue: HistoryQueue): string {
     queue.blocked === null
       ? 'none'
       : `seq ${queue.blocked.seq}, operation ${queue.blocked.operationId} (${queue.blocked.error})`;
-  return `history pending: ${queue.pending}\nhistory blocked: ${blocked}\n`;
+  return (
+    `history pending: ${queue.pending}\nhistory blocked: ${blocked}\n` +
+    `history error: ${queue.lastError ?? 'none'}\n`
+  );
 }
 
 function formatStatus(status: StoreStatus): string {

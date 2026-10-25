@@ -123,7 +123,11 @@ describe('history outbox', () => {
         revisions.map((item) => item.revision),
         [1, 2]
       );
-      assert.deepEqual((await client.status()).historyQueue, { pending: 0, blocked: null });
+      assert.deepEqual((await client.status()).historyQueue, {
+        pending: 0,
+        blocked: null,
+        lastError: null,
+      });
     } finally {
       await service.close();
     }
@@ -146,10 +150,14 @@ describe('history outbox', () => {
         });
         assert.equal(outcome.history, 'pending');
       }
-      assert.deepEqual((await client.status()).historyQueue, { pending: 3, blocked: null });
+      assert.deepEqual((await client.status()).historyQueue, {
+        pending: 3,
+        blocked: null,
+        lastError: 'unreachable',
+      });
 
       history.failure = null;
-      assert.deepEqual(await client.syncHistory(), { pending: 0, blocked: null });
+      assert.deepEqual(await client.syncHistory(), { pending: 0, blocked: null, lastError: null });
       for (const revision of [2, 3, 4]) {
         const snapshot = await client.revision(id, revision);
         assert.equal((snapshot.record as { content: string }).content, `v${revision}`);
@@ -183,7 +191,7 @@ describe('history outbox', () => {
       const client = service.as(EMBEDDED_PRINCIPAL);
       const created = await client.create({ namespace: 'demo', kind: 'note', content: 'once' });
       assert.equal(created.history, 'pending');
-      assert.deepEqual(await client.syncHistory(), { pending: 0, blocked: null });
+      assert.deepEqual(await client.syncHistory(), { pending: 0, blocked: null, lastError: null });
       assert.equal(history.calls.length, 2);
       assert.deepEqual(history.calls[0], history.calls[1]);
       assert.deepEqual(history.refs, ['mem:1', 'mem:1']);
@@ -222,6 +230,7 @@ describe('history outbox', () => {
       assert.deepEqual(await client.syncHistory({ retryBlocked: true }), {
         pending: 0,
         blocked: null,
+        lastError: null,
       });
       const exported = history.calls.slice(calls);
       assert.deepEqual(
@@ -249,9 +258,13 @@ describe('history outbox', () => {
         assert.equal(outcome.history, 'pending');
       }
       assert.equal(history.calls.length, 1, 'one attempt, then backoff');
-      assert.deepEqual(await client.syncHistory({ budgetMs: 1000 }), { pending: 6, blocked: null });
+      assert.deepEqual(await client.syncHistory({ budgetMs: 1000 }), {
+        pending: 6,
+        blocked: null,
+        lastError: 'HistoryUnavailable',
+      });
       history.failure = null;
-      assert.deepEqual(await client.syncHistory(), { pending: 0, blocked: null });
+      assert.deepEqual(await client.syncHistory(), { pending: 0, blocked: null, lastError: null });
     } finally {
       await service.close();
     }
@@ -337,7 +350,7 @@ describe('history outbox', () => {
         false
       );
       assert.equal(await storage.markExported(next.seq, 'mem:1', token), true);
-      assert.deepEqual(await storage.queue(), { pending: 0, blocked: null });
+      assert.deepEqual(await storage.queue(), { pending: 0, blocked: null, lastError: null });
     } finally {
       await storage.close();
     }
