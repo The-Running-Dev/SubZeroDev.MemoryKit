@@ -44,6 +44,7 @@ export interface OperationStatus {
 export interface HistoryQueue {
   pending: number;
   blocked: { seq: number; operationId: string; error: string } | null;
+  lastError: string | null; // why the oldest pending entry's last export failed
 }
 export interface StoreStatus {
   contractVersion: 1;

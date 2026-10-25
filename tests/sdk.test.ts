@@ -58,8 +58,8 @@ describe('sdk', () => {
     await client.close();
 
     assert.equal(outcome.storage, 'persisted');
-    assert.equal(outcome.history, 'not_required');
-    assert.equal(outcome.historyRef, null);
+    assert.equal(outcome.history, 'persisted', 'Git history is the default');
+    assert.match(outcome.historyRef ?? '', /^[0-9a-f]{40}$/);
     assert.deepEqual(outcome.related, []);
     assert.ok(isMemoryId(outcome.memory.id));
     assert.equal(outcome.memory.id.length, 26);

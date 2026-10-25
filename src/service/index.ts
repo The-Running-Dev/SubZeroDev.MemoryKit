@@ -159,7 +159,12 @@ export class MemoryService {
   async open(): Promise<void> {
     this.closed = false;
     await this.storage.open();
-    await this.history?.open();
+    try {
+      await this.history?.open();
+    } catch (error) {
+      await this.storage.close();
+      throw error;
+    }
     const cutoff = new Date(Date.now() - this.operationRetentionDays * DAY_MS).toISOString();
     await this.storage.pruneOperations(cutoff);
     await this.drain();

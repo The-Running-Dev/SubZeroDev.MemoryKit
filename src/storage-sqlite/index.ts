@@ -453,6 +453,9 @@ export class SqliteStorage implements StorageProvider {
           "SELECT seq, operation_id, last_error FROM outbox WHERE status = 'blocked' ORDER BY seq LIMIT 1"
         )
         .get() as Row | undefined;
+      const oldest = db
+        .prepare("SELECT last_error FROM outbox WHERE status = 'pending' ORDER BY seq LIMIT 1")
+        .get() as Row | undefined;
       return {
         pending: Number(pending.n),
         blocked: blocked
@@ -462,6 +465,7 @@ export class SqliteStorage implements StorageProvider {
               error: errorCode(blocked.last_error),
             }
           : null,
+        lastError: oldest?.last_error == null ? null : errorCode(oldest.last_error),
       };
     });
   }
