@@ -14,7 +14,7 @@ Contract version `1`. This file is the source of truth for signatures, schemas a
 8. **service:** `(principalId, operationId)` maps to at most one outcome. Replaying it with the same fingerprint returns that outcome without changing state.
 9. **service:** A write returns `history: "persisted"` only after the history provider has acknowledged its revision. Otherwise it returns `pending` or, under policy `none`, `not_required`.
 10. **service:** Outbox entries are exported in strictly increasing `seq`. No entry is exported while an earlier one is `pending` or `blocked`.
-11. **history providers:** `record` is idempotent by `operationId`. Recording an entry again produces no second revision and returns the original `historyRef`.
+11. **history providers:** `record` is idempotent by `(operationId, memoryId, revision)`. Recording an entry again produces no second revision and returns that entry's original `historyRef`. A supersede exports both records under one operation id, with a distinct ref for each.
 12. **service:** Retention filtering happens before an entry is enqueued, so content forbidden by policy never reaches a history provider.
 13. **model:** Lifecycle changes follow only the transition table in 10-design. Every other change is `InvalidTransition`.
 14. **model:** `actor` always comes from the authenticated principal and never from request input.
@@ -229,7 +229,7 @@ export interface HistoryEntry extends OutboxEntry { after: string | null }   // 
 export interface HistoryProvider {
   readonly descriptor: ProviderDescriptor;
   open(): Promise<void>; close(): Promise<void>;
-  record(entry: HistoryEntry): Promise<{ historyRef: string }>;    // idempotent by operationId
+  record(entry: HistoryEntry): Promise<{ historyRef: string }>;    // idempotent by (operationId, memoryId, revision)
   list(memoryId: MemoryId, ns: Namespace): Promise<RevisionSummary[]>;
   get(memoryId: MemoryId, ns: Namespace, revision: number): Promise<RevisionSnapshot | null>;
   purgeCoverage(): Record<HistoryBoundary, BoundaryResult>;
@@ -247,6 +247,21 @@ export interface TokenStore {
 ```
 
 ### sdk
+
+The root package entry exports the SDK, contracts, `MemoryService`, `SqliteStorage` and
+`MemoryHistory`. `GitHistory` and `GitHistoryOptions` are exported by the explicit public
+`<package>/history-git` entry, not the root. Other deep imports are blocked. This preserves
+S4's lazy-provider rule: importing the root and using `memory` or `none` never loads the Git
+provider. Selecting Git through the SDK dynamically loads it; explicitly importing the Git
+entry loads it for direct composition.
+
+`initStore` creates storage and opens/closes the selected history provider; it writes no
+configuration file and persists no default policy. Configuration is supplied on each open.
+The top-level `defaultHistoryPolicy` overrides `service.defaultHistoryPolicy`, otherwise the
+default is `full`. That default is used when a namespace is first written; existing namespace
+policies remain persisted until explicitly changed. `initStore` does not apply these policy
+defaults. With Git unavailable, init still creates storage and the repository is created on a
+later open/export.
 
 ```ts
 export interface StoreConfig {
@@ -321,6 +336,9 @@ Domain errors return `isError: true` with `structuredContent: { code, retryable,
 `memorykit <command> [--store <dir> | --url <url> --token-env <VAR>] [--json]`.
 
 The commands are `init`, `create`, `get`, `update`, `archive`, `restore`, `tombstone`, `supersede`, `purge`, `search`, `history`, `revision`, `operation`, `status`, `namespace get|set`, `history-sync`, `token create|list|revoke`, `serve` and `mcp` (stdio).
+
+`search` rejects `--operation-id`, `--expected-revision` and `--budget-ms` as usage errors
+(exit 2), before opening a store or connecting to a service. These flags do not affect search.
 
 With `--json`, the output is exactly the service result as JSON; `init` prints nothing, `serve` prints `{ url }` and `token revoke` prints `{ tokenId, revoked }`. Exit codes:
 - 0: success.

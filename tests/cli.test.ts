@@ -306,6 +306,29 @@ describe('cli', () => {
     assert.equal(runCli(['create', '--namespace', 'demo', ...twice]).status, 2);
   });
 
+  it('search rejects unused write flags before opening a store or connecting', async () => {
+    for (const flag of ['operation-id', 'expected-revision', 'budget-ms']) {
+      for (const target of [
+        ['--store', 'unused'],
+        ['--url', 'http://localhost:1'],
+      ]) {
+        let stdout = '';
+        let stderr = '';
+        const status = await run(
+          ['search', ...target, `--${flag}`, '1'],
+          { stdout: (text) => (stdout += text), stderr: (text) => (stderr += text) },
+          {
+            openStore: async () => assert.fail('must not open a store'),
+            connect: () => assert.fail('must not connect'),
+          }
+        );
+        assert.equal(status, 2, stderr);
+        assert.equal(stdout, '');
+        assert.ok(stderr.startsWith(`search does not take --${flag}\n\nUsage:`), stderr);
+      }
+    }
+  });
+
   it('S1.6 refuses a schema newer than the code', () => {
     const store = tempDir();
     assert.equal(runCli(['init', store]).status, 0);

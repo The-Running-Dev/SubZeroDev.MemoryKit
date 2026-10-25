@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./history-git": {
+      "types": "./dist/history-git/index.d.ts",
+      "default": "./dist/history-git/index.js"
     }
   },
   "bin": {

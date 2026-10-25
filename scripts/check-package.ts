@@ -57,7 +57,10 @@ try {
   console.log('cli ok');
 
   // The consumer, type-checked against the installed declarations, then run.
-  copyFileSync(join(ROOT, 'tests', 'consumer', 'consumer.ts'), join(app, 'consumer.ts'));
+  const consumers = ['consumer.ts', 'history-modules.ts', 'git-history.ts'];
+  for (const file of consumers) {
+    copyFileSync(join(ROOT, 'tests', 'consumer', file), join(app, file));
+  }
   writeFileSync(
     join(app, 'tsconfig.json'),
     JSON.stringify({
@@ -70,11 +73,18 @@ try {
         types: ['node'],
         typeRoots: [join(ROOT, 'node_modules', '@types')],
       },
-      files: ['consumer.ts'],
+      files: consumers,
     })
   );
   run(process.execPath, [join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', '.'], app);
+  // Separate processes: a previously imported Git provider must not hide an eager root import.
+  for (const provider of ['memory', 'none']) {
+    console.log(
+      run(process.execPath, ['--no-warnings', 'history-modules.ts', provider], app).trim()
+    );
+  }
   console.log(run(process.execPath, ['--no-warnings', 'consumer.ts'], app).trim());
+  console.log(run(process.execPath, ['--no-warnings', 'git-history.ts'], app).trim());
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

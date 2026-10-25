@@ -12,7 +12,7 @@ registerHooks({
   },
 });
 
-const { initStore, openStore } = await import('../../src/sdk/index.ts');
+const { initStore, openStore } = await import('../../src/index.ts');
 const config = { path: process.argv[2]!, history: { provider: 'memory' as const } };
 await initStore(config);
 const client = await openStore(config);

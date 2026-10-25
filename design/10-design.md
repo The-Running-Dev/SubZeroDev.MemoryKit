@@ -167,7 +167,7 @@ The drain runs:
 
 1. **Lease.** Acquire the store's drain lease in a storage transaction. The lease records a holder, a fencing token and an expiry. If another holder's lease is live, return; that holder drains.
 2. **Pick.** If any entry is `blocked`, stop and report it. Otherwise take the pending entry with the lowest seq.
-3. **Record.** Call `history.record(entry, after)`, where `after` is the `historyRef` of the previous exported entry. The provider must be idempotent by operation id.
+3. **Record.** Call `history.record({ ...entry, after })`, where `after` is the `historyRef` of the previous exported entry. The provider must be idempotent by `(operationId, memoryId, revision)`. A supersede exports two records under one operation id; retrying either entry returns its own original ref.
 4. **Mark.** Mark the entry exported with its `historyRef`, conditional on the fencing token. If the lease has been lost, stop without exporting anything more.
 5. **On failure.**
    - A retryable error increments `attempts` and backs off, and the entry stays pending.
@@ -176,7 +176,7 @@ The drain runs:
 
 **Git provider.** The repository is bare, and every change goes through plumbing commands:
 1. Read the branch head H. When `after` is the commit this provider last moved the branch to, H is taken to be `after` without reading it.
-2. Scan the commits from H back to `after` for a `MemoryKit-Operation` trailer matching the entry. If one is found, return that commit. When H is `after` there is nothing to scan.
+2. Scan the commits from H back to `after` for matching `MemoryKit-Operation`, `MemoryKit-Memory` and `MemoryKit-Revision` trailers. If all three match the entry, return that commit. When H is `after` there is nothing to scan.
 3. Otherwise:
    1. Write the record and content blobs with one `hash-object`. The format file is written only with the first commit.
    2. Build the tree in a temporary index. The provider keeps the index between exports and reads H's tree into it again only when H is not its own last commit.
@@ -203,12 +203,16 @@ A missing, torn, damaged or foreign index therefore costs one rebuild, never a w
 ## Distribution
 
 - **Channel.** The npm registry. There is one package containing the library entry points (`openStore`, `connect`, the provider classes and the contracts) and a `memorykit` executable. The package name is open.
+  - The root entry exports the SDK, contracts, `MemoryService`, `SqliteStorage` and `MemoryHistory`. Direct Git composition uses the explicit public `<package>/history-git` entry exporting `GitHistory` and `GitHistoryOptions`; internal deep imports stay blocked.
+  - The root does not re-export Git eagerly. SDK configuration loads the Git provider only when selected; `memory` and `none` do not load it. An explicit import of the Git entry loads that provider; Git processes start only when it is used.
 - **Requirements.**
   - Node 22.18 or later. Opening a store checks that the built-in SQLite has FTS5 and WAL.
   - A `git` executable on PATH, needed only when the Git history provider is configured.
 - **First install.**
   - Install the library with `npm install`, or the CLI globally or through `npx`.
-  - `memorykit init <dir>` creates a store: the database, a bare history repository and the configuration, with history policy `full`.
+  - `memorykit init <dir>` creates the database and opens the default Git history provider to create the bare repository. If Git is unavailable, repository creation is deferred to a later open/export.
+  - `initStore(config)` creates the database and opens the selected history provider. It writes no configuration file and persists no default history policy. Each SDK open takes configuration again; omitted history selects Git at `<path>/history.git`, and the effective default policy is `full` unless supplied at open time.
+  - A namespace's policy is persisted when it is first used or explicitly set. Changing the open-time default does not change an existing namespace's policy.
   - `memorykit serve` runs the service.
   - `memorykit token create` issues a local-service token.
 - **Upgrade.**
