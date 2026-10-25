@@ -9,6 +9,17 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-25 — Revision index for historical reads
+
+- Context: revision retrieval scanned the whole branch with `git log` and then ran `git show` per file, so it took 94 ms at 1k memories and 928 ms at 10k on CI Linux, growing with history.
+- Chosen:
+  - A rebuildable index file, `memorykit/revisions` inside the repository directory, with one line per commit: commit, first parent, memory id, revision and directory, each line ending in a truncated SHA-256 checksum. It is appended after each successful `update-ref` and rewritten from `git log --first-parent` when a read finds it short, damaged or wrong.
+  - Entries record only facts a commit id fixes, so an entry is never stale for its commit. Branch membership is decided on every read by `rev-parse` and a walk of the parent links from the head, so entries of commits that are no longer on the branch are never used.
+  - Every returned field is read from Git: one `cat-file --batch` returns the commit, `record.json` and content. A commit whose trailers do not match its entry, a missing object, or a requested revision absent from the walk triggers one rebuild and then the full scan.
+  - A read is two git processes regardless of history length.
+- Known limit: `list` takes the set of a memory's commits from the walk. A line that passes its checksum but names the wrong memory would hide a revision from `list` until the next rebuild; `get` of a missing revision always falls back to the scan.
+- Rejected: storing the index in SQLite, which would make the store database hold history facts; `git notes` or a second ref, which add writes to every export; a full cache of record contents, which would become a second copy of history.
+
 ## 2026-10-25 — Fewer git processes per exported revision
 
 - Context: the S12 baseline drained 15.6 revisions per second at 1k memories and 4.4 at 10k on CI Linux, and about 1.3 on Windows. A profile at 200 memories showed eleven `git` processes per export, each costing 66 to 84 ms on Windows, and a `read-tree` of the whole tree per export that grows with the repository.
