@@ -223,4 +223,46 @@ export const SCENARIOS: Scenario[] = [
       );
     },
   },
+  {
+    name: 'S6 search pages, filters and rejects an oversized limit and a foreign cursor',
+    async run(driver) {
+      const store = tempDir();
+      value(await driver.init(store));
+      const ids: string[] = [];
+      for (const [kind, content] of [
+        ['note', 'the lighthouse keeper'],
+        ['lesson', 'a lighthouse at dusk'],
+        ['note', 'lighthouse beams'],
+        ['note', 'harbour fog'],
+      ]) {
+        const created = value(await driver.create(store, { namespace: 'demo', kind, content }));
+        ids.push((created.memory as Record<string, unknown>).id as string);
+      }
+      value(await driver.transition(store, 'tombstone', { id: ids[2], expectedRevision: 1 }));
+
+      const idsOf = (page: Record<string, unknown>) =>
+        (page.items as Record<string, unknown>[]).map((item) => item.id as string);
+      const first = value(await driver.search(store, { text: 'lighthouse', limit: 1 }));
+      assert.equal(first.completeness, 'complete');
+      assert.equal(typeof first.nextCursor, 'string');
+      const second = value(
+        await driver.search(store, { text: 'lighthouse', limit: 1, cursor: first.nextCursor })
+      );
+      assert.equal(second.nextCursor, null);
+      assert.deepEqual([...idsOf(first), ...idsOf(second)].sort(), [ids[0], ids[1]].sort());
+
+      const lessons = value(await driver.search(store, { text: 'lighthouse', kinds: ['lesson'] }));
+      assert.deepEqual(idsOf(lessons), [ids[1]]);
+      const tombstoned = value(
+        await driver.search(store, { namespaces: ['demo'], states: ['tombstoned'] })
+      );
+      assert.deepEqual(idsOf(tombstoned), [ids[2]]);
+
+      problem(await driver.search(store, { limit: 101 }), 'LimitExceeded');
+      problem(
+        await driver.search(store, { text: 'fog', cursor: first.nextCursor }),
+        'ValidationFailed'
+      );
+    },
+  },
 ];

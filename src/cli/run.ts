@@ -13,6 +13,9 @@ import {
   type ContentType,
   type Link,
   type LinkType,
+  type MemoryState,
+  type SearchQuery,
+  type SearchResult,
 } from '../model/index.ts';
 import { initStore, openStore } from '../sdk/index.ts';
 import type {
@@ -57,6 +60,9 @@ Commands:
          [--link <type>:<id>]... [--operation-id <id>]
                                    Replace <id> with a new memory that supersedes it
   get <id> --store <dir>
+  search --store <dir> [--text <words>] [--namespace <pattern>]... [--kind <kind>]...
+         [--state <state>]... [--metadata <json>] [--limit <n>] [--cursor <cursor>]
+                                   Find memories; every filter given must match
   history <id> --store <dir>        List the revisions history holds
   revision <id> <n> --store <dir>   Show one revision from history
   operation <operation-id> --store <dir>
@@ -75,9 +81,9 @@ const OPTIONS = {
   store: { type: 'string' },
   json: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
-  namespace: { type: 'string' },
+  namespace: { type: 'string', multiple: true },
   key: { type: 'string' },
-  kind: { type: 'string' },
+  kind: { type: 'string', multiple: true },
   content: { type: 'string' },
   'content-type': { type: 'string' },
   metadata: { type: 'string' },
@@ -87,6 +93,10 @@ const OPTIONS = {
   'history-policy': { type: 'string' },
   'retry-blocked': { type: 'boolean' },
   'budget-ms': { type: 'string' },
+  text: { type: 'string' },
+  state: { type: 'string', multiple: true },
+  limit: { type: 'string' },
+  cursor: { type: 'string' },
 } satisfies ParseArgsConfig['options'];
 
 type Values = ReturnType<typeof parse>['values'];
@@ -101,9 +111,17 @@ function required(
   values: Values,
   name: 'store' | 'namespace' | 'kind' | 'content' | 'expected-revision' | 'history-policy'
 ): string {
-  const value = values[name];
+  const value = name === 'namespace' || name === 'kind' ? one(values, name) : values[name];
   if (value === undefined) throw new UsageError(`--${name} is required`);
   return value;
+}
+
+// Search repeats --namespace and --kind; every other command takes one of each.
+function one(values: Values, name: 'namespace' | 'kind'): string | undefined {
+  const items = values[name];
+  if (items === undefined) return undefined;
+  if (items.length > 1) throw new UsageError(`--${name} may be given once`);
+  return items[0];
 }
 
 function only(positionals: string[], count: number, what: string): string[] {
@@ -142,6 +160,24 @@ function parseDuration(text: string): number {
   return /^\d+$/.test(text) ? Number(text) : Number.NaN;
 }
 
+// And a limit that is not a positive integer.
+function parseLimit(text: string): number {
+  return /^\d+$/.test(text) ? Number(text) : Number.NaN;
+}
+
+function searchQuery(values: Values): SearchQuery {
+  const query: SearchQuery = {};
+  if (values.namespace !== undefined) query.namespaces = values.namespace;
+  if (values.text !== undefined) query.text = values.text;
+  if (values.kind !== undefined) query.kinds = values.kind;
+  if (values.state !== undefined) query.states = values.state as MemoryState[];
+  const metadata = parseMetadata(values.metadata);
+  if (metadata !== undefined) query.metadata = metadata as SearchQuery['metadata'];
+  if (values.limit !== undefined) query.limit = parseLimit(values.limit);
+  if (values.cursor !== undefined) query.cursor = values.cursor;
+  return query;
+}
+
 // The fields of a new memory, for create and for a supersede's replacement.
 function newMemory(values: Values): Omit<CreateInput, 'namespace'> {
   const input: Omit<CreateInput, 'namespace'> = {
@@ -178,6 +214,23 @@ function formatRecord(record: MemoryRecord): string {
     record.content,
   ];
   return lines.join('\n') + '\n';
+}
+
+const SUMMARY_LENGTH = 60;
+
+function formatSearch(result: SearchResult): string {
+  const lines = result.items.map((item) => {
+    const first = item.content.split('\n', 1)[0] ?? '';
+    const summary =
+      first.length > SUMMARY_LENGTH ? `${first.slice(0, SUMMARY_LENGTH - 3)}...` : first;
+    return `${item.id}  ${item.namespace}  ${item.kind}  ${item.state}  ${summary}\n`;
+  });
+  if (lines.length === 0) lines.push('No memories found\n');
+  if (result.completeness === 'partial') {
+    lines.push(`results may be incomplete (${result.partialReason})\n`);
+  }
+  if (result.nextCursor !== null) lines.push(`next cursor: ${result.nextCursor}\n`);
+  return lines.join('');
 }
 
 function formatOutcome(outcome: WriteOutcome): string {
@@ -302,7 +355,8 @@ export async function run(
           id: id!,
           expectedRevision: parseRevision(required(values, 'expected-revision')),
         };
-        if (values.kind !== undefined) input.kind = values.kind;
+        const kind = one(values, 'kind');
+        if (kind !== undefined) input.kind = kind;
         if (values.content !== undefined) input.content = values.content;
         if (values['content-type'] !== undefined)
           input.contentType = values['content-type'] as ContentType;
@@ -339,7 +393,8 @@ export async function run(
           expectedRevision: parseRevision(required(values, 'expected-revision')),
           replacement: newMemory(values),
         };
-        if (values.namespace !== undefined) input.replacement.namespace = values.namespace;
+        const namespace = one(values, 'namespace');
+        if (namespace !== undefined) input.replacement.namespace = namespace;
         const outcome = await withStore(values, deps, (client) =>
           client.supersede(input, writeOptions(values))
         );
@@ -350,6 +405,17 @@ export async function run(
         const [id] = only(rest, 1, 'get <id>');
         const record = await withStore(values, deps, (client) => client.get(id!));
         print(record, formatRecord(record));
+        return EXIT_OK;
+      }
+      case 'search': {
+        only(rest, 0, 'no positional arguments for search');
+        const flag = ['key', 'content', 'content-type', 'link'].find(
+          (name) => values[name as keyof Values] !== undefined
+        );
+        if (flag !== undefined) throw new UsageError(`search does not take --${flag}`);
+        const query = searchQuery(values);
+        const result = await withStore(values, deps, (client) => client.search(query));
+        print(result, formatSearch(result));
         return EXIT_OK;
       }
       case 'history': {

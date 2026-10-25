@@ -1,4 +1,4 @@
-import { authorize, permittedPatterns, type Principal } from '../access/index.ts';
+import { authorize, authorizePattern, permittedPatterns, type Principal } from '../access/index.ts';
 import {
   HISTORY_POLICIES,
   type HistoryPolicy,
@@ -39,6 +39,7 @@ import {
   validateMemoryId,
   validateOperationId,
   validateRevision,
+  validateSearch,
   validateSupersede,
   validateTransition,
   type ContentType,
@@ -52,6 +53,8 @@ import {
   type NormalizedCreate,
   type Operation,
   type Provenance,
+  type SearchQuery,
+  type SearchResult,
 } from '../model/index.ts';
 
 export interface WriteOptions {
@@ -115,6 +118,7 @@ export interface MemoryClient {
   tombstone(input: TransitionInput, opts?: WriteOptions): Promise<WriteOutcome>;
   supersede(input: SupersedeInput, opts?: WriteOptions): Promise<WriteOutcome>;
   get(id: MemoryId): Promise<MemoryRecord>;
+  search(query: SearchQuery): Promise<SearchResult>;
   history(id: MemoryId): Promise<RevisionSummary[]>;
   revision(id: MemoryId, revision: number): Promise<RevisionSnapshot>;
   operation(operationId: string): Promise<OperationStatus>;
@@ -635,6 +639,17 @@ class ServiceClient implements MemoryClient {
     });
     if (!row) throw new NotFoundError('Memory not found', { id });
     return this.withDerived(row);
+  }
+
+  // Every named namespace must be readable; with none named the search covers every readable
+  // pattern. Storage applies the scope in its query.
+  async search(query: SearchQuery): Promise<SearchResult> {
+    const { namespaces, ...rest } = validateSearch(query, this.service.limits);
+    for (const pattern of namespaces ?? []) authorizePattern(this.principal, 'read', pattern);
+    return this.service.storage.search({
+      ...rest,
+      patterns: namespaces ?? permittedPatterns(this.principal, 'read'),
+    });
   }
 
   async history(id: MemoryId): Promise<RevisionSummary[]> {

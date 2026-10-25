@@ -1,6 +1,7 @@
 import { toProblem } from '../../src/model/index.ts';
 import { initStore, openStore } from '../../src/sdk/index.ts';
 import type { HistoryPolicy } from '../../src/contracts/index.ts';
+import type { SearchQuery } from '../../src/model/index.ts';
 import type {
   CreateInput,
   SupersedeInput,
@@ -70,6 +71,10 @@ export const sdkDriver: Driver = {
       )
     ),
   get: (store, id) => capture(async () => plain(await withClient(store, (c) => c.get(id)))),
+  search: (store, query) =>
+    capture(async () =>
+      plain(await withClient(store, (c) => c.search(query as unknown as SearchQuery)))
+    ),
   history: (store, id) => capture(async () => plain(await withClient(store, (c) => c.history(id)))),
   operation: (store, operationId) =>
     capture(async () => plain(await withClient(store, (c) => c.operation(operationId)))),

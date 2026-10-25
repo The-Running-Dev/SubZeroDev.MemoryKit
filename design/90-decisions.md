@@ -10,6 +10,20 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-25 — Search as built (S6)
+- **Context:** The contract fixes the query, the result shape and the scan budget, but leaves open what a cursor holds, how a partial page resumes, where the metadata filter runs and how a named pattern is authorised.
+- **Chosen:**
+  - A cursor is base64url JSON holding the last row a page examined (its bm25 rank with text, its `updatedAt` without) and its id, plus a SHA-256 fingerprint of the text, kinds, states, metadata and the namespace patterns the search ran with. A cursor from another query or principal scope is `ValidationFailed` (`invalid_cursor`).
+  - A page that stops at the scan budget is `partial` / `scan_budget` and still carries a cursor, so following cursors reaches every match. The budget counts rows examined after the SQL scope, state and kind filters; the metadata filter runs on those rows in JS, by own-key strict equality.
+  - Text is split on whitespace; each word holding a letter or digit is quoted for FTS5 and the words are ANDed. Text with no such word is `ValidationFailed` (`no_terms`), never an empty page.
+  - A named pattern must be covered by one `read` grant: `*` only by `*`, a subtree `a/*` only by a subtree grant over `a`, an exact namespace by any grant matching it. An empty `namespaces` array is `ValidationFailed`.
+  - The CLI repeats `--namespace`, `--kind` and `--state` for search; every other command rejects a repeated `--namespace` or `--kind`.
+  - The default scan budget is 10,000 rows, set per store through `SqliteStorageOptions.scanBudget`.
+- **Rejected:**
+  - A time budget: `time_budget` stays in the contract, but nothing produces it until a provider needs one.
+  - Offset cursors: inserts between pages shift them. Keyset cursors can still move a row whose bm25 rank changes between pages, because rank depends on the whole corpus; pages are stable while the corpus is.
+  - Metadata filtering in SQL through `json_extract`: equality on mixed JSON types is easier to get exactly right in JS, and the budget bounds the cost.
+
 ## 2026-10-25 — Lifecycle as built (S5)
 - **Context:** The contract names archive, restore, tombstone and supersede but leaves open how a supersede is recorded, which permission a restore needs, and what a transition may change besides the state.
 - **Chosen:**

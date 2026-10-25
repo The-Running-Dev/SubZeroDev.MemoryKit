@@ -75,7 +75,7 @@ Acceptance:
 Out of scope: search exclusion (S6), purge (S11).
 
 ## S6 — Bounded, deterministic lexical search
-Status: todo
+Status: done
 Delivers: Applications find memories by words, kind, state and metadata. Results are bounded, come back in the same order every time, and say plainly whether anything may be missing.
 Touches: service (search); storage-sqlite (memories_fts maintenance, keyset cursors, scan budget); cli (search); conformance
 Depends on: S5

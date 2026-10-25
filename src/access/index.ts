@@ -27,6 +27,27 @@ export function permittedPatterns(p: Principal, permission: Permission): Namespa
     .map((grant) => grant.pattern);
 }
 
+// Throws Forbidden unless one grant holding the permission covers every namespace the
+// pattern can match: "*" needs a "*" grant, and a subtree needs a subtree grant over it.
+export function authorizePattern(
+  p: Principal,
+  permission: Permission,
+  pattern: NamespacePattern
+): void {
+  const subtree = pattern.endsWith('/*');
+  const base = subtree ? pattern.slice(0, -2) : pattern;
+  const covered = permittedPatterns(p, permission).some(
+    (grant) =>
+      grant === '*' ||
+      (pattern !== '*' && (!subtree || grant.endsWith('/*')) && matchesPattern(grant, base))
+  );
+  if (covered) return;
+  throw new ForbiddenError('The namespace or permission is not granted', {
+    namespace: pattern,
+    permission,
+  });
+}
+
 // Throws Forbidden unless one of the principal's grants gives the permission on the namespace.
 export function authorize(p: Principal, permission: Permission, ns: Namespace): void {
   if (permittedPatterns(p, permission).some((pattern) => matchesPattern(pattern, ns))) return;

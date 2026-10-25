@@ -36,6 +36,21 @@ function writeArgs(
   return args;
 }
 
+function searchArgs(store: string, query: Record<string, unknown>): string[] {
+  const args = ['search', '--store', store, '--json'];
+  if (query.text !== undefined) args.push(`--text=${String(query.text)}`);
+  const lists: Record<string, string> = { namespaces: 'namespace', kinds: 'kind', states: 'state' };
+  for (const [field, flag] of Object.entries(lists)) {
+    for (const item of (query[field] as unknown[] | undefined) ?? []) {
+      args.push(`--${flag}=${String(item)}`);
+    }
+  }
+  if (query.metadata !== undefined) args.push('--metadata', JSON.stringify(query.metadata));
+  if (query.limit !== undefined) args.push('--limit', String(query.limit));
+  if (query.cursor !== undefined) args.push(`--cursor=${String(query.cursor)}`);
+  return args;
+}
+
 function json(stdout: string): Record<string, unknown> {
   return JSON.parse(stdout) as Record<string, unknown>;
 }
@@ -68,6 +83,7 @@ export const cliDriver: Driver = {
       json
     ),
   get: async (store, id) => parse(runCli(['get', id, '--store', store, '--json']), json),
+  search: async (store, query) => parse(runCli(searchArgs(store, query)), json),
   history: async (store, id) => parse(runCli(['history', id, '--store', store, '--json']), json),
   operation: async (store, operationId) =>
     parse(runCli(['operation', operationId, '--store', store, '--json']), json),
