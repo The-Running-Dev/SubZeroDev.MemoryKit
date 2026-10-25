@@ -101,6 +101,45 @@ export const SCENARIOS: Scenario[] = [
     },
   },
   {
+    name: 'S3 operation status, store status and namespace policies',
+    async run(driver) {
+      const store = tempDir();
+      value(await driver.init(store));
+      const created = value(
+        await driver.create(store, { namespace: 'demo', kind: 'note', content: 'x' }, 'op-1')
+      );
+      const memory = created.memory as Record<string, unknown>;
+      assert.deepEqual(value(await driver.operation(store, 'op-1')), {
+        operationId: 'op-1',
+        memoryId: memory.id,
+        revision: 1,
+        storage: 'persisted',
+        history: 'not_required',
+        historyRef: null,
+      });
+      problem(await driver.operation(store, 'op-unknown'), 'NotFound');
+      problem(await driver.history(store, memory.id as string), 'HistoryNotRetained');
+
+      const status = value(await driver.status(store));
+      assert.equal(status.contractVersion, 1);
+      assert.equal((status.storage as Record<string, unknown>).id, 'storage-sqlite');
+      assert.equal(status.history, null);
+      assert.deepEqual(status.historyQueue, { pending: 0, blocked: null });
+
+      assert.deepEqual(value(await driver.getNamespace(store, 'demo')), {
+        name: 'demo',
+        historyPolicy: 'full',
+      });
+      assert.deepEqual(value(await driver.setNamespacePolicy(store, 'demo', 'metadata')), {
+        name: 'demo',
+        historyPolicy: 'metadata',
+      });
+      assert.equal(value(await driver.getNamespace(store, 'demo')).historyPolicy, 'metadata');
+      problem(await driver.setNamespacePolicy(store, 'demo', 'partial'), 'ValidationFailed');
+      problem(await driver.getNamespace(store, 'Demo'), 'ValidationFailed');
+    },
+  },
+  {
     name: 'update validates its input and maps an unknown id to NotFound',
     async run(driver) {
       const store = tempDir();

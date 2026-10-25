@@ -10,6 +10,17 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-25 — Outbox and history surfaces as built (S3)
+
+- **Context:** S3 needed contract details the design leaves open: how the drain lease ends, how old operations go, how retries are counted, and who may call the new admin and status surfaces.
+- **Chosen:**
+  - Storage contract additions: `releaseDrainLease`, `pruneOperations(before)`, `nextOutbox` returning the entry with its attempt count, and `tx.supersededBy` so the outbox payload carries the derived field. `HistoryProviderError(message, retryable, details)`; the problem code is `details.reason` when present.
+  - The SDK default provider stays `none` until S4 ships Git; `memory` is selectable for tests and embedding. MemoryHistory reports `purgeCoverage` unsupported until S11.
+  - `status` needs any read grant; `syncHistory` and `setNamespacePolicy` need admin on `*` and the namespace. `getNamespace` returns the effective policy, `full` when none is set.
+  - `close` waits for an in-flight drain. The `operation` CLI command exits 0 whatever the history state; writes and `history-sync` exit 3 while history is pending or blocked.
+  - The CLI takes its `openStore` as an injected dependency so tests can drive a provider that lives only in one process.
+- **Rejected:** a lease that expires only by TTL, which leaves a closed store's lease blocking the next open for 30 s; counting attempts in the service, which forgets them on restart; letting any principal force a drain.
+
 ## 2026-10-25 — Replays re-check write access; stored outcomes keep content (S2)
 
 - **Context:** review of S2 found a replay returned the stored outcome before any grant check, and that `operations.outcome` holds the full record whatever the namespace history policy.

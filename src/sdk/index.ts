@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { EMBEDDED_PRINCIPAL, type Principal } from '../access/index.ts';
-import type { HistoryPolicy } from '../contracts/index.ts';
+import type { HistoryPolicy, HistoryProvider } from '../contracts/index.ts';
+import { MemoryHistory } from '../history-memory/index.ts';
 import { StoreUnavailableError, UnsupportedError, ValidationFailedError } from '../model/index.ts';
 import { MemoryService, type MemoryClient, type ServiceConfig } from '../service/index.ts';
 import { SqliteStorage } from '../storage-sqlite/index.ts';
@@ -26,19 +27,20 @@ function databasePath(config: StoreConfig): string {
   return join(config.path, DATABASE_FILE);
 }
 
-// Until history providers exist (S3, S4), a store runs without history.
-function requireNoHistory(config: StoreConfig): void {
+// Git history arrives in S4; until then a store runs without history unless the caller asks
+// for history held in memory.
+function historyProvider(config: StoreConfig): HistoryProvider | null {
   const provider = config.history?.provider ?? 'none';
-  if (provider !== 'none') {
-    throw new UnsupportedError('This history provider is not available yet', {
-      capability: `history.${provider}`,
-    });
-  }
+  if (provider === 'none') return null;
+  if (provider === 'memory') return new MemoryHistory();
+  throw new UnsupportedError('This history provider is not available yet', {
+    capability: `history.${provider}`,
+  });
 }
 
 export async function initStore(config: StoreConfig): Promise<void> {
   const file = databasePath(config);
-  requireNoHistory(config);
+  historyProvider(config);
   if (existsSync(file)) {
     throw new StoreUnavailableError('The directory is already a store', {
       reason: 'already_a_store',
@@ -67,11 +69,11 @@ export async function openStore(
   principal: Principal = EMBEDDED_PRINCIPAL
 ): Promise<MemoryClient & { close(): Promise<void> }> {
   const file = databasePath(config);
-  requireNoHistory(config);
+  const history = historyProvider(config);
   if (!existsSync(file)) {
     throw new StoreUnavailableError('The directory is not a store', { reason: 'not_a_store' });
   }
-  const service = new MemoryService(new SqliteStorage({ path: file }), null, {
+  const service = new MemoryService(new SqliteStorage({ path: file }), history, {
     ...config.service,
     defaultHistoryPolicy: config.defaultHistoryPolicy ?? config.service?.defaultHistoryPolicy,
   });

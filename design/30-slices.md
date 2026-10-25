@@ -32,7 +32,7 @@ Acceptance:
 Out of scope: history, lifecycle transitions.
 
 ## S3 — Every revision reaches a history provider through a durable outbox
-Status: todo
+Status: done
 Delivers: Each change is queued for history atomically with the change itself. A test history provider, with no Git at all, shows both the earlier and the current revision. Writes report honestly whether history has caught up.
 Touches: contracts (HistoryProvider, OutboxEntry, HistoryEntry, ProviderDescriptor); storage-sqlite (outbox, drain_lease, queue); service (drainer, outcomes, operation status, history, revision, namespace policies and retention filtering, status); history-memory; sdk (history config); cli (history, revision, operation, status, namespace, history-sync); conformance
 Depends on: S2

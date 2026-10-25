@@ -1,5 +1,6 @@
 import { toProblem } from '../../src/model/index.ts';
 import { initStore, openStore } from '../../src/sdk/index.ts';
+import type { HistoryPolicy } from '../../src/contracts/index.ts';
 import type { CreateInput, UpdateInput } from '../../src/service/index.ts';
 import type { Driver, Result } from './driver.ts';
 
@@ -48,4 +49,14 @@ export const sdkDriver: Driver = {
       )
     ),
   get: (store, id) => capture(async () => plain(await withClient(store, (c) => c.get(id)))),
+  history: (store, id) => capture(async () => plain(await withClient(store, (c) => c.history(id)))),
+  operation: (store, operationId) =>
+    capture(async () => plain(await withClient(store, (c) => c.operation(operationId)))),
+  status: (store) => capture(async () => plain(await withClient(store, (c) => c.status()))),
+  getNamespace: (store, ns) =>
+    capture(async () => plain(await withClient(store, (c) => c.getNamespace(ns)))),
+  setNamespacePolicy: (store, ns, policy) =>
+    capture(async () =>
+      plain(await withClient(store, (c) => c.setNamespacePolicy(ns, policy as HistoryPolicy)))
+    ),
 };

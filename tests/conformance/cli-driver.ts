@@ -36,6 +36,10 @@ function writeArgs(
   return args;
 }
 
+function json(stdout: string): Record<string, unknown> {
+  return JSON.parse(stdout) as Record<string, unknown>;
+}
+
 export const cliDriver: Driver = {
   name: 'cli',
   init: async (store) => parse(runCli(['init', store, '--json']), () => null),
@@ -49,9 +53,16 @@ export const cliDriver: Driver = {
       runCli(writeArgs(['update', String(id)], store, input, operationId)),
       (out) => JSON.parse(out) as Record<string, unknown>
     ),
-  get: async (store, id) =>
+  get: async (store, id) => parse(runCli(['get', id, '--store', store, '--json']), json),
+  history: async (store, id) => parse(runCli(['history', id, '--store', store, '--json']), json),
+  operation: async (store, operationId) =>
+    parse(runCli(['operation', operationId, '--store', store, '--json']), json),
+  status: async (store) => parse(runCli(['status', '--store', store, '--json']), json),
+  getNamespace: async (store, ns) =>
+    parse(runCli(['namespace', 'get', ns, '--store', store, '--json']), json),
+  setNamespacePolicy: async (store, ns, policy) =>
     parse(
-      runCli(['get', id, '--store', store, '--json']),
-      (out) => JSON.parse(out) as Record<string, unknown>
+      runCli(['namespace', 'set', ns, '--history-policy', policy, '--store', store, '--json']),
+      json
     ),
 };
