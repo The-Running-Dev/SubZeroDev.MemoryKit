@@ -131,7 +131,7 @@ This covers create, update, archive, supersede, tombstone and restore.
    4. Write the new row at revision + 1 and update its links and search text. Look up the namespace policy. Unless the policy is `none`, enqueue an outbox entry with the filtered snapshot. Record the operation.
    5. Commit. Any error rolls the whole transaction back, nothing persists, and the error is returned.
 6. **Export.** The service signals the drainer (path 3) and waits up to `historyWaitMs`, 5 s by default, for this entry to be exported.
-7. **Report.** The outcome is `{ storage: persisted, history: persisted | pending | not_required }`. `historyRef` is included when history is persisted. HTTP answers 200 or 201 when history is persisted or not required, and 202 when it is pending. MCP returns the same outcome in the tool result.
+7. **Report.** The outcome is `{ storage: persisted, history: persisted | pending | blocked | not_required }`. `historyRef` is included when history is persisted. HTTP answers 200 or 201 when history is persisted or not required, and 202 when it is pending or blocked. MCP returns the same outcome in the tool result.
 
 **Supersede** runs the same path. It creates the replacement and moves the target to `superseded` in one transaction, which produces two revisions and two outbox entries.
 
@@ -171,7 +171,7 @@ The drain runs:
 4. **Mark.** Mark the entry exported with its `historyRef`, conditional on the fencing token. If the lease has been lost, stop without exporting anything more.
 5. **On failure.**
    - A retryable error increments `attempts` and backs off, and the entry stays pending.
-   - A non-retryable error, or exhausting the attempt limit, marks the entry `blocked`. Draining halts and status shows it. An operator fixes the cause and runs `history retry`.
+   - A non-retryable error, or exhausting the attempt limit, marks the entry `blocked`. Draining halts and status shows it. An operator fixes the cause and runs `memorykit history-sync --retry-blocked`.
 6. **Repeat** until no entries are left or the time budget is spent.
 
 **Git provider.** The repository is bare, and every change goes through plumbing commands:
@@ -222,7 +222,7 @@ Hooks are disabled for these commands.
 | Git | Executable missing, repository unreadable, I/O error | Non-zero exit or spawn error | Retryable: backoff, and writes return `history: pending`; status names the provider error | Pending entries accumulate, and none are lost |
 | Git | Compare-and-swap race lost to another drainer | `update-ref` fails | Re-read and re-scan inside the provider; invisible to the user | One commit |
 | Git | Crash between the ref update and the mark | The next drain finds the trailer | The entry is marked exported without a new commit | No duplicate |
-| Git | Permanent export failure (corrupt repository, rejected path) | Non-retryable error, or the attempt limit is reached | The entry is `blocked` and draining halts; status shows the entry and its error; writes keep returning pending; `history retry` after the repair | Blocked and pending entries are kept |
+| Git | Permanent export failure (corrupt repository, rejected path) | Non-retryable error, or the attempt limit is reached | The entry is `blocked` and draining halts; status shows the entry and its error; writes return `blocked`; `memorykit history-sync --retry-blocked` after the repair | Blocked and pending entries are kept |
 | History read | Provider failure while inspecting history | Provider error | `HistoryUnavailable`, which is retryable; reads of current state are unaffected | Unchanged |
 | Drain lease | The holder stalls past its expiry | The lease expires | Another drainer takes over; the stale holder's mark fails its fencing check and it stops; the Git compare-and-swap prevents double commits | No duplicate |
 | OIDC | JWKS endpoint unreachable | Fetch fails | Cached keys are used until they expire; with no usable key the result is `AuthenticationUnavailable` (503, retryable) and the request is denied | Unchanged |
