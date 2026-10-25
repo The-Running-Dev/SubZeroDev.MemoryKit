@@ -4,29 +4,54 @@
 import { LimitExceededError, ValidationFailedError } from './errors.ts';
 import { isMemoryId } from './ids.ts';
 import { isJsonValue, isPlainObject } from './json.ts';
-import { parseNamespace } from './namespace.ts';
+import { isNamespacePattern, parseNamespace } from './namespace.ts';
 import {
   CONTENT_TYPES,
   CORE_LINK_TYPES,
+  MEMORY_STATES,
   type ContentType,
   type JsonValue,
   type Limits,
   type Link,
   type LinkType,
   type MemoryId,
+  type MemoryState,
   type Namespace,
+  type NamespacePattern,
   type Provenance,
+  type SearchQuery,
 } from './types.ts';
 
 export const MAX_KEY_LENGTH = 512;
 export const MAX_KIND_LENGTH = 128;
 export const MAX_OPERATION_ID_LENGTH = 128;
+export const MAX_SEARCH_TEXT_LENGTH = 1024;
+export const MAX_CURSOR_LENGTH = 4096;
+export const DEFAULT_PAGE_SIZE = 20;
 
 const CONTROL = /\p{Cc}/u;
 // A lone surrogate cannot be encoded as UTF-8, so it would not round-trip through storage.
 const LONE_SURROGATE = /\p{Cs}/u;
 const LINK_EXTENSION = /^x-[a-z0-9][a-z0-9._-]{0,63}$/;
 const OPERATION_ID = /^[A-Za-z0-9._:-]+$/;
+// A search word must hold a letter or digit; anything else the full-text index never stores.
+const SEARCH_TERM = /[\p{L}\p{N}]/u;
+
+// The words of a search text, as the full-text index would match them.
+export function searchTerms(text: string): string[] {
+  return text.split(/\s+/u).filter((term) => SEARCH_TERM.test(term));
+}
+
+// A search with its defaults applied; kinds, states and namespaces are deduplicated and sorted.
+export interface NormalizedSearch {
+  namespaces?: NamespacePattern[];
+  text?: string;
+  kinds?: string[];
+  states: MemoryState[];
+  metadata?: Record<string, string | number | boolean | null>;
+  limit: number;
+  cursor?: string;
+}
 
 export interface NormalizedUpdate {
   id: MemoryId;
@@ -207,6 +232,76 @@ export function validateRevision(value: unknown, field = 'expectedRevision'): nu
     invalid(field, 'not_a_revision');
   }
   return value;
+}
+
+// A list of strings, each checked by the item check; never empty, returned sorted and unique.
+function stringList(
+  value: unknown,
+  field: string,
+  item: (value: unknown, field: string) => string
+) {
+  if (!Array.isArray(value)) invalid(field, 'not_an_array');
+  if (value.length === 0) invalid(field, 'empty');
+  const items = value.map((entry, index) => item(entry, `${field}[${index}]`));
+  return [...new Set(items)].sort();
+}
+
+export function validateSearch(input: unknown, limits: Limits): NormalizedSearch {
+  if (!isPlainObject(input)) invalid('query', 'not_an_object');
+  onlyFields(input, ['namespaces', 'text', 'kinds', 'states', 'metadata', 'limit', 'cursor'], '');
+  requireWellFormed(input, '');
+  const query = input as SearchQuery;
+  const result: NormalizedSearch = { states: ['active'], limit: DEFAULT_PAGE_SIZE };
+  if (query.namespaces !== undefined) {
+    result.namespaces = stringList(query.namespaces, 'namespaces', (value, field) => {
+      if (typeof value !== 'string' || !isNamespacePattern(value))
+        invalid(field, 'invalid_pattern');
+      return value;
+    });
+  }
+  if (query.text !== undefined) {
+    if (typeof query.text !== 'string') invalid('text', 'not_a_string');
+    if (query.text.length > MAX_SEARCH_TEXT_LENGTH) invalid('text', 'too_long');
+    if (searchTerms(query.text).length === 0) invalid('text', 'no_terms');
+    result.text = query.text;
+  }
+  if (query.kinds !== undefined) {
+    result.kinds = stringList(query.kinds, 'kinds', (value, field) =>
+      label(value, field, MAX_KIND_LENGTH)
+    );
+  }
+  if (query.states !== undefined) {
+    result.states = stringList(query.states, 'states', (value, field) => {
+      if (!MEMORY_STATES.includes(value as MemoryState)) invalid(field, 'unknown_state');
+      return value as string;
+    }) as MemoryState[];
+  }
+  if (query.metadata !== undefined) {
+    if (!isPlainObject(query.metadata)) invalid('metadata', 'not_an_object');
+    for (const [key, value] of Object.entries(query.metadata)) {
+      const scalar =
+        value === null ||
+        typeof value === 'string' ||
+        typeof value === 'boolean' ||
+        (typeof value === 'number' && Number.isFinite(value));
+      if (!scalar) invalid(`metadata.${key}`, 'not_a_scalar');
+    }
+    result.metadata = query.metadata;
+  }
+  if (query.limit !== undefined) {
+    if (typeof query.limit !== 'number' || !Number.isSafeInteger(query.limit) || query.limit < 1) {
+      invalid('limit', 'not_a_limit');
+    }
+    checkLimit('limit', query.limit, limits.maxPageSize);
+    result.limit = query.limit;
+  }
+  if (query.cursor !== undefined) {
+    if (typeof query.cursor !== 'string' || query.cursor.length === 0)
+      invalid('cursor', 'required');
+    if (query.cursor.length > MAX_CURSOR_LENGTH) invalid('cursor', 'invalid_cursor');
+    result.cursor = query.cursor;
+  }
+  return result;
 }
 
 export function validateCreate(input: unknown, limits: Limits): NormalizedCreate {

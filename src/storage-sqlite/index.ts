@@ -9,6 +9,7 @@ import type {
   ProviderDescriptor,
   RowScope,
   StorageProvider,
+  StorageSearch,
   StorageTransaction,
   StoredOutcome,
   StoredRow,
@@ -22,14 +23,20 @@ import {
   StoreBusyError,
   StoreUnavailableError,
   StoreVersionTooNewError,
+  ValidationFailedError,
+  canonicalJson,
+  searchTerms,
+  sha256Hex,
   type ContentType,
   type JsonValue,
   type Link,
   type LinkType,
   type MemoryId,
   type MemoryState,
+  type MemoryRecord,
   type Namespace,
   type Operation,
+  type SearchResult,
 } from '../model/index.ts';
 import { MIGRATIONS, SCHEMA_VERSION } from './schema.ts';
 
@@ -46,6 +53,7 @@ export interface SqliteStorageOptions {
   scanBudget?: number;
 }
 
+const DEFAULT_SCAN_BUDGET = 10_000;
 const SQLITE_BUSY = 5;
 const SQLITE_LOCKED = 6;
 const SQLITE_CONSTRAINT_UNIQUE = 2067;
@@ -151,6 +159,69 @@ function scopeSql(scope: RowScope): { sql: string; params: SQLInputValue[] } {
   return { sql: '(' + clauses.join(' OR ') + ')', params };
 }
 
+// Each word is quoted, so the text never reaches FTS5 as query syntax; the words are ANDed.
+function ftsQuery(text: string): string {
+  return searchTerms(text)
+    .map((term) => '"' + term.replaceAll('"', '""') + '"')
+    .join(' ');
+}
+
+// A cursor holds the last row a page examined, as its sort key and id, and the fingerprint of
+// the query it belongs to.
+interface Cursor {
+  v: 1;
+  key: number | string; // bm25 rank with text, otherwise updatedAt
+  id: MemoryId;
+  query: string;
+}
+
+function searchFingerprint(query: StorageSearch): string {
+  return sha256Hex(
+    canonicalJson({
+      text: query.text ?? null,
+      kinds: [...(query.kinds ?? [])].sort(),
+      states: [...query.states].sort(),
+      metadata: query.metadata ?? {},
+      patterns: [...query.patterns].sort(),
+    })
+  );
+}
+
+function encodeCursor(cursor: Cursor): string {
+  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
+}
+
+function decodeCursor(text: string, fingerprint: string, keyType: 'number' | 'string'): Cursor {
+  let cursor: Partial<Cursor> | null = null;
+  try {
+    cursor = JSON.parse(Buffer.from(text, 'base64url').toString('utf8')) as Partial<Cursor>;
+  } catch {
+    // reported below
+  }
+  if (
+    cursor === null ||
+    typeof cursor !== 'object' ||
+    cursor.v !== 1 ||
+    typeof cursor.key !== keyType ||
+    typeof cursor.id !== 'string' ||
+    cursor.query !== fingerprint
+  ) {
+    throw new ValidationFailedError('Invalid cursor: invalid_cursor', {
+      field: 'cursor',
+      reason: 'invalid_cursor',
+    });
+  }
+  return cursor as Cursor;
+}
+
+function matchesMetadata(row: Row, wanted: StorageSearch['metadata']): boolean {
+  if (wanted === undefined) return true;
+  const metadata = JSON.parse(String(row.metadata)) as Record<string, JsonValue>;
+  return Object.entries(wanted).every(
+    ([key, value]) => Object.hasOwn(metadata, key) && metadata[key] === value
+  );
+}
+
 function metadataText(metadata: Record<string, JsonValue>): string {
   const parts: string[] = [];
   const walk = (value: JsonValue): void => {
@@ -168,18 +239,20 @@ export class SqliteStorage implements StorageProvider {
     id: 'storage-sqlite',
     version: '0.1.0',
     contractVersions: [1],
-    capabilities: [],
+    capabilities: ['search.lexical'],
     limitations: ['local-filesystem-only'],
   };
 
   private readonly path: string;
   private readonly busyTimeoutMs: number;
+  private readonly scanBudget: number;
   private db: DatabaseSync | null = null;
   private tail: Promise<unknown> = Promise.resolve();
 
   constructor(opts: SqliteStorageOptions) {
     this.path = opts.path;
     this.busyTimeoutMs = opts.busyTimeoutMs ?? 5000;
+    this.scanBudget = Math.max(1, Math.floor(opts.scanBudget ?? DEFAULT_SCAN_BUDGET));
   }
 
   async open(): Promise<void> {
@@ -295,6 +368,87 @@ export class SqliteStorage implements StorageProvider {
 
   supersededBy(ids: MemoryId[]): Promise<Record<MemoryId, MemoryId[]>> {
     return this.read((db) => supersededBy(db, ids));
+  }
+
+  // Rows outside the scope, the states and the kinds are filtered by the query itself; the
+  // metadata filter runs on the rows it returns, and every row it examines counts towards the
+  // scan budget. A page that stops at the budget is partial, and its cursor resumes after the
+  // last row it examined.
+  search(query: StorageSearch): Promise<SearchResult> {
+    return this.read((db) => {
+      const fingerprint = searchFingerprint(query);
+      const text = query.text === undefined ? null : ftsQuery(query.text);
+      const cursor =
+        query.cursor === undefined
+          ? null
+          : decodeCursor(query.cursor, fingerprint, text === null ? 'string' : 'number');
+      const scope = scopeSql(query);
+      const where = [scope.sql, `state IN (${query.states.map(() => '?').join(',')})`];
+      const params: SQLInputValue[] = [...scope.params, ...query.states];
+      if (query.kinds !== undefined) {
+        where.push(`kind IN (${query.kinds.map(() => '?').join(',')})`);
+        params.push(...query.kinds);
+      }
+      let sql: string;
+      if (text === null) {
+        if (cursor) {
+          where.push('(updated_at < ? OR (updated_at = ? AND id > ?))');
+          params.push(cursor.key, cursor.key, cursor.id);
+        }
+        sql = `SELECT * FROM memories WHERE ${where.join(' AND ')} ORDER BY updated_at DESC, id`;
+      } else {
+        if (cursor) {
+          where.push('(rank > ? OR (rank = ? AND id > ?))');
+          params.push(cursor.key, cursor.key, cursor.id);
+        }
+        params.unshift(text);
+        sql =
+          'SELECT * FROM (SELECT m.*, bm25(memories_fts) AS rank FROM memories_fts ' +
+          'JOIN memories m ON m.id = memories_fts.id WHERE memories_fts MATCH ?) ' +
+          `WHERE ${where.join(' AND ')} ORDER BY rank, id`;
+      }
+
+      const rows: Row[] = [];
+      let last: Row | null = null;
+      let scanned = 0;
+      let more = false;
+      let partial = false;
+      for (const row of db.prepare(sql).iterate(...params) as Iterable<Row>) {
+        if (scanned === this.scanBudget) {
+          partial = true;
+          break;
+        }
+        scanned++;
+        const matches = matchesMetadata(row, query.metadata);
+        if (matches && rows.length === query.limit) {
+          more = true;
+          break;
+        }
+        last = row;
+        if (matches) rows.push(row);
+      }
+
+      const derived = supersededBy(
+        db,
+        rows.map((row) => String(row.id))
+      );
+      const items: MemoryRecord[] = rows.map((row) => ({
+        ...toRecord(db, row),
+        supersededBy: derived[String(row.id)]!,
+      }));
+      const nextCursor =
+        (more || partial) && last !== null
+          ? encodeCursor({
+              v: 1,
+              key: text === null ? String(last.updated_at) : Number(last.rank),
+              id: String(last.id),
+              query: fingerprint,
+            })
+          : null;
+      return partial
+        ? { items, nextCursor, completeness: 'partial', partialReason: 'scan_budget' }
+        : { items, nextCursor, completeness: 'complete' };
+    });
   }
 
   // An operation's entries were queued together, so they are the run of rows ending at its
@@ -536,30 +690,32 @@ function loadRow(db: DatabaseSync, id: MemoryId, scope: RowScope): StoredRow | n
     .prepare(`SELECT * FROM memories WHERE id = ? AND ${where.sql}`)
     .get(id, ...where.params) as Row | undefined;
   if (!row) return null;
+  return { record: toRecord(db, row) };
+}
+
+function toRecord(db: DatabaseSync, row: Row): StoredRow['record'] {
   const links = db
     .prepare('SELECT type, target FROM links WHERE source = ? ORDER BY ordinal')
-    .all(id) as Row[];
+    .all(String(row.id)) as Row[];
   return {
-    record: {
-      id: String(row.id),
-      namespace: String(row.namespace),
-      key: row.key === null ? null : String(row.key),
-      kind: String(row.kind),
-      content: String(row.content),
-      contentType: String(row.content_type) as ContentType,
-      metadata: JSON.parse(String(row.metadata)) as Record<string, JsonValue>,
-      links: links.map((link): Link => ({
-        type: String(link.type) as LinkType,
-        target: String(link.target),
-      })),
-      state: String(row.state) as MemoryState,
-      priorState: row.prior_state === null ? null : (String(row.prior_state) as MemoryState),
-      revision: Number(row.revision),
-      provenance: JSON.parse(String(row.provenance)) as StoredRow['record']['provenance'],
-      actor: String(row.actor),
-      createdAt: String(row.created_at),
-      updatedAt: String(row.updated_at),
-    },
+    id: String(row.id),
+    namespace: String(row.namespace),
+    key: row.key === null ? null : String(row.key),
+    kind: String(row.kind),
+    content: String(row.content),
+    contentType: String(row.content_type) as ContentType,
+    metadata: JSON.parse(String(row.metadata)) as Record<string, JsonValue>,
+    links: links.map((link): Link => ({
+      type: String(link.type) as LinkType,
+      target: String(link.target),
+    })),
+    state: String(row.state) as MemoryState,
+    priorState: row.prior_state === null ? null : (String(row.prior_state) as MemoryState),
+    revision: Number(row.revision),
+    provenance: JSON.parse(String(row.provenance)) as StoredRow['record']['provenance'],
+    actor: String(row.actor),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
   };
 }
 

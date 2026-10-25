@@ -9,6 +9,8 @@ import {
   type Namespace,
   type NamespacePattern,
   type Operation,
+  type SearchQuery,
+  type SearchResult,
 } from '../model/index.ts';
 
 export type HistoryPolicy = 'full' | 'metadata' | 'none';
@@ -68,6 +70,11 @@ export interface ProviderDescriptor {
 export interface RowScope {
   patterns: NamespacePattern[];
 }
+// A search as storage runs it: the service has applied the defaults and replaced the named
+// namespaces with the patterns the caller may read.
+export type StorageSearch = Required<Pick<SearchQuery, 'states' | 'limit'>> &
+  Omit<SearchQuery, 'namespaces'> &
+  RowScope;
 export interface StoredRow {
   record: Omit<MemoryRecord, 'supersededBy'>;
 }
@@ -127,6 +134,7 @@ export interface StorageProvider {
   write<T>(fn: (tx: StorageTransaction) => Promise<T>): Promise<T>;
   get(id: MemoryId, scope: RowScope): Promise<StoredRow | null>;
   supersededBy(ids: MemoryId[]): Promise<Record<MemoryId, MemoryId[]>>;
+  search(query: StorageSearch): Promise<SearchResult>;
   operation(principalId: string, operationId: string): Promise<OperationStatus | null>;
   pruneOperations(before: string): Promise<number>; // removes operations created before the time
   setNamespacePolicy(ns: Namespace, policy: HistoryPolicy): Promise<NamespaceInfo>;

@@ -29,6 +29,7 @@ export interface Driver {
     operationId?: string
   ): Promise<Result<Record<string, unknown>>>;
   get(store: string, id: string): Promise<Result<Record<string, unknown>>>;
+  search(store: string, query: Record<string, unknown>): Promise<Result<Record<string, unknown>>>;
   history(store: string, id: string): Promise<Result<unknown>>;
   operation(store: string, operationId: string): Promise<Result<Record<string, unknown>>>;
   status(store: string): Promise<Result<Record<string, unknown>>>;

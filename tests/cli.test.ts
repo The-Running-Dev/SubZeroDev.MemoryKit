@@ -283,6 +283,29 @@ describe('cli', () => {
     assert.equal(runCli(['revision', memory.id, '--store', store]).status, 2);
   });
 
+  it('search prints one line per memory and the cursor, with its usage errors', () => {
+    const store = tempDir();
+    assert.equal(runCli(['init', store]).status, 0);
+    for (const content of ['lighthouse one\nsecond line', 'lighthouse two']) {
+      const args = ['create', '--store', store, '--namespace', 'demo', '--kind', 'note'];
+      assert.equal(runCli([...args, '--content', content]).status, 0);
+    }
+    const page = runCli(['search', '--store', store, '--text', 'lighthouse', '--limit', '1']);
+    assert.equal(page.status, 0, page.stderr);
+    const lines = page.stdout.trimEnd().split('\n');
+    assert.equal(lines.length, 2);
+    assert.match(lines[0]!, /^\S+ {2}demo {2}note {2}active {2}lighthouse (one|two)$/);
+    assert.match(lines[1]!, /^next cursor: \S+$/);
+    const none = runCli(['search', '--store', store, '--text', 'fog']);
+    assert.equal(none.stdout, 'No memories found\n');
+    assert.equal(runCli(['search', '--store', store, '--content', 'x']).status, 2);
+    assert.equal(runCli(['search', 'extra', '--store', store]).status, 2);
+    const limit = runCli(['search', '--store', store, '--limit', 'ten']);
+    assert.equal(JSON.parse(limit.stderr).code, 'ValidationFailed');
+    const twice = ['--store', store, '--kind', 'a', '--kind', 'b', '--content', 'x'];
+    assert.equal(runCli(['create', '--namespace', 'demo', ...twice]).status, 2);
+  });
+
   it('S1.6 refuses a schema newer than the code', () => {
     const store = tempDir();
     assert.equal(runCli(['init', store]).status, 0);

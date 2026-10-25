@@ -53,6 +53,22 @@ export interface MemoryRecord {
   supersededBy: MemoryId[]; // derived
 }
 
+export interface SearchQuery {
+  namespaces?: NamespacePattern[];
+  text?: string;
+  kinds?: string[];
+  states?: MemoryState[]; // defaults to ['active']
+  metadata?: Record<string, string | number | boolean | null>; // top-level equality
+  limit?: number;
+  cursor?: string;
+}
+export interface SearchResult {
+  items: MemoryRecord[];
+  nextCursor: string | null;
+  completeness: 'complete' | 'partial';
+  partialReason?: 'scan_budget' | 'time_budget';
+}
+
 export interface Limits {
   maxContentBytes: number;
   maxMetadataBytes: number;
@@ -67,6 +83,12 @@ export const DEFAULT_LIMITS: Limits = {
   maxPageSize: 100,
 };
 
+export const MEMORY_STATES: readonly MemoryState[] = [
+  'active',
+  'superseded',
+  'archived',
+  'tombstoned',
+];
 export const CONTENT_TYPES: readonly ContentType[] = [
   'text/plain',
   'text/markdown',
