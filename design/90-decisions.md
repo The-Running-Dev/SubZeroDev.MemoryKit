@@ -4,11 +4,29 @@ Append-only. Newest at the top. The rejected alternatives are the point — with
 
 ## Open
 - npm package name and scope.
-- Which MCP protocol revisions besides 2026-07-28 the server answers — set by what the TypeScript SDK v2 server supports, checked in the MCP slice.
 
 Reopen any entry below only on a demonstrable contradiction or a genuine blocker (user, 2026-10-25).
 
 ---
+
+## 2026-10-25 — MCP as built (S10)
+
+- Context: S10 serves the service over MCP on stdio and Streamable HTTP. The design left the accepted revisions open and did not say how tool schemas, validation, write options or the HTTP principal are handled.
+- Chosen:
+  - Only 2026-07-28 is accepted, on stdio and HTTP (`legacy: 'reject'` in SDK v2 2.4.0). A 2025-era request gets `-32022` with `data.supported: ["2026-07-28"]`. This settles the open question on MCP revisions.
+  - Tool input schemas are hand-written JSON Schema passed through `fromJsonSchema` with a validator that accepts everything, so the service is the only validator and a bad input is the same domain error as on every other surface. No `outputSchema`.
+  - Write tools take optional `operationId` and `waitForHistoryMs` beside the service input; they are taken off before the call because the service rejects unknown fields.
+  - `memory_history` returns `{ revisions: [...] }`, because `structuredContent` must be an object.
+  - `/mcp` is authenticated by the server's own authenticator before MCP dispatch, so 401/403 and the resource-metadata challenge are unchanged. Only the principal reaches the MCP handler (`authInfo.extra.principal`); the token is not forwarded.
+  - HTTP uses `responseMode: 'json'`; the SDK logs once to stderr that this drops mid-call notifications, which these tools never send.
+  - `subscriptions/listen` over HTTP is answered `-32601` before dispatch: no subscriptions are offered, and an open stream would hold `close()` forever. Each MCP request is aborted when its client disconnects.
+  - `memorykit mcp --store <dir>` serves stdio for the embedded principal; stdout carries only protocol messages.
+  - `@modelcontextprotocol/server` ^2.4.0 is a runtime dependency; `@modelcontextprotocol/client` is a dev dependency used only by tests.
+  - The MCP conformance drivers run `init`, `status` and namespace calls through the SDK, since those are not MCP tools.
+- Rejected:
+  - Also answering 2025-era clients statelessly: a second protocol surface to test and secure for clients the design does not target.
+  - Zod schemas or SDK-side validation: they turn bad input into protocol errors instead of domain codes.
+  - Forwarding the bearer token to the MCP layer: nothing there needs it.
 
 ## 2026-10-25 — Remote access as built (S9)
 

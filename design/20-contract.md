@@ -293,9 +293,9 @@ Errors use `application/problem+json` (RFC 9457): `{ type, title, status, code, 
 
 ### MCP server
 
-Specification 2026-07-28, stateless, through the TypeScript SDK v2 with that revision enabled. It runs over stdio (embedded, principal `EMBEDDED_PRINCIPAL` or the one configured) and over Streamable HTTP at `/mcp` on the service listener, using the same authenticator.
+Specification 2026-07-28 only, stateless, through the TypeScript SDK v2. A request in any other revision gets error `-32022` with `data.supported: ["2026-07-28"]`. It runs over stdio (embedded, principal `EMBEDDED_PRINCIPAL` or the one configured) and over Streamable HTTP at `/mcp` on the service listener, using the same authenticator.
 
-The tools are `memory_create`, `memory_get`, `memory_update`, `memory_archive`, `memory_restore`, `memory_tombstone`, `memory_supersede`, `memory_search`, `memory_history`, `memory_revision` and `memory_operation`. Each takes the matching service input as its `inputSchema` and returns `structuredContent` shaped as the service result.
+The tools are `memory_create`, `memory_get`, `memory_update`, `memory_archive`, `memory_restore`, `memory_tombstone`, `memory_supersede`, `memory_search`, `memory_history`, `memory_revision` and `memory_operation`. Each takes the matching service input as its `inputSchema` and returns `structuredContent` shaped as the service result. Write tools also take optional `operationId` and `waitForHistoryMs`, and `memory_history` returns `{ revisions }`, since `structuredContent` is an object.
 
 Domain errors return `isError: true` with `structuredContent: { code, retryable, details }`. Authentication failures on HTTP are HTTP 401 or 403, before MCP dispatch. Purge, namespace policy and history sync are not MCP tools in v1.
 
@@ -403,6 +403,5 @@ History export failures are never thrown at the writer. They appear as `history:
 ## Unresolved
 
 - npm package name and scope.
-- The MCP revisions accepted besides 2026-07-28.
 - Accepting TLS terminated by a reverse proxy for the remote profile.
 - Pruning of the exported outbox ledger.

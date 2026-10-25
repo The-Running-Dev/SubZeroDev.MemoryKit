@@ -262,6 +262,5 @@ Logs and errors name the operation, the provider, the memory id, the revision, t
 ## Open questions
 
 - The npm package name and scope. This does not block building.
-- Which MCP revisions besides 2026-07-28 the server answers. This is settled in the MCP slice by what the TypeScript SDK v2 supports.
 - Whether the remote profile accepts TLS that a reverse proxy terminates. v1 requires native TLS on any non-loopback listener.
 - Whether the exported outbox ledger is ever pruned. It is kept for now, and its growth is measured in the baseline slice.

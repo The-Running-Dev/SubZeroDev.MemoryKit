@@ -22,6 +22,7 @@ import {
   type SearchResult,
 } from '../model/index.ts';
 import { connect, initStore, openStore, openTokenStore, type StoreConfig } from '../sdk/index.ts';
+import { serveMcpStdio } from '../mcp/index.ts';
 import { serve, type ServeOptions } from '../server/index.ts';
 import type {
   CreateInput,
@@ -57,7 +58,7 @@ export const EXIT_HISTORY_PENDING = 3;
 
 const USAGE = `Usage: memorykit <command> [options]
 
-Every command except init, serve and token takes either --store <dir> or
+Every command except init, serve, mcp and token takes either --store <dir> or
 --url <url> [--token-env <VAR>], where <VAR> names the variable holding the token.
 
 Commands:
@@ -90,6 +91,7 @@ Commands:
         [--oidc-issuer <url> --oidc-audience <aud> --oidc-ceiling <permissions>:<pattern>...]
                                    Serve the store over HTTP (default ${DEFAULT_LISTEN});
                                    the --oidc-* flags select remote tokens and need TLS
+  mcp --store <dir>                 Serve the store as an MCP server over stdio
   token create --store <dir> --principal <id> --grant <permissions>:<pattern>...
                                    Issue a token; the secret is printed once
   token list --store <dir>
@@ -652,6 +654,20 @@ export async function run(
           await (deps.untilShutdown ?? untilSignal)();
         } finally {
           await server.close();
+        }
+        return EXIT_OK;
+      }
+      case 'mcp': {
+        only(rest, 0, 'no positional arguments for mcp');
+        if (values.url !== undefined) throw new UsageError('mcp takes --store, not --url');
+        // stdout carries only protocol messages from here on.
+        const client = await deps.openStore(storeConfig(values));
+        try {
+          const server = serveMcpStdio(client);
+          await Promise.race([server.closed, (deps.untilShutdown ?? untilSignal)()]);
+          await server.close();
+        } finally {
+          await client.close();
         }
         return EXIT_OK;
       }

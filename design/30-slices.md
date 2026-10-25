@@ -128,7 +128,7 @@ Acceptance:
 Out of scope: token issuance, client registration, reverse-proxy TLS.
 
 ## S10 — AI agents use the same memory over MCP
-Status: todo
+Status: done
 Delivers: An agent on the same machine (stdio) or another machine (Streamable HTTP) creates and retrieves memory through MCP, with the same results and permissions as every other interface.
 Touches: mcp (tools, stdio binding, Streamable HTTP binding on the service, 2026-07-28 opt-in); server (mount `/mcp`); cli (mcp); conformance (MCP stdio and MCP over HTTP drivers)
 Depends on: S9

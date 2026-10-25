@@ -10,6 +10,7 @@ import type { Grant } from '../access/index.ts';
 import { LocalTokenAuthenticator, type Authenticator } from '../authn/index.ts';
 import { OidcAuthenticator } from '../authn/oidc.ts';
 import { handle, problemResponse, type HttpResponse } from '../http/index.ts';
+import { mcpHttpHandler } from '../mcp/index.ts';
 import {
   ForbiddenError,
   LimitExceededError,
@@ -188,6 +189,7 @@ function challengeBase(headers: Headers, scheme: string, bound: string): string 
 }
 
 const METADATA_PATH = '/.well-known/oauth-protected-resource';
+const MCP_PATH = '/mcp';
 
 export async function serve(opts: ServeOptions): Promise<{ url: string; close(): Promise<void> }> {
   checkOptions(opts);
@@ -205,6 +207,7 @@ export async function serve(opts: ServeOptions): Promise<{ url: string; close():
   const opened = await openService(opts.store);
   const { service, tokens } = opened;
   const authenticator: Authenticator = oidc ?? new LocalTokenAuthenticator(tokens);
+  const mcp = mcpHttpHandler(service);
   const origins = new Set(opts.allowedOrigins ?? []);
   const inFlight = new Set<Promise<void>>();
   // Set once listening; the 401 challenge falls back to it.
@@ -236,6 +239,43 @@ export async function serve(opts: ServeOptions): Promise<{ url: string; close():
       }
       const principal = await authenticator.authenticate(headers);
       const body = await readBody(req, res);
+      if (path === MCP_PATH) {
+        const method = req.method ?? 'GET';
+        // The server offers no subscriptions, and a listen stream would never end.
+        const listen = subscriptionListen(body);
+        if (listen !== null) {
+          send(res, {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: listen,
+              error: { code: -32601, message: 'Method not found' },
+            }),
+          });
+          return;
+        }
+        // A client that goes away ends its exchange.
+        const abort = new AbortController();
+        res.once('close', () => abort.abort());
+        const request = new Request(new URL(req.url ?? '/', url), {
+          method,
+          headers,
+          signal: abort.signal,
+          ...(method === 'GET' || method === 'HEAD' ? {} : { body }),
+        });
+        // Only the principal is passed on; the token itself stays here.
+        const reply = await mcp.fetch(request, {
+          authInfo: { token: '', clientId: principal.id, scopes: [], extra: { principal } },
+        });
+        response = {
+          status: reply.status,
+          headers: Object.fromEntries(reply.headers),
+          body: await reply.text(),
+        };
+        send(res, response);
+        return;
+      }
       response = await handle(service.as(principal), {
         method: req.method ?? 'GET',
         path,
@@ -298,11 +338,24 @@ export async function serve(opts: ServeOptions): Promise<{ url: string; close():
       await Promise.allSettled([...inFlight]);
       server.closeAllConnections();
       await stopped;
+      await mcp.close();
       await opened.close();
     })();
     return closing;
   };
   return { url, close };
+}
+
+// The id of a JSON-RPC subscriptions/listen request, or null for anything else.
+function subscriptionListen(body: string): string | number | null {
+  try {
+    const message = JSON.parse(body) as { method?: unknown; id?: unknown } | null;
+    if (message === null || typeof message !== 'object' || Array.isArray(message)) return null;
+    if (message.method !== 'subscriptions/listen') return null;
+    return typeof message.id === 'string' || typeof message.id === 'number' ? message.id : null;
+  } catch {
+    return null;
+  }
 }
 
 function send(res: ServerResponse, response: HttpResponse): void {
