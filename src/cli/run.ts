@@ -22,7 +22,7 @@ import {
   type SearchResult,
 } from '../model/index.ts';
 import { connect, initStore, openStore, openTokenStore, type StoreConfig } from '../sdk/index.ts';
-import { serve } from '../server/index.ts';
+import { serve, type ServeOptions } from '../server/index.ts';
 import type {
   CreateInput,
   MemoryClient,
@@ -86,7 +86,10 @@ Commands:
   namespace set <ns> --history-policy <full|metadata|none> --store <dir>
   history-sync --store <dir> [--retry-blocked] [--budget-ms <n>]
   serve --store <dir> [--listen <host>:<port>] [--allowed-origin <origin>]...
-                                   Serve the store over HTTP (default ${DEFAULT_LISTEN})
+        [--tls-cert <file> --tls-key <file>]
+        [--oidc-issuer <url> --oidc-audience <aud> --oidc-ceiling <permissions>:<pattern>...]
+                                   Serve the store over HTTP (default ${DEFAULT_LISTEN});
+                                   the --oidc-* flags select remote tokens and need TLS
   token create --store <dir> --principal <id> --grant <permissions>:<pattern>...
                                    Issue a token; the secret is printed once
   token list --store <dir>
@@ -122,6 +125,11 @@ const OPTIONS = {
   'token-env': { type: 'string' },
   listen: { type: 'string' },
   'allowed-origin': { type: 'string', multiple: true },
+  'tls-cert': { type: 'string' },
+  'tls-key': { type: 'string' },
+  'oidc-issuer': { type: 'string' },
+  'oidc-audience': { type: 'string' },
+  'oidc-ceiling': { type: 'string', multiple: true },
   principal: { type: 'string' },
   grant: { type: 'string', multiple: true },
 } satisfies ParseArgsConfig['options'];
@@ -377,16 +385,44 @@ async function withTokens<T>(
 }
 
 // <permissions>:<pattern>, where permissions are comma-separated, as in read,write:demo/*.
-function parseGrants(items: string[] | undefined): Grant[] {
-  if (items === undefined) throw new UsageError('--grant is required');
+function parseGrants(items: string[] | undefined, flag = '--grant'): Grant[] {
+  if (items === undefined) throw new UsageError(`${flag} is required`);
   return items.map((item) => {
     const at = item.indexOf(':');
-    if (at <= 0) throw new UsageError(`--grant must be <permissions>:<pattern>, got "${item}"`);
+    if (at <= 0) throw new UsageError(`${flag} must be <permissions>:<pattern>, got "${item}"`);
     return {
       pattern: item.slice(at + 1),
       permissions: item.slice(0, at).split(',') as Permission[],
     };
   });
+}
+
+function serveTls(values: Values): ServeOptions['tls'] {
+  const certFile = values['tls-cert'];
+  const keyFile = values['tls-key'];
+  if (certFile === undefined && keyFile === undefined) return undefined;
+  if (certFile === undefined || keyFile === undefined) {
+    throw new UsageError('--tls-cert and --tls-key go together');
+  }
+  return { certFile, keyFile };
+}
+
+function serveAuth(values: Values): ServeOptions['auth'] {
+  const issuer = values['oidc-issuer'];
+  const audience = values['oidc-audience'];
+  const ceiling = values['oidc-ceiling'];
+  if (issuer === undefined && audience === undefined && ceiling === undefined) {
+    return { profile: 'local' };
+  }
+  if (issuer === undefined || audience === undefined || ceiling === undefined) {
+    throw new UsageError('--oidc-issuer, --oidc-audience and --oidc-ceiling go together');
+  }
+  return {
+    profile: 'remote',
+    issuer,
+    audience,
+    ceiling: parseGrants(ceiling, '--oidc-ceiling'),
+  };
 }
 
 function parseListen(text: string): { host: string; port: number } {
@@ -601,10 +637,12 @@ export async function run(
       case 'serve': {
         only(rest, 0, 'no positional arguments for serve');
         if (values.url !== undefined) throw new UsageError('serve takes --store, not --url');
+        const tls = serveTls(values);
         const server = await (deps.serve ?? serve)({
           store: storeConfig(values),
           listen: parseListen(values.listen ?? DEFAULT_LISTEN),
-          auth: { profile: 'local' },
+          ...(tls === undefined ? {} : { tls }),
+          auth: serveAuth(values),
           ...(values['allowed-origin'] === undefined
             ? {}
             : { allowedOrigins: values['allowed-origin'] }),

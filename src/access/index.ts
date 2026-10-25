@@ -87,21 +87,26 @@ export function permittedPatterns(p: Principal, permission: Permission): Namespa
     .map((grant) => grant.pattern);
 }
 
+// Whether every namespace the inner pattern can match is matched by the outer one: "*" is
+// covered only by "*", and a subtree only by a subtree over it.
+export function patternCovers(outer: NamespacePattern, inner: NamespacePattern): boolean {
+  if (outer === '*') return true;
+  if (inner === '*') return false;
+  const subtree = inner.endsWith('/*');
+  return (
+    (!subtree || outer.endsWith('/*')) &&
+    matchesPattern(outer, subtree ? inner.slice(0, -2) : inner)
+  );
+}
+
 // Throws Forbidden unless one grant holding the permission covers every namespace the
-// pattern can match: "*" needs a "*" grant, and a subtree needs a subtree grant over it.
+// pattern can match.
 export function authorizePattern(
   p: Principal,
   permission: Permission,
   pattern: NamespacePattern
 ): void {
-  const subtree = pattern.endsWith('/*');
-  const base = subtree ? pattern.slice(0, -2) : pattern;
-  const covered = permittedPatterns(p, permission).some(
-    (grant) =>
-      grant === '*' ||
-      (pattern !== '*' && (!subtree || grant.endsWith('/*')) && matchesPattern(grant, base))
-  );
-  if (covered) return;
+  if (permittedPatterns(p, permission).some((grant) => patternCovers(grant, pattern))) return;
   throw new ForbiddenError('The namespace or permission is not granted', {
     namespace: pattern,
     permission,
@@ -115,4 +120,44 @@ export function authorize(p: Principal, permission: Permission, ns: Namespace): 
     namespace: ns,
     permission,
   });
+}
+
+// Grants from a space-separated scope claim. Only "mk:<permission>:<pattern>" items count;
+// others (openid, profile) and malformed ones grant nothing.
+export function parseScopeClaim(scope: string): Grant[] {
+  const grants: Grant[] = [];
+  for (const item of typeof scope === 'string' ? scope.split(/\s+/) : []) {
+    const match = /^mk:([a-z]+):(.+)$/.exec(item);
+    if (!match) continue;
+    const permission = match[1] as Permission;
+    const pattern = match[2]!;
+    if (!PERMISSIONS.includes(permission) || !isNamespacePattern(pattern)) continue;
+    grants.push({ pattern, permissions: [permission] });
+  }
+  return grants;
+}
+
+// What a token may do: each requested permission on the narrower of its pattern and a ceiling
+// pattern holding the same permission. Patterns that only partly overlap grant nothing.
+export function intersectGrants(requested: Grant[], ceiling: Grant[]): Grant[] {
+  const byPattern = new Map<NamespacePattern, Set<Permission>>();
+  for (const grant of requested) {
+    for (const permission of grant.permissions) {
+      for (const limit of ceiling) {
+        if (!limit.permissions.includes(permission)) continue;
+        const pattern = patternCovers(limit.pattern, grant.pattern)
+          ? grant.pattern
+          : patternCovers(grant.pattern, limit.pattern)
+            ? limit.pattern
+            : undefined;
+        if (pattern === undefined) continue;
+        if (!byPattern.has(pattern)) byPattern.set(pattern, new Set());
+        byPattern.get(pattern)!.add(permission);
+      }
+    }
+  }
+  return [...byPattern].map(([pattern, permissions]) => ({
+    pattern,
+    permissions: PERMISSIONS.filter((permission) => permissions.has(permission)),
+  }));
 }

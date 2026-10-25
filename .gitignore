@@ -4,6 +4,8 @@
 .env.*.local
 *.key
 *.pem
+# The self-signed localhost certificate the tests serve with; it protects nothing.
+!tests/fixtures/tls/*.pem
 secrets/
 
 # IDE & build outputs

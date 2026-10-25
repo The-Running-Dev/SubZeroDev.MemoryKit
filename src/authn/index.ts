@@ -37,3 +37,5 @@ export class LocalTokenAuthenticator implements Authenticator {
     return principal;
   }
 }
+
+export { OidcAuthenticator, type OidcOptions } from './oidc.ts';
