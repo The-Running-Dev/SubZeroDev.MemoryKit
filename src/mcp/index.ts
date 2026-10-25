@@ -25,33 +25,30 @@ const PASS_THROUGH: jsonSchemaValidator = {
 };
 
 const string = { type: 'string' } as const;
-const integer = { type: 'integer' } as const;
-const strings = { type: 'array', items: string } as const;
+const revision = { type: 'integer', minimum: 1 } as const;
+const strings = { type: 'array', items: string, minItems: 1 } as const;
 const metadata = { type: 'object', description: 'JSON values by key' } as const;
 const links = {
   type: 'array',
-  items: {
-    type: 'object',
-    properties: { type: string, target: string },
-    required: ['type', 'target'],
-  },
+  items: object({ type: string, target: string }, ['type', 'target']),
 } as const;
-const provenance = {
-  type: 'object',
-  properties: {
-    origin: string,
+const provenance = object(
+  {
+    origin: object({ kind: string, name: string, version: string }, ['kind', 'name']),
     reason: string,
-    evidence: {
-      type: 'array',
-      items: { type: 'object', properties: { ref: string, note: string }, required: ['ref'] },
-    },
+    evidence: { type: 'array', items: object({ ref: string, note: string }, ['ref']) },
   },
-} as const;
+  []
+);
 const contentType = { type: 'string', enum: [...CONTENT_TYPES] } as const;
 // Write options ride beside the service input and are taken off before the call.
 const writeOptions = {
   operationId: { type: 'string', description: 'Idempotency key for this write' },
-  waitForHistoryMs: { type: 'integer', description: 'How long to wait for history' },
+  waitForHistoryMs: {
+    type: 'integer',
+    minimum: 0,
+    description: 'How long to wait for history',
+  },
 } as const;
 const record = {
   kind: string,
@@ -62,8 +59,9 @@ const record = {
   provenance,
 } as const;
 
+// The service refuses fields it does not know, so every object closes.
 function object(properties: Record<string, unknown>, required: string[]): JsonSchemaType {
-  return { type: 'object', properties, required } as JsonSchemaType;
+  return { type: 'object', properties, required, additionalProperties: false } as JsonSchemaType;
 }
 
 type Args = Record<string, unknown>;
@@ -102,21 +100,28 @@ const TOOLS: Record<string, ToolSpec> = {
   },
   memory_update: {
     description: 'Change a memory; omitted fields keep their value.',
-    inputSchema: object({ id: string, expectedRevision: integer, ...record, ...writeOptions }, [
+    inputSchema: object({ id: string, expectedRevision: revision, ...record, ...writeOptions }, [
       'id',
       'expectedRevision',
     ]),
     call: (client, args) => client.update(...(split(args) as [any, WriteOptions])),
   },
   memory_archive: transition('archive', 'Archive an active memory.'),
-  memory_restore: transition('restore', 'Restore an archived memory to active.'),
-  memory_tombstone: transition('tombstone', 'Tombstone a memory; it can no longer change.'),
+  memory_restore: transition(
+    'restore',
+    'Restore an archived memory to active, or a tombstoned one to the state it had before; ' +
+      'restoring a tombstone needs the tombstone permission.'
+  ),
+  memory_tombstone: transition(
+    'tombstone',
+    'Tombstone a memory: it stays readable but takes no updates until it is restored.'
+  ),
   memory_supersede: {
     description: 'Replace a memory with a new one that supersedes it.',
     inputSchema: object(
       {
         id: string,
-        expectedRevision: integer,
+        expectedRevision: revision,
         replacement: object({ namespace: string, key: string, ...record }, ['kind', 'content']),
         ...writeOptions,
       },
@@ -131,9 +136,9 @@ const TOOLS: Record<string, ToolSpec> = {
         namespaces: strings,
         text: string,
         kinds: strings,
-        states: { type: 'array', items: { type: 'string', enum: [...MEMORY_STATES] } },
+        states: { type: 'array', items: { type: 'string', enum: [...MEMORY_STATES] }, minItems: 1 },
         metadata: { type: 'object', description: 'Top-level equality on scalar values' },
-        limit: integer,
+        limit: { type: 'integer', minimum: 1 },
         cursor: string,
       },
       []
@@ -148,7 +153,7 @@ const TOOLS: Record<string, ToolSpec> = {
   },
   memory_revision: {
     description: 'Read one revision of a memory from history.',
-    inputSchema: object({ id: string, revision: integer }, ['id', 'revision']),
+    inputSchema: object({ id: string, revision: revision }, ['id', 'revision']),
     call: (client, args) => client.revision(args.id as string, args.revision as number),
   },
   memory_operation: {
@@ -161,7 +166,7 @@ const TOOLS: Record<string, ToolSpec> = {
 function transition(name: 'archive' | 'restore' | 'tombstone', description: string): ToolSpec {
   return {
     description,
-    inputSchema: object({ id: string, expectedRevision: integer, provenance, ...writeOptions }, [
+    inputSchema: object({ id: string, expectedRevision: revision, provenance, ...writeOptions }, [
       'id',
       'expectedRevision',
     ]),

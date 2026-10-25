@@ -242,6 +242,100 @@ describe('S10 MCP', () => {
     for (const tool of tools) assert.equal(tool.inputSchema.type, 'object');
   });
 
+  it('the discovered schemas describe what the service takes', async () => {
+    const store = tempDir();
+    await initStore({ path: store });
+    const client = await overStdio(store);
+    const schemas = Object.fromEntries(
+      (await client.listTools()).tools.map((tool) => [tool.name, tool.inputSchema as Structured])
+    );
+    const props = (schema: Structured) => schema.properties as Record<string, Structured>;
+    const origin = {
+      type: 'object',
+      properties: {
+        kind: { type: 'string' },
+        name: { type: 'string' },
+        version: { type: 'string' },
+      },
+      required: ['kind', 'name'],
+      additionalProperties: false,
+    };
+    const provenances = [
+      ...[
+        'memory_create',
+        'memory_update',
+        'memory_archive',
+        'memory_restore',
+        'memory_tombstone',
+      ].map((name) => props(schemas[name]!).provenance!),
+      props(props(schemas.memory_supersede!).replacement!).provenance!,
+    ];
+    for (const provenance of provenances) assert.deepEqual(props(provenance).origin, origin);
+    // Every input the service refuses an unknown field in says so.
+    for (const schema of Object.values(schemas)) assert.equal(schema.additionalProperties, false);
+    assert.equal(props(schemas.memory_revision!).revision!.minimum, 1);
+    assert.equal(props(schemas.memory_update!).expectedRevision!.minimum, 1);
+    assert.equal(props(schemas.memory_search!).limit!.minimum, 1);
+    assert.equal(props(schemas.memory_create!).waitForHistoryMs!.minimum, 0);
+
+    const created = await client.callTool({
+      name: 'memory_create',
+      arguments: {
+        namespace: 'demo',
+        kind: 'note',
+        content: 'x',
+        provenance: { origin: { kind: 'agent', name: 'codex', version: '1' } },
+      },
+    });
+    assert.equal(created.isError, undefined);
+    const memory = (created.structuredContent as Structured).memory as Structured;
+    assert.deepEqual((memory.provenance as Structured).origin, {
+      kind: 'agent',
+      name: 'codex',
+      version: '1',
+    });
+    const refused = await client.callTool({
+      name: 'memory_create',
+      arguments: { namespace: 'demo', kind: 'note', content: 'x', provenance: { origin: 'codex' } },
+    });
+    assert.equal(refused.isError, true);
+    assert.deepEqual(refused.structuredContent, {
+      code: 'ValidationFailed',
+      retryable: false,
+      details: { field: 'provenance.origin', reason: 'not_an_object' },
+    });
+  });
+
+  it('tombstone and restore describe the lifecycle they run', async () => {
+    const store = tempDir();
+    await initStore({ path: store });
+    const client = await overStdio(store);
+    const described = Object.fromEntries(
+      (await client.listTools()).tools.map((tool) => [tool.name, tool.description ?? ''])
+    );
+    assert.doesNotMatch(described.memory_tombstone!, /no longer change/);
+    assert.match(described.memory_tombstone!, /until it is restored/);
+    assert.match(described.memory_restore!, /archived/);
+    assert.match(described.memory_restore!, /tombstoned/);
+
+    const created = await client.callTool({
+      name: 'memory_create',
+      arguments: { namespace: 'demo', kind: 'note', content: 'x' },
+    });
+    const id = ((created.structuredContent as Structured).memory as Structured).id;
+    const step = async (name: string, expectedRevision: number) => {
+      const result = await client.callTool({ name, arguments: { id, expectedRevision } });
+      return (result.structuredContent as Structured).memory as Structured;
+    };
+    assert.equal((await step('memory_archive', 1)).state, 'archived');
+    const tombstoned = await step('memory_tombstone', 2);
+    assert.deepEqual([tombstoned.state, tombstoned.priorState], ['tombstoned', 'archived']);
+    const read = await client.callTool({ name: 'memory_get', arguments: { id } });
+    assert.equal((read.structuredContent as Structured).state, 'tombstoned');
+    assert.equal((await step('memory_restore', 3)).state, 'archived');
+    assert.equal((await step('memory_restore', 4)).state, 'active');
+  });
+
   it('S10.5 a 2025-era client is refused with the supported versions', async () => {
     const store = tempDir();
     await initStore({ path: store });
