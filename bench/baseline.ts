@@ -1,16 +1,19 @@
 // Baseline numbers for later comparison, not targets. For each store size it times create,
 // get, search, revision retrieval and the history drain on a fresh store with Git history,
-// then reports the database and repository size.
+// counts the git processes per exported and per retrieved revision, checks that every revision
+// reached the repository, then reports the database and repository size.
 //
 //   node bench/baseline.ts [--sizes 1000,10000] [--out bench/baseline.md]
 //
 // Creates run while the drain lease is held, so they measure the write path alone and the
 // whole backlog is then drained in one timed sync.
 
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { cpus, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
+import { GitHistory } from '../src/history-git/index.ts';
 import { EMBEDDED_PRINCIPAL, initStore, openService, type MemoryId } from '../src/index.ts';
 
 const WORDS = [
@@ -20,6 +23,17 @@ const WORDS = [
 ]; // prettier-ignore
 const KINDS = ['note', 'fact', 'decision', 'preference'];
 const SAMPLES = { get: 1_000, search: 200, revision: 200 };
+
+// Every git process the provider starts, counted against the phase that started it.
+type Git = (args: string[], exec?: unknown) => Promise<unknown>;
+const provider = GitHistory.prototype as unknown as { git: Git };
+const spawn = provider.git;
+const spawned = new Map<string, number>();
+let phase = 'setup';
+provider.git = function (this: unknown, args, exec) {
+  spawned.set(phase, (spawned.get(phase) ?? 0) + 1);
+  return spawn.call(this, args, exec);
+};
 
 // A small deterministic generator, so every run writes the same store.
 function random(seed: number): () => number {
@@ -51,6 +65,31 @@ async function timed(count: number, run: (i: number) => Promise<unknown>): Promi
   return summarize(samples);
 }
 
+// Every created revision is one commit, and each is addressable by its memory and revision.
+function checkPreserved(repository: string, ids: MemoryId[]): void {
+  const log = spawnSync(
+    'git',
+    [
+      '--git-dir',
+      repository,
+      'log',
+      '--format=%(trailers:key=MemoryKit-Memory,key=MemoryKit-Revision,valueonly,separator=%x20)',
+      'main',
+    ],
+    { encoding: 'utf8', maxBuffer: 1 << 28 }
+  );
+  if (log.status !== 0) throw new Error(`git log failed: ${log.stderr}`);
+  const commits = log.stdout.split('\n').filter((line) => line.trim() !== '');
+  const found = new Set(commits);
+  const lines = commits.length;
+  const missing = ids.filter((id) => !found.has(`${id} 1`));
+  if (lines !== ids.length || found.size !== ids.length || missing.length > 0) {
+    throw new Error(
+      `Revisions not preserved: ${lines} commits, ${found.size} distinct, ${missing.length} missing`
+    );
+  }
+}
+
 function sizeOf(path: string): number {
   const stat = statSync(path);
   if (!stat.isDirectory()) return stat.size;
@@ -65,12 +104,15 @@ interface Result {
   revision: Timing;
   drainPerSecond: number;
   drainSeconds: number;
+  drainProcesses: number; // per exported revision
+  revisionProcesses: number; // per retrieved revision
   databaseBytes: number;
   repositoryBytes: number;
 }
 
 async function measure(size: number): Promise<Result> {
   const dir = mkdtempSync(join(tmpdir(), 'memorykit-bench-'));
+  spawned.clear();
   try {
     const store = { path: dir, service: { historyWaitMs: 0, drainBudgetMs: 3_600_000 } };
     await initStore(store);
@@ -94,16 +136,21 @@ async function measure(size: number): Promise<Result> {
     });
     await service.storage.releaseDrainLease(lease.token);
 
+    phase = 'drain';
     const drainStart = performance.now();
     const queue = await client.syncHistory({ budgetMs: 3_600_000 });
     const drainSeconds = (performance.now() - drainStart) / 1_000;
     if (queue.pending !== 0) throw new Error(`History did not drain: ${JSON.stringify(queue)}`);
+    phase = 'read';
+    checkPreserved(join(dir, 'history.git'), ids);
 
     const get = await timed(SAMPLES.get, () => client.get(pick(ids)));
     const search = await timed(SAMPLES.search, () =>
       client.search({ namespaces: ['bench/*'], text: pick(WORDS), limit: 20 })
     );
+    phase = 'revision';
     const revision = await timed(SAMPLES.revision, () => client.revision(pick(ids), 1));
+    phase = 'setup';
     await close();
     return {
       size,
@@ -113,6 +160,8 @@ async function measure(size: number): Promise<Result> {
       revision,
       drainPerSecond: size / drainSeconds,
       drainSeconds,
+      drainProcesses: (spawned.get('drain') ?? 0) / size,
+      revisionProcesses: (spawned.get('revision') ?? 0) / SAMPLES.revision,
       databaseBytes: sizeOf(join(dir, 'memory.db')),
       repositoryBytes: sizeOf(join(dir, 'history.git')),
     };
@@ -144,6 +193,9 @@ function report(results: Result[]): string {
       'drain (revisions/s)',
       (r) => `${r.drainPerSecond.toFixed(1)} (${r.drainSeconds.toFixed(1)} s)`
     ),
+    row('git processes per exported revision', (r) => r.drainProcesses.toFixed(2)),
+    row('git processes per retrieved revision', (r) => r.revisionProcesses.toFixed(2)),
+    row('every revision in the repository', () => 'yes'),
     row('database (MiB)', (r) => mib(r.databaseBytes)),
     row('repository (MiB)', (r) => mib(r.repositoryBytes)),
     '',
