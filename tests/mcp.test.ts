@@ -236,5 +236,17 @@ describe('S10 MCP', () => {
     };
     assert.equal(body.error.code, -32022);
     assert.deepEqual(body.error.data.supported, [MCP_PROTOCOL_VERSION]);
+
+    // No subscription stream is opened, so it cannot hold the server open.
+    const listen = await fetch(`${server.url}/mcp`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'subscriptions/listen', params: {} }),
+    });
+    assert.deepEqual(((await listen.json()) as { error: { code: number } }).error.code, -32601);
   });
 });

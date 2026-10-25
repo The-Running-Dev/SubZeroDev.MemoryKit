@@ -19,6 +19,7 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
   - `memory_history` returns `{ revisions: [...] }`, because `structuredContent` must be an object.
   - `/mcp` is authenticated by the server's own authenticator before MCP dispatch, so 401/403 and the resource-metadata challenge are unchanged. Only the principal reaches the MCP handler (`authInfo.extra.principal`); the token is not forwarded.
   - HTTP uses `responseMode: 'json'`; the SDK logs once to stderr that this drops mid-call notifications, which these tools never send.
+  - `subscriptions/listen` over HTTP is answered `-32601` before dispatch: no subscriptions are offered, and an open stream would hold `close()` forever. Each MCP request is aborted when its client disconnects.
   - `memorykit mcp --store <dir>` serves stdio for the embedded principal; stdout carries only protocol messages.
   - `@modelcontextprotocol/server` ^2.4.0 is a runtime dependency; `@modelcontextprotocol/client` is a dev dependency used only by tests.
   - The MCP conformance drivers run `init`, `status` and namespace calls through the SDK, since those are not MCP tools.

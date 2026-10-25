@@ -241,9 +241,27 @@ export async function serve(opts: ServeOptions): Promise<{ url: string; close():
       const body = await readBody(req, res);
       if (path === MCP_PATH) {
         const method = req.method ?? 'GET';
+        // The server offers no subscriptions, and a listen stream would never end.
+        const listen = subscriptionListen(body);
+        if (listen !== null) {
+          send(res, {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: listen,
+              error: { code: -32601, message: 'Method not found' },
+            }),
+          });
+          return;
+        }
+        // A client that goes away ends its exchange.
+        const abort = new AbortController();
+        res.once('close', () => abort.abort());
         const request = new Request(new URL(req.url ?? '/', url), {
           method,
           headers,
+          signal: abort.signal,
           ...(method === 'GET' || method === 'HEAD' ? {} : { body }),
         });
         // Only the principal is passed on; the token itself stays here.
@@ -326,6 +344,18 @@ export async function serve(opts: ServeOptions): Promise<{ url: string; close():
     return closing;
   };
   return { url, close };
+}
+
+// The id of a JSON-RPC subscriptions/listen request, or null for anything else.
+function subscriptionListen(body: string): string | number | null {
+  try {
+    const message = JSON.parse(body) as { method?: unknown; id?: unknown } | null;
+    if (message === null || typeof message !== 'object' || Array.isArray(message)) return null;
+    if (message.method !== 'subscriptions/listen') return null;
+    return typeof message.id === 'string' || typeof message.id === 'number' ? message.id : null;
+  } catch {
+    return null;
+  }
 }
 
 function send(res: ServerResponse, response: HttpResponse): void {
