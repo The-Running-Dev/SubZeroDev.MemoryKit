@@ -154,7 +154,7 @@ Acceptance:
 Out of scope: rewriting history, cleaning remotes.
 
 ## S12 — Installable package and measured baselines
-Status: todo
+Status: done
 Delivers: A developer installs MemoryKit from a packed tarball with no database or AI service and runs it end to end. Baseline numbers exist for later comparison.
 Touches: package metadata (bin, exports, engines); a baseline benchmark script; README usage
 Depends on: S11

@@ -9,6 +9,19 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-25 — Package and baseline as built (S12)
+
+- Context: S12 needs an installed package exercised end to end on the CI matrix, a consumer limited to the public entry, and committed baseline numbers. Exporting each revision to Git spawns about ten `git` processes, which on the Windows development machine drains about 1.4 revisions per second, so 10k memories would take about two hours there.
+- Chosen:
+  - `scripts/check-package.ts` (`npm run check:package`) packs the package, installs the tarball into an empty directory, runs `memorykit init`, `create` and `get` through `npx`, then type-checks `tests/consumer/consumer.ts` against the installed declarations and runs it. CI runs it as a step on every matrix job.
+  - The consumer imports only `subzerodev-memorykit` and asserts a deep import fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`. It is excluded from the repository type check, since only an install resolves the package by name.
+  - `bench/baseline.ts` (`npm run bench`) times creates while holding the drain lease, so they measure the write path alone, then drains the whole backlog in one timed sync. A fixed-seed generator makes every run write the same store.
+  - The committed baseline in `bench/baseline.md` comes from the `bench` CI job on ubuntu-latest with Node 24, run by `workflow_dispatch` only, which writes the table to the job summary.
+- Rejected:
+  - Running the benchmark in `npm test` or on every push: it takes minutes and its numbers are not pass or fail.
+  - A local Windows baseline: the drain figure would describe process spawning on that machine, not the store.
+  - Uploading the table as a workflow artifact: the job summary is readable without a download.
+
 ## 2026-10-25 — Purge as built (S11)
 
 - Context: S11 adds purge on the SDK, HTTP and CLI. The contract's storage signature returned a boundary result and an outbox seq the service does not need, and did not say how a replay rebuilds its report or what happens to history the purge cannot wait for.
