@@ -297,21 +297,36 @@ export class SqliteStorage implements StorageProvider {
     return this.read((db) => supersededBy(db, ids));
   }
 
+  // An operation's entries were queued together, so they are the run of rows ending at its
+  // seq; the operation reports the worst of them and the last one's ref.
   operation(principalId: string, operationId: string): Promise<OperationStatus | null> {
     return this.read((db) => {
       const row = db
         .prepare(
-          `SELECT o.operation_id, o.memory_id, o.revision, x.status, x.history_ref
+          `SELECT o.operation_id, o.memory_id, o.revision, o.seq, x.history_ref
            FROM operations o LEFT JOIN outbox x ON x.seq = o.seq
            WHERE o.principal_id = ? AND o.operation_id = ?`
         )
         .get(principalId, operationId) as Row | undefined;
       if (!row) return null;
-      const history: HistoryStatus =
-        row.status === 'exported'
-          ? 'persisted'
-          : row.status === 'pending' || row.status === 'blocked'
-            ? row.status
+      const statuses = new Set<string>();
+      if (row.seq !== null) {
+        const entries = db
+          .prepare(
+            'SELECT operation_id, actor, status FROM outbox WHERE seq <= ? ORDER BY seq DESC'
+          )
+          .iterate(Number(row.seq)) as Iterable<Row>;
+        for (const entry of entries) {
+          if (entry.operation_id !== operationId || entry.actor !== principalId) break;
+          statuses.add(String(entry.status));
+        }
+      }
+      const history: HistoryStatus = statuses.has('blocked')
+        ? 'blocked'
+        : statuses.has('pending')
+          ? 'pending'
+          : statuses.has('exported')
+            ? 'persisted'
             : 'not_required';
       return {
         operationId: String(row.operation_id),

@@ -53,6 +53,20 @@ export const cliDriver: Driver = {
       runCli(writeArgs(['update', String(id)], store, input, operationId)),
       (out) => JSON.parse(out) as Record<string, unknown>
     ),
+  transition: async (store, operation, { id, ...input }, operationId) =>
+    parse(runCli(writeArgs([operation, String(id)], store, input, operationId)), json),
+  supersede: async (store, { id, expectedRevision, replacement }, operationId) =>
+    parse(
+      runCli(
+        writeArgs(
+          ['supersede', String(id)],
+          store,
+          { expectedRevision, ...(replacement as Record<string, unknown>) },
+          operationId
+        )
+      ),
+      json
+    ),
   get: async (store, id) => parse(runCli(['get', id, '--store', store, '--json']), json),
   history: async (store, id) => parse(runCli(['history', id, '--store', store, '--json']), json),
   operation: async (store, operationId) =>

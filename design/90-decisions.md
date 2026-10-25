@@ -10,6 +10,23 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-25 — Lifecycle as built (S5)
+- **Context:** The contract names archive, restore, tombstone and supersede but leaves open how a supersede is recorded, which permission a restore needs, and what a transition may change besides the state.
+- **Chosen:**
+  - A supersede is one operation, `supersede`, with two writes: the replacement first (revision 1), then the target (its revision + 1, `superseded`). Each write gets its own outbox entry, so Git holds two commits sharing one `MemoryKit-Operation` trailer. The outcome's `memory` is the replacement and `related` holds the target.
+  - The replacement's namespace defaults to the target's. An explicit namespace needs `write` there as well. A `supersedes` link to the target is added when the caller leaves it out, never duplicated.
+  - Replacement validation errors name the field without a prefix (`content`, not `replacement.content`), matching create.
+  - Transitions load the memory within the caller's `read`, `write` and `tombstone` patterns, then authorise before comparing the revision: `archive` needs `write`, `tombstone` needs `tombstone`, `restore` needs `tombstone` when the memory is tombstoned and `write` otherwise. A visible id without the permission is `Forbidden` (S7.4), never `RevisionConflict`; an id outside all three is `NotFound`.
+  - A principal allowed to change a memory sees it in the outcome, so `tombstone` without `read` reveals the record it tombstones.
+  - A transition takes an optional `provenance`, which replaces the memory's when given. Content, kind, metadata and links never change in a transition.
+  - Replays load the outcome with the same patterns as the operation's first load, and leave out related records no longer visible under them.
+  - An operation's history status is the worst of its outbox entries (`blocked`, then `pending`, then `persisted`); its ref is the last entry's.
+  - An exported target's `supersededBy` may name a replacement in a namespace with policy `none`: only the opaque id leaves, never its content.
+  - The CLI transitions take an id and `--expected-revision` only; record flags fail with `UsageError`. The text output prints one line per related record.
+- **Rejected:** Recording a supersede as a create plus a separate transition (two operations, so a crash could leave the replacement without the superseded target); prefixing replacement field names; letting a transition edit fields.
+
+---
+
 ## 2026-10-25 — Git export hardening from the S4 review (S4)
 - **Context:** Review of the S4 provider found ways an export could duplicate commits, write outside the repository, crash the host or block on an outage.
 - **Chosen:**

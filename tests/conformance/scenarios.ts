@@ -168,4 +168,59 @@ export const SCENARIOS: Scenario[] = [
       );
     },
   },
+  {
+    name: 'S5 supersede, tombstone, restore and an invalid transition',
+    async run(driver) {
+      const store = tempDir();
+      value(await driver.init(store));
+      const created = value(
+        await driver.create(store, { namespace: 'demo', kind: 'note', content: 'old' })
+      );
+      const a = (created.memory as Record<string, unknown>).id as string;
+
+      const superseded = value(
+        await driver.supersede(store, {
+          id: a,
+          expectedRevision: 1,
+          replacement: { kind: 'note', content: 'new' },
+        })
+      );
+      const b = superseded.memory as Record<string, unknown>;
+      assert.equal(b.namespace, 'demo');
+      assert.deepEqual(b.links, [{ type: 'supersedes', target: a }]);
+      const related = superseded.related as Record<string, unknown>[];
+      assert.deepEqual(
+        related.map((m) => [m.id, m.state, m.revision, m.supersededBy]),
+        [[a, 'superseded', 2, [b.id]]]
+      );
+      const target = value(await driver.get(store, a));
+      assert.equal(target.state, 'superseded');
+      assert.deepEqual(target.supersededBy, [b.id]);
+
+      const tombstoned = value(
+        await driver.transition(store, 'tombstone', { id: a, expectedRevision: 2 })
+      ).memory as Record<string, unknown>;
+      assert.deepEqual(
+        [tombstoned.revision, tombstoned.state, tombstoned.priorState],
+        [3, 'tombstoned', 'superseded']
+      );
+      problem(
+        await driver.update(store, { id: a, expectedRevision: 2, content: 'stale' }),
+        'RevisionConflict'
+      );
+      problem(
+        await driver.transition(store, 'archive', { id: a, expectedRevision: 3 }),
+        'InvalidTransition'
+      );
+      assert.equal(value(await driver.get(store, a)).revision, 3);
+
+      const restored = value(
+        await driver.transition(store, 'restore', { id: a, expectedRevision: 3 })
+      ).memory as Record<string, unknown>;
+      assert.deepEqual(
+        [restored.revision, restored.state, restored.priorState],
+        [4, 'superseded', null]
+      );
+    },
+  },
 ];

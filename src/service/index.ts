@@ -39,6 +39,8 @@ import {
   validateMemoryId,
   validateOperationId,
   validateRevision,
+  validateSupersede,
+  validateTransition,
   type ContentType,
   type JsonValue,
   type Limits,
@@ -46,6 +48,9 @@ import {
   type MemoryId,
   type MemoryRecord,
   type Namespace,
+  type NamespacePattern,
+  type NormalizedCreate,
+  type Operation,
   type Provenance,
 } from '../model/index.ts';
 
@@ -85,6 +90,18 @@ export interface UpdateInput {
   provenance?: Provenance; // omitted fields keep their value; links and metadata are replaced whole
 }
 
+export interface TransitionInput {
+  id: MemoryId;
+  expectedRevision: number;
+  provenance?: Provenance; // replaces the memory's provenance when given
+}
+
+export interface SupersedeInput {
+  id: MemoryId;
+  expectedRevision: number;
+  replacement: Omit<CreateInput, 'namespace'> & { namespace?: Namespace }; // defaults to the target's
+}
+
 export interface SyncOptions {
   retryBlocked?: boolean;
   budgetMs?: number;
@@ -93,6 +110,10 @@ export interface SyncOptions {
 export interface MemoryClient {
   create(input: CreateInput, opts?: WriteOptions): Promise<WriteOutcome>;
   update(input: UpdateInput, opts?: WriteOptions): Promise<WriteOutcome>;
+  archive(input: TransitionInput, opts?: WriteOptions): Promise<WriteOutcome>;
+  restore(input: TransitionInput, opts?: WriteOptions): Promise<WriteOutcome>;
+  tombstone(input: TransitionInput, opts?: WriteOptions): Promise<WriteOutcome>;
+  supersede(input: SupersedeInput, opts?: WriteOptions): Promise<WriteOutcome>;
   get(id: MemoryId): Promise<MemoryRecord>;
   history(id: MemoryId): Promise<RevisionSummary[]>;
   revision(id: MemoryId, revision: number): Promise<RevisionSnapshot>;
@@ -327,6 +348,25 @@ function retained(
   return { ...rest, contentHash: sha256Hex(content), metadataKeys: Object.keys(metadata).sort() };
 }
 
+// A revision to write, with the revision storage must still hold (null for a new memory).
+interface Write {
+  record: StoredRow['record'];
+  expected: number | null;
+}
+
+// The supersededBy a record will have once the batch commits: the batch's own records
+// replace whatever links they had before.
+function batchSupersededBy(id: MemoryId, stored: MemoryId[], writes: Write[]): MemoryId[] {
+  const batch = new Set(writes.map((write) => write.record.id));
+  const sources = stored.filter((source) => !batch.has(source));
+  for (const { record } of writes) {
+    if (record.links.some((link) => link.type === 'supersedes' && link.target === id)) {
+      sources.push(record.id);
+    }
+  }
+  return sources.sort();
+}
+
 function validateDuration(value: unknown, field: string): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
     throw new ValidationFailedError(`Invalid ${field}: not_a_duration`, {
@@ -349,34 +389,17 @@ class ServiceClient implements MemoryClient {
   async create(input: CreateInput, opts: WriteOptions = {}): Promise<WriteOutcome> {
     const normalized = validateCreate(input, this.service.limits);
     authorize(this.principal, 'write', normalized.namespace);
-    return this.mutate('create', normalized, opts, async (tx, now) => {
-      const record: StoredRow['record'] = {
-        id: newMemoryId(),
-        ...normalized,
-        state: nextState('create', null, null),
-        priorState: null,
-        revision: 1,
-        actor: this.principal.id,
-        createdAt: now,
-        updatedAt: now,
-      };
-      return { record, expected: null, policy: await this.policy(tx, record.namespace) };
-    });
+    const patterns = permittedPatterns(this.principal, 'write');
+    return this.mutate('create', normalized, opts, patterns, async (_tx, now) => [
+      { record: this.created(normalized, now), expected: null },
+    ]);
   }
 
   async update(input: UpdateInput, opts: WriteOptions = {}): Promise<WriteOutcome> {
     const normalized = validateUpdate(input, this.service.limits);
-    const scope = { patterns: permittedPatterns(this.principal, 'write') };
-    return this.mutate('update', normalized, opts, async (tx, now) => {
-      const current = await tx.load(normalized.id, scope);
-      if (!current) throw new NotFoundError('Memory not found', { id: normalized.id });
-      const before = current.record;
-      if (before.revision !== normalized.expectedRevision) {
-        throw new RevisionConflictError('The memory has changed since it was read', {
-          id: before.id,
-          currentRevision: before.revision,
-        });
-      }
+    const patterns = permittedPatterns(this.principal, 'write');
+    return this.mutate('update', normalized, opts, patterns, async (tx, now) => {
+      const before = await this.loadExpected(tx, normalized, patterns);
       const record: StoredRow['record'] = {
         ...before,
         ...normalized.changes,
@@ -386,8 +409,115 @@ class ServiceClient implements MemoryClient {
         updatedAt: now,
       };
       requireContentMatchesType(record.content, record.contentType);
-      return { record, expected: before.revision, policy: await this.policy(tx, record.namespace) };
+      return [{ record, expected: before.revision }];
     });
+  }
+
+  archive(input: TransitionInput, opts: WriteOptions = {}): Promise<WriteOutcome> {
+    return this.transition('archive', input, opts);
+  }
+
+  restore(input: TransitionInput, opts: WriteOptions = {}): Promise<WriteOutcome> {
+    return this.transition('restore', input, opts);
+  }
+
+  tombstone(input: TransitionInput, opts: WriteOptions = {}): Promise<WriteOutcome> {
+    return this.transition('tombstone', input, opts);
+  }
+
+  // The replacement and the superseded target are written in one transaction; the outcome is
+  // the replacement, with the target in related.
+  async supersede(input: SupersedeInput, opts: WriteOptions = {}): Promise<WriteOutcome> {
+    const normalized = validateSupersede(input, this.service.limits);
+    const { replacement } = normalized;
+    if (replacement.namespace !== null) authorize(this.principal, 'write', replacement.namespace);
+    const patterns = permittedPatterns(this.principal, 'write');
+    return this.mutate('supersede', normalized, opts, patterns, async (tx, now) => {
+      const before = await this.loadExpected(tx, normalized, patterns);
+      const target: StoredRow['record'] = {
+        ...before,
+        state: nextState('supersede', before.state, before.priorState),
+        revision: before.revision + 1,
+        actor: this.principal.id,
+        updatedAt: now,
+      };
+      const created = this.created(
+        { ...replacement, namespace: replacement.namespace ?? before.namespace },
+        now
+      );
+      return [
+        { record: created, expected: null },
+        { record: target, expected: before.revision },
+      ];
+    });
+  }
+
+  // Tombstoning, and restoring a tombstoned memory, need tombstone; the rest need write.
+  private async transition(
+    op: 'archive' | 'restore' | 'tombstone',
+    input: TransitionInput,
+    opts: WriteOptions
+  ): Promise<WriteOutcome> {
+    const normalized = validateTransition(input, this.service.limits);
+    // Any id the caller can see is Forbidden without the permission, before its revision is
+    // compared; anything else is NotFound.
+    const patterns = [
+      ...permittedPatterns(this.principal, 'read'),
+      ...permittedPatterns(this.principal, 'write'),
+      ...permittedPatterns(this.principal, 'tombstone'),
+    ];
+    return this.mutate(op, normalized, opts, patterns, async (tx, now) => {
+      const before = await this.loadExpected(tx, normalized, patterns, (current) => {
+        const needed =
+          op === 'tombstone' || (op === 'restore' && current.state === 'tombstoned')
+            ? 'tombstone'
+            : 'write';
+        authorize(this.principal, needed, current.namespace);
+      });
+      const record: StoredRow['record'] = {
+        ...before,
+        state: nextState(op, before.state, before.priorState),
+        priorState: op === 'tombstone' ? before.state : null,
+        revision: before.revision + 1,
+        actor: this.principal.id,
+        updatedAt: now,
+      };
+      if (normalized.provenance !== undefined) record.provenance = normalized.provenance;
+      return [{ record, expected: before.revision }];
+    });
+  }
+
+  private created(fields: NormalizedCreate, now: string): StoredRow['record'] {
+    return {
+      id: newMemoryId(),
+      ...fields,
+      state: nextState('create', null, null),
+      priorState: null,
+      revision: 1,
+      actor: this.principal.id,
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
+  // The current row, visible under the patterns, permitted by the check and still at the
+  // expected revision.
+  private async loadExpected(
+    tx: StorageTransaction,
+    { id, expectedRevision }: { id: MemoryId; expectedRevision: number },
+    patterns: NamespacePattern[],
+    check?: (current: StoredRow['record']) => void
+  ): Promise<StoredRow['record']> {
+    const current = await tx.load(id, { patterns });
+    if (!current) throw new NotFoundError('Memory not found', { id });
+    check?.(current.record);
+    if (current.record.revision !== expectedRevision) {
+      throw new RevisionConflictError('The memory has changed since it was read', {
+        id,
+        currentRevision: current.record.revision,
+      });
+    }
+    return current.record;
   }
 
   private policy(tx: StorageTransaction, namespace: Namespace): Promise<HistoryPolicy> {
@@ -395,16 +525,15 @@ class ServiceClient implements MemoryClient {
   }
 
   // One write transaction: replay or refuse a known operation id, otherwise build the new
-  // revision, queue its history and record the operation with its outcome. History is then
-  // given up to waitForHistoryMs to export before the outcome reports its status.
+  // revisions, queue their history and record the operation with its outcome. The first
+  // write is the outcome's memory and the rest are related. History is then given up to
+  // waitForHistoryMs to export before the outcome reports its status.
   private async mutate(
-    operation: 'create' | 'update',
+    operation: Operation,
     normalized: unknown,
     opts: WriteOptions,
-    build: (
-      tx: StorageTransaction,
-      now: string
-    ) => Promise<{ record: StoredRow['record']; expected: number | null; policy: HistoryPolicy }>
+    replayPatterns: NamespacePattern[],
+    build: (tx: StorageTransaction, now: string) => Promise<Write[]>
   ): Promise<WriteOutcome> {
     const { storage, history } = this.service;
     const operationId = validateOperationId(opts.operationId) ?? newMemoryId();
@@ -425,21 +554,31 @@ class ServiceClient implements MemoryClient {
         }
         // Grants may have changed since the first attempt; a replay never returns what the
         // caller could not write now.
-        const existing = await tx.load(prior.memoryId, {
-          patterns: permittedPatterns(this.principal, 'write'),
-        });
+        const existing = await tx.load(prior.memoryId, { patterns: replayPatterns });
         if (!existing) throw new NotFoundError('Memory not found', { id: prior.memoryId });
         const seqs = prior.seq === null ? [] : [prior.seq];
-        if (prior.outcome) return { outcome: prior.outcome, seqs };
+        if (prior.outcome) {
+          const related: StoredOutcome['related'] = [];
+          for (const record of prior.outcome.related) {
+            if (await tx.load(record.id, { patterns: replayPatterns })) related.push(record);
+          }
+          return { outcome: { memory: prior.outcome.memory, related }, seqs };
+        }
         // Recorded before schema 2 kept outcomes: the current row is the best answer left.
         return { outcome: { memory: existing.record, related: [] }, seqs };
       }
       const now = new Date().toISOString();
-      const { record, expected, policy } = await build(tx, now);
-      // Without a provider, or under policy none, there is nothing to queue for.
+      const writes = await build(tx, now);
+      const [first, ...rest] = writes.map((write) => write.record);
+      if (!first) throw new InternalError('A write produced no revision', { operation });
+      const stored = await tx.supersededBy(writes.map((write) => write.record.id));
+      // Without a provider, or under policy none, there is nothing to queue for. The policy
+      // is still looked up, since that records the namespace.
       const outbox: Omit<OutboxEntry, 'seq'>[] = [];
-      if (history !== null && policy !== 'none') {
-        const supersededBy = (await tx.supersededBy([record.id]))[record.id] ?? [];
+      for (const { record } of writes) {
+        const policy = await this.policy(tx, record.namespace);
+        if (history === null || policy === 'none') continue;
+        const supersededBy = batchSupersededBy(record.id, stored[record.id] ?? [], writes);
         outbox.push({
           operationId,
           memoryId: record.id,
@@ -452,21 +591,21 @@ class ServiceClient implements MemoryClient {
           payload: retained({ ...record, supersededBy }, policy),
         });
       }
-      const outcome: StoredOutcome = { memory: record, related: [] };
+      const outcome: StoredOutcome = { memory: first, related: rest };
       const result = await tx.commit(
         {
-          rows: [{ record }],
+          rows: writes.map(({ record }) => ({ record })),
           outbox,
           operation: {
             principalId,
             operationId,
             fingerprint,
-            memoryId: record.id,
-            revision: record.revision,
+            memoryId: first.id,
+            revision: first.revision,
             outcome,
           },
         },
-        [{ id: record.id, revision: expected }]
+        writes.map(({ record, expected }) => ({ id: record.id, revision: expected }))
       );
       return { outcome, seqs: result.seqs };
     });
