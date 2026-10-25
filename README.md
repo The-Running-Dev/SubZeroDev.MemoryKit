@@ -63,6 +63,35 @@ Every write takes the revision it expects, so concurrent writers never overwrite
 silently, and an `operationId` makes a retried write return the first outcome. `connect(url,
 { token })` gives the same client over HTTP.
 
+`initStore` creates storage and initializes the selected history provider; it does not write
+a configuration file or persist a default policy. Pass configuration on every open. History
+defaults to Git and the default namespace policy to `full`; a namespace's policy is persisted
+on first write or explicit set, so changing an open-time default does not change existing ones.
+
+For direct provider composition, use the public Git entry:
+
+```ts
+import { EMBEDDED_PRINCIPAL, MemoryService, SqliteStorage } from 'subzerodev-memorykit';
+import { GitHistory } from 'subzerodev-memorykit/history-git';
+
+const service = new MemoryService(
+  new SqliteStorage({ path: './memory.db' }),
+  new GitHistory({
+    repository: './history.git',
+    author: { name: 'My application', email: 'app@localhost' },
+  })
+);
+await service.open();
+const client = service.as(EMBEDDED_PRINCIPAL);
+await client.create({ namespace: 'app', kind: 'note', content: 'hello' });
+await service.close();
+```
+
+The root entry keeps Git unloaded when the SDK selects `memory` or `none`. Importing
+`/history-git` explicitly loads the provider for composition; internal deep imports remain
+blocked. History retries deduplicate by operation id, memory id and revision, so both records
+from a supersede are exported once even though they share one operation id.
+
 ## Service
 
 `memorykit serve --store ./store` listens on loopback with local tokens from `memorykit token

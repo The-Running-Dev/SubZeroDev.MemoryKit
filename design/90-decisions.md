@@ -9,6 +9,21 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-25 — Resolve technical disagreements in issue #14
+
+- Context: PR #15 left four technical disagreements and package naming open. The user authorized resolving the technical items while retaining the settled v1 architecture and leaving naming/publication pending.
+- Chosen:
+  - Preserve history idempotency by `(operationId, memoryId, revision)` and state it in the design and contract. Supersede exports the replacement and target under one operation id; retries return each entry's original ref.
+  - Expose `GitHistory` and `GitHistoryOptions` through the explicit public `<package>/history-git` entry. Keep the root free of Git imports and retain S4's dynamic SDK provider selection. The installed-package checks exercise the root in fresh processes for both `memory` and `none`, and direct Git composition through the public provider entry.
+  - Describe init as database creation plus opening/closing the selected provider, without persisted configuration or default policy. Each open supplies configuration; namespace policy is persisted on first write or explicit set. The top-level default takes precedence over the service default, then falls back to `full`.
+  - Reject the three unused search flags as usage errors before opening storage or making a connection.
+- Rejected:
+  - Deduplicating by operation id alone: it would discard one of a supersede's two records.
+  - An eager root re-export of GitHistory: it would contradict the S4 promise that memory/none do not load the Git provider. A root wrapper would add a second provider facade and asynchronous lifecycle state without a need.
+  - Persisting a new configuration format: v1 has no consumer for it, and namespace policies already have their own persisted state.
+  - Closing all of #14 or publishing: the npm package name/scope remains undecided and the package remains private.
+- Reversibility: the code and documentation changes are cheap to revise before publication; no schema or history format changes.
+
 ## 2026-10-25 — No batched Git exports for now
 
 - Context: batching pending revisions into fewer commits was approved only if cutting git processes did not fix drain throughput. On CI Linux the baseline drained 15.6 revisions per second at 1k memories and 4.4 at 10k; with five processes per export and the revision index it drains 53.5 and 27.8, so 10k revisions take 6 minutes instead of 38.

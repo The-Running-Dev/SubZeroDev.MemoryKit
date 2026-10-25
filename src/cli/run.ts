@@ -602,9 +602,15 @@ export async function run(
       }
       case 'search': {
         only(rest, 0, 'no positional arguments for search');
-        const flag = ['key', 'content', 'content-type', 'link'].find(
-          (name) => values[name as keyof Values] !== undefined
-        );
+        const flag = [
+          'key',
+          'content',
+          'content-type',
+          'link',
+          'operation-id',
+          'expected-revision',
+          'budget-ms',
+        ].find((name) => values[name as keyof Values] !== undefined);
         if (flag !== undefined) throw new UsageError(`search does not take --${flag}`);
         const query = searchQuery(values);
         const result = await withStore(values, deps, (client) => client.search(query));
