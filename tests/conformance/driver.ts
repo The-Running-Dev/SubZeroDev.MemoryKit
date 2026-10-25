@@ -18,4 +18,13 @@ export interface Driver {
     operationId?: string
   ): Promise<Result<Record<string, unknown>>>;
   get(store: string, id: string): Promise<Result<Record<string, unknown>>>;
+  history(store: string, id: string): Promise<Result<unknown>>;
+  operation(store: string, operationId: string): Promise<Result<Record<string, unknown>>>;
+  status(store: string): Promise<Result<Record<string, unknown>>>;
+  getNamespace(store: string, ns: string): Promise<Result<Record<string, unknown>>>;
+  setNamespacePolicy(
+    store: string,
+    ns: string,
+    policy: string
+  ): Promise<Result<Record<string, unknown>>>;
 }

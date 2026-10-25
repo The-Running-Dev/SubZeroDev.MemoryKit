@@ -1,6 +1,11 @@
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import type {
   HistoryPolicy,
+  HistoryQueue,
+  HistoryStatus,
+  NamespaceInfo,
+  OperationStatus,
+  OutboxEntry,
   ProviderDescriptor,
   RowScope,
   StorageProvider,
@@ -24,6 +29,7 @@ import {
   type MemoryId,
   type MemoryState,
   type Namespace,
+  type Operation,
 } from '../model/index.ts';
 import { MIGRATIONS, SCHEMA_VERSION } from './schema.ts';
 
@@ -248,7 +254,9 @@ export class SqliteStorage implements StorageProvider {
     return run;
   }
 
-  write<T>(fn: (tx: StorageTransaction) => Promise<T>): Promise<T> {
+  // One write transaction, with the write lock taken up front so it never fails part way
+  // through on a lock upgrade.
+  private immediate<T>(fn: (db: DatabaseSync) => Promise<T> | T): Promise<T> {
     return this.exclusive(async () => {
       const db = this.connection();
       try {
@@ -257,7 +265,7 @@ export class SqliteStorage implements StorageProvider {
         throw storageError(error, this.busyTimeoutMs);
       }
       try {
-        const result = await fn(new SqliteTransaction(db));
+        const result = await fn(db);
         db.exec('COMMIT');
         return result;
       } catch (error) {
@@ -267,24 +275,240 @@ export class SqliteStorage implements StorageProvider {
     });
   }
 
+  private read<T>(fn: (db: DatabaseSync) => T): Promise<T> {
+    return this.exclusive(async () => {
+      try {
+        return fn(this.connection());
+      } catch (error) {
+        throw storageError(error, this.busyTimeoutMs);
+      }
+    });
+  }
+
+  write<T>(fn: (tx: StorageTransaction) => Promise<T>): Promise<T> {
+    return this.immediate((db) => fn(new SqliteTransaction(db)));
+  }
+
   get(id: MemoryId, scope: RowScope): Promise<StoredRow | null> {
-    return this.exclusive(async () => loadRow(this.connection(), id, scope));
+    return this.read((db) => loadRow(db, id, scope));
   }
 
   supersededBy(ids: MemoryId[]): Promise<Record<MemoryId, MemoryId[]>> {
-    return this.exclusive(async () => {
-      const result: Record<MemoryId, MemoryId[]> = {};
-      for (const id of ids) result[id] = [];
-      if (ids.length === 0) return result;
-      const rows = this.connection()
+    return this.read((db) => supersededBy(db, ids));
+  }
+
+  operation(principalId: string, operationId: string): Promise<OperationStatus | null> {
+    return this.read((db) => {
+      const row = db
         .prepare(
-          `SELECT target, source FROM links WHERE type = 'supersedes' AND target IN (${ids.map(() => '?').join(',')}) ORDER BY source`
+          `SELECT o.operation_id, o.memory_id, o.revision, x.status, x.history_ref
+           FROM operations o LEFT JOIN outbox x ON x.seq = o.seq
+           WHERE o.principal_id = ? AND o.operation_id = ?`
         )
-        .all(...ids) as Row[];
-      for (const row of rows) result[String(row.target)]!.push(String(row.source));
-      return result;
+        .get(principalId, operationId) as Row | undefined;
+      if (!row) return null;
+      const history: HistoryStatus =
+        row.status === 'exported'
+          ? 'persisted'
+          : row.status === 'pending' || row.status === 'blocked'
+            ? row.status
+            : 'not_required';
+      return {
+        operationId: String(row.operation_id),
+        memoryId: String(row.memory_id),
+        revision: Number(row.revision),
+        storage: 'persisted',
+        history,
+        historyRef: history === 'persisted' ? String(row.history_ref) : null,
+      };
     });
   }
+
+  pruneOperations(before: string): Promise<number> {
+    return this.immediate((db) =>
+      Number(db.prepare('DELETE FROM operations WHERE created_at < ?').run(before).changes)
+    );
+  }
+
+  setNamespacePolicy(ns: Namespace, policy: HistoryPolicy): Promise<NamespaceInfo> {
+    return this.immediate((db) => {
+      db.prepare(
+        `INSERT INTO namespaces (name, history_policy, created_at) VALUES (?, ?, ?)
+         ON CONFLICT (name) DO UPDATE SET history_policy = excluded.history_policy`
+      ).run(ns, policy, new Date().toISOString());
+      return { name: ns, historyPolicy: policy };
+    });
+  }
+
+  getNamespace(ns: Namespace): Promise<NamespaceInfo | null> {
+    return this.read((db) => {
+      const row = db.prepare('SELECT history_policy FROM namespaces WHERE name = ?').get(ns) as
+        Row | undefined;
+      return row ? { name: ns, historyPolicy: String(row.history_policy) as HistoryPolicy } : null;
+    });
+  }
+
+  // Taken when nobody else holds a live lease. Every grant gets a new fencing token, so a
+  // holder whose lease expired and was taken over can no longer mark entries.
+  acquireDrainLease(holder: string, ttlMs: number): Promise<{ token: number } | null> {
+    return this.immediate((db) => {
+      const now = Date.now();
+      const row = db
+        .prepare('SELECT holder, token, expires_at FROM drain_lease WHERE id = 1')
+        .get() as Row | undefined;
+      if (row && row.holder !== null && row.holder !== holder && Number(row.expires_at) > now) {
+        return null;
+      }
+      const token = (row ? Number(row.token) : 0) + 1;
+      db.prepare(
+        `INSERT INTO drain_lease (id, holder, token, expires_at) VALUES (1, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET holder = excluded.holder, token = excluded.token,
+           expires_at = excluded.expires_at`
+      ).run(holder, token, now + Math.max(0, Math.floor(ttlMs)));
+      return { token };
+    });
+  }
+
+  releaseDrainLease(leaseToken: number): Promise<void> {
+    return this.immediate((db) => {
+      db.prepare(
+        'UPDATE drain_lease SET holder = NULL, expires_at = 0 WHERE id = 1 AND token = ?'
+      ).run(leaseToken);
+    });
+  }
+
+  // A blocked entry stops the queue: nothing after it is exported until it is unblocked.
+  nextOutbox(): Promise<
+    (OutboxEntry & { attempts: number }) | { blocked: OutboxEntry; error: string } | null
+  > {
+    return this.read((db) => {
+      const blocked = db
+        .prepare("SELECT * FROM outbox WHERE status = 'blocked' ORDER BY seq LIMIT 1")
+        .get() as Row | undefined;
+      if (blocked) return { blocked: outboxEntry(blocked), error: errorCode(blocked.last_error) };
+      const next = db
+        .prepare("SELECT * FROM outbox WHERE status = 'pending' ORDER BY seq LIMIT 1")
+        .get() as Row | undefined;
+      return next ? { ...outboxEntry(next), attempts: Number(next.attempts) } : null;
+    });
+  }
+
+  lastExportedRef(): Promise<string | null> {
+    return this.read((db) => {
+      const row = db
+        .prepare(
+          "SELECT history_ref FROM outbox WHERE status = 'exported' ORDER BY seq DESC LIMIT 1"
+        )
+        .get() as Row | undefined;
+      return row ? String(row.history_ref) : null;
+    });
+  }
+
+  // An exported entry keeps its row, without the snapshot.
+  markExported(seq: number, historyRef: string, leaseToken: number): Promise<boolean> {
+    return this.immediate((db) => {
+      if (!holdsLease(db, leaseToken)) return false;
+      db.prepare(
+        `UPDATE outbox SET status = 'exported', history_ref = ?, payload = NULL, last_error = NULL
+         WHERE seq = ? AND status = 'pending'`
+      ).run(historyRef, seq);
+      return true;
+    });
+  }
+
+  markFailed(
+    seq: number,
+    error: { code: string; message: string },
+    block: boolean,
+    leaseToken: number
+  ): Promise<boolean> {
+    return this.immediate((db) => {
+      if (!holdsLease(db, leaseToken)) return false;
+      db.prepare(
+        `UPDATE outbox SET attempts = attempts + 1, last_error = ?,
+           status = CASE WHEN ? THEN 'blocked' ELSE status END
+         WHERE seq = ? AND status = 'pending'`
+      ).run(JSON.stringify(error), block ? 1 : 0, seq);
+      return true;
+    });
+  }
+
+  unblock(): Promise<number> {
+    return this.immediate((db) =>
+      Number(
+        db
+          .prepare("UPDATE outbox SET status = 'pending', attempts = 0 WHERE status = 'blocked'")
+          .run().changes
+      )
+    );
+  }
+
+  queue(): Promise<HistoryQueue> {
+    return this.read((db) => {
+      const pending = db
+        .prepare("SELECT count(*) AS n FROM outbox WHERE status = 'pending'")
+        .get() as Row;
+      const blocked = db
+        .prepare(
+          "SELECT seq, operation_id, last_error FROM outbox WHERE status = 'blocked' ORDER BY seq LIMIT 1"
+        )
+        .get() as Row | undefined;
+      return {
+        pending: Number(pending.n),
+        blocked: blocked
+          ? {
+              seq: Number(blocked.seq),
+              operationId: String(blocked.operation_id),
+              error: errorCode(blocked.last_error),
+            }
+          : null,
+      };
+    });
+  }
+}
+
+function holdsLease(db: DatabaseSync, leaseToken: number): boolean {
+  const row = db.prepare('SELECT token FROM drain_lease WHERE id = 1').get() as Row | undefined;
+  return row !== undefined && Number(row.token) === leaseToken;
+}
+
+function errorCode(text: unknown): string {
+  if (typeof text !== 'string') return 'unknown';
+  try {
+    const code = (JSON.parse(text) as { code?: unknown }).code;
+    return typeof code === 'string' ? code : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+function outboxEntry(row: Row): OutboxEntry {
+  return {
+    seq: Number(row.seq),
+    operationId: String(row.operation_id),
+    memoryId: String(row.memory_id),
+    revision: Number(row.revision),
+    operation: String(row.operation) as Operation,
+    actor: String(row.actor),
+    at: String(row.at),
+    namespace: String(row.namespace),
+    policy: String(row.policy) as OutboxEntry['policy'],
+    payload:
+      row.payload === null ? null : (JSON.parse(String(row.payload)) as OutboxEntry['payload']),
+  };
+}
+
+function supersededBy(db: DatabaseSync, ids: MemoryId[]): Record<MemoryId, MemoryId[]> {
+  const result: Record<MemoryId, MemoryId[]> = {};
+  for (const id of ids) result[id] = [];
+  if (ids.length === 0) return result;
+  const rows = db
+    .prepare(
+      `SELECT target, source FROM links WHERE type = 'supersedes' AND target IN (${ids.map(() => '?').join(',')}) ORDER BY source`
+    )
+    .all(...ids) as Row[];
+  for (const row of rows) result[String(row.target)]!.push(String(row.source));
+  return result;
 }
 
 function loadRow(db: DatabaseSync, id: MemoryId, scope: RowScope): StoredRow | null {
@@ -345,6 +569,10 @@ class SqliteTransaction implements StorageTransaction {
 
   async load(id: MemoryId, scope: RowScope): Promise<StoredRow | null> {
     return loadRow(this.db, id, scope);
+  }
+
+  async supersededBy(ids: MemoryId[]): Promise<Record<MemoryId, MemoryId[]>> {
+    return supersededBy(this.db, ids);
   }
 
   async findByKey(ns: Namespace, key: string): Promise<MemoryId | null> {

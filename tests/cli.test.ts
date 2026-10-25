@@ -2,9 +2,25 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, it } from 'node:test';
+import { EMBEDDED_PRINCIPAL } from '../src/access/index.ts';
+import { run, type CliDeps } from '../src/cli/run.ts';
+import { HistoryProviderError, type HistoryEntry } from '../src/contracts/index.ts';
+import { MemoryHistory } from '../src/history-memory/index.ts';
 import { newMemoryId } from '../src/model/index.ts';
+import { DATABASE_FILE } from '../src/sdk/index.ts';
+import { MemoryService } from '../src/service/index.ts';
+import { SqliteStorage } from '../src/storage-sqlite/index.ts';
 import { SCHEMA_VERSION } from '../src/storage-sqlite/schema.ts';
 import { runCli, tempDir } from './helpers.ts';
+
+class FailingHistory extends MemoryHistory {
+  failing = true;
+
+  override async record(entry: HistoryEntry): Promise<{ historyRef: string }> {
+    if (this.failing) throw new HistoryProviderError('History is unreachable', true);
+    return super.record(entry);
+  }
+}
 
 describe('cli', () => {
   it('S1.3 init, create and get in separate processes', () => {
@@ -111,6 +127,137 @@ describe('cli', () => {
     assert.equal(update('--content', 'x').status, 2);
     assert.equal(update('--expected-revision', '2', '--namespace', 'other').status, 2);
     assert.equal(runCli(['update', '--store', store, '--expected-revision', '2']).status, 2);
+  });
+
+  it('S3.2 a write with history pending exits 3, and history-sync reports the queue', async () => {
+    const store = tempDir();
+    assert.equal(runCli(['init', store]).status, 0);
+    const history = new FailingHistory();
+    const deps: CliDeps = {
+      async openStore(config) {
+        const service = new MemoryService(
+          new SqliteStorage({ path: join(config.path, DATABASE_FILE) }),
+          history,
+          { historyWaitMs: 0 }
+        );
+        await service.open();
+        return Object.assign(service.as(EMBEDDED_PRINCIPAL), { close: () => service.close() });
+      },
+    };
+    const cli = async (...args: string[]) => {
+      const out = { stdout: '', stderr: '' };
+      const status = await run(
+        args,
+        { stdout: (text) => (out.stdout += text), stderr: (text) => (out.stderr += text) },
+        deps
+      );
+      return { status, ...out };
+    };
+
+    const create = await cli(
+      'create',
+      '--store',
+      store,
+      '--namespace',
+      'demo',
+      '--kind',
+      'note',
+      '--content',
+      'x',
+      '--json'
+    );
+    assert.equal(create.status, 3, create.stderr);
+    const outcome = JSON.parse(create.stdout);
+    assert.equal(outcome.storage, 'persisted');
+    assert.equal(outcome.history, 'pending');
+
+    const operation = await cli('operation', outcome.operationId, '--store', store);
+    assert.equal(operation.status, 0, operation.stderr);
+    assert.match(operation.stdout, /\(history: pending\)/);
+    const pending = await cli('history-sync', '--store', store, '--budget-ms', '1000');
+    assert.equal(pending.status, 3, pending.stderr);
+    assert.match(pending.stdout, /history pending: 1/);
+    assert.equal((await cli('history-sync', '--store', store, '--budget-ms', 'x')).status, 1);
+
+    history.failing = false;
+    const synced = await cli('history-sync', '--store', store, '--json');
+    assert.equal(synced.status, 0, synced.stderr);
+    assert.deepEqual(JSON.parse(synced.stdout), { pending: 0, blocked: null });
+    const listed = await cli('history', outcome.memory.id, '--store', store);
+    assert.equal(listed.status, 0, listed.stderr);
+    assert.match(listed.stdout, /^1 {2}create /);
+    const revision = await cli('revision', outcome.memory.id, '1', '--store', store);
+    assert.equal(revision.status, 0, revision.stderr);
+    assert.match(revision.stdout, /^revision 1 create by embedded/);
+    assert.match(revision.stdout, /x\n$/);
+    const status = await cli('status', '--store', store);
+    assert.match(status.stdout, /history: history-memory 0\.1\.0/);
+    assert.match(status.stdout, /history blocked: none/);
+  });
+
+  it('status, namespace and history commands without a history provider', () => {
+    const store = tempDir();
+    assert.equal(runCli(['init', store]).status, 0);
+    const status = runCli(['status', '--store', store, '--json']);
+    assert.equal(status.status, 0, status.stderr);
+    const parsed = JSON.parse(status.stdout);
+    assert.equal(parsed.contractVersion, 1);
+    assert.equal(parsed.storage.id, 'storage-sqlite');
+    assert.equal(parsed.history, null);
+    assert.deepEqual(parsed.historyQueue, { pending: 0, blocked: null });
+
+    const set = runCli([
+      'namespace',
+      'set',
+      'demo',
+      '--history-policy',
+      'metadata',
+      '--store',
+      store,
+    ]);
+    assert.equal(set.status, 0, set.stderr);
+    assert.equal(set.stdout, 'demo history policy: metadata\n');
+    const get = runCli(['namespace', 'get', 'demo', '--store', store, '--json']);
+    assert.deepEqual(JSON.parse(get.stdout), { name: 'demo', historyPolicy: 'metadata' });
+    const invalid = runCli([
+      'namespace',
+      'set',
+      'demo',
+      '--history-policy',
+      'some',
+      '--store',
+      store,
+    ]);
+    assert.equal(invalid.status, 1);
+    assert.equal(JSON.parse(invalid.stderr).details.reason, 'unsupported');
+    assert.equal(runCli(['namespace', 'set', 'demo', '--store', store]).status, 2);
+    assert.equal(runCli(['namespace', 'drop', 'demo', '--store', store]).status, 2);
+    assert.equal(
+      runCli(['namespace', 'get', 'demo', '--history-policy', 'none', '--store', store]).status,
+      2
+    );
+
+    const created = runCli([
+      'create',
+      '--store',
+      store,
+      '--namespace',
+      'demo',
+      '--kind',
+      'note',
+      '--content',
+      'x',
+      '--json',
+    ]);
+    assert.equal(created.status, 0, created.stderr);
+    const { memory, operationId } = JSON.parse(created.stdout);
+    const history = runCli(['history', memory.id, '--store', store]);
+    assert.equal(history.status, 1);
+    assert.equal(JSON.parse(history.stderr).code, 'HistoryNotRetained');
+    const operation = runCli(['operation', operationId, '--store', store, '--json']);
+    assert.equal(JSON.parse(operation.stdout).history, 'not_required');
+    assert.equal(runCli(['history-sync', '--store', store]).status, 0);
+    assert.equal(runCli(['revision', memory.id, '--store', store]).status, 2);
   });
 
   it('S1.6 refuses a schema newer than the code', () => {
