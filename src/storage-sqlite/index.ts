@@ -444,8 +444,8 @@ export class SqliteStorage implements StorageProvider, TokenStore {
     return this.read((db) => loadRow(db, id, scope));
   }
 
-  supersededBy(ids: MemoryId[]): Promise<Record<MemoryId, MemoryId[]>> {
-    return this.read((db) => supersededBy(db, ids));
+  supersededBy(ids: MemoryId[], scope: RowScope): Promise<Record<MemoryId, MemoryId[]>> {
+    return this.read((db) => supersededBy(db, ids, scope));
   }
 
   // Rows outside the scope, the states and the kinds are filtered by the query itself; the
@@ -508,7 +508,8 @@ export class SqliteStorage implements StorageProvider, TokenStore {
 
       const derived = supersededBy(
         db,
-        rows.map((row) => String(row.id))
+        rows.map((row) => String(row.id)),
+        { patterns: query.readable }
       );
       const items: MemoryRecord[] = rows.map((row) => ({
         ...toRecord(db, row),
@@ -865,15 +866,24 @@ function outboxEntry(row: Row): OutboxEntry {
   };
 }
 
-function supersededBy(db: DatabaseSync, ids: MemoryId[]): Record<MemoryId, MemoryId[]> {
+// With a scope, only sources in it: reads pass the caller's, and the history payload, which
+// records the whole relationship, passes none.
+function supersededBy(
+  db: DatabaseSync,
+  ids: MemoryId[],
+  scope?: RowScope
+): Record<MemoryId, MemoryId[]> {
   const result: Record<MemoryId, MemoryId[]> = {};
   for (const id of ids) result[id] = [];
   if (ids.length === 0) return result;
+  const where = scope === undefined ? { sql: '1', params: [] } : scopeSql(scope);
   const rows = db
     .prepare(
-      `SELECT target, source FROM links WHERE type = 'supersedes' AND target IN (${ids.map(() => '?').join(',')}) ORDER BY source`
+      `SELECT l.target, l.source FROM links l JOIN memories m ON m.id = l.source
+       WHERE l.type = 'supersedes' AND l.target IN (${ids.map(() => '?').join(',')}) AND ${where.sql}
+       ORDER BY l.source`
     )
-    .all(...ids) as Row[];
+    .all(...ids, ...where.params) as Row[];
   for (const row of rows) result[String(row.target)]!.push(String(row.source));
   return result;
 }

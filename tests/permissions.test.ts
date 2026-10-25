@@ -145,6 +145,69 @@ describe('permissions', () => {
     }
   });
 
+  it('supersededBy names only replacements the caller can read', async () => {
+    const { service, owner } = await newService(true);
+    try {
+      const target = (await owner.create({ namespace: 'public', kind: 'note', content: 'old' }))
+        .memory;
+      const superseded = await owner.supersede(
+        {
+          id: target.id,
+          expectedRevision: 1,
+          replacement: { namespace: 'private', kind: 'note', content: 'new' },
+        },
+        { operationId: 'cross-namespace' }
+      );
+      const hidden = superseded.memory.id;
+      const reader = service.as(principal('reader', 'public', ['read', 'history']));
+
+      const read = await reader.get(target.id);
+      assert.equal(read.state, 'superseded');
+      assert.deepEqual(read.supersededBy, []);
+      const found = await reader.search({ namespaces: ['public'], states: ['superseded'] });
+      assert.deepEqual(
+        found.items.map((item) => [item.id, item.supersededBy]),
+        [[target.id, []]]
+      );
+      await assert.rejects(reader.get(hidden), code('NotFound'));
+      // The exported revision keeps what was true when it was written; the reader's copy of it
+      // is filtered like a current read.
+      assert.deepEqual((await owner.revision(target.id, 2)).record.supersededBy, [hidden]);
+      assert.deepEqual((await reader.revision(target.id, 2)).record.supersededBy, []);
+
+      // A caller that can read both namespaces sees the relationship, on reads and a replay.
+      const both = service.as({
+        id: 'both',
+        profile: 'local',
+        grants: [
+          { pattern: 'public', permissions: ['read'] },
+          { pattern: 'private', permissions: ['read'] },
+        ],
+      });
+      assert.deepEqual((await both.get(target.id)).supersededBy, [hidden]);
+      const all = await both.search({ states: ['superseded'] });
+      assert.deepEqual(
+        all.items.map((item) => item.supersededBy),
+        [[hidden]]
+      );
+      const replayed = await owner.supersede(
+        {
+          id: target.id,
+          expectedRevision: 1,
+          replacement: { namespace: 'private', kind: 'note', content: 'new' },
+        },
+        { operationId: 'cross-namespace' }
+      );
+      assert.equal(replayed.memory.id, hidden);
+      assert.deepEqual(
+        replayed.related.map((record) => record.supersededBy),
+        [[hidden]]
+      );
+    } finally {
+      await service.close();
+    }
+  });
+
   it('a malformed principal is refused before it can reach storage', async () => {
     const { service } = await newService();
     try {
