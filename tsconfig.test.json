@@ -4,6 +4,7 @@
     "rootDir": ".",
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts", "bench/**/*.ts"],
+  // The consumer resolves the package by name, which only an install provides.
+  "exclude": ["node_modules", "dist", "tests/consumer"]
 }
