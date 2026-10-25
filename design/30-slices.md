@@ -163,3 +163,14 @@ Acceptance:
   - S12.2 A consumer test that imports only the package's public entry type-checks and runs without importing SQLite or Git modules by path (A4).
   - S12.3 The benchmark prints median and p95 for create, get, search, revision retrieval and drain throughput at 1k and 10k memories, plus database and repository size. The results are committed as the baseline.
 Out of scope: publishing to npm (needs the package name), performance targets.
+
+## S13 — An agent workflow can record evidenced memories through the CLI
+Status: in progress
+Delivers: Stage 2 of the ordered handoff. A consumer outside this repository records decisions, lessons and handoffs with origin, reason and evidence through `memorykit --json`, with no import of MemoryKit code. The consumer itself is AgentKit's opt-in MemoryKit integration (SubZeroDev.AgentKit, its design slice for MemoryKit); its workflow policy, kinds and hooks live there, not here.
+Touches: cli (`--provenance` on create, update, supersede and the transitions); contract (CLI section)
+Depends on: S12
+Acceptance:
+  - S13.1 `create`, `update`, `supersede`, `archive`, `restore` and `tombstone` store the provenance given with `--provenance <json>`; invalid JSON or an unknown field is a domain error (exit 1, `ValidationFailed`); `purge` and `search` refuse the flag (exit 2).
+  - S13.2 The conventional non-AI example still runs with no model and no AgentKit: S12.2's installed-package consumer (`tests/consumer/consumer.ts`, run by `npm run check:package`) is that example and stays green.
+  - S13.3 The consumer's end-to-end evidence (two real hosts, a correction, duplicate delivery, a foreign project, failure modes of the CLI configuration) is recorded in AgentKit's pull requests; this slice is not done until it exists.
+Out of scope: consumer conventions (kinds, candidate/accepted, evidence labels) as core states; a compact or token-budgeted output format (the consumer enforces its own byte budget); AgentKit as a dependency.

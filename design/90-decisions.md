@@ -9,6 +9,19 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-25 — Stage 2: AgentKit integrates through the JSON CLI, and provenance is one JSON flag
+
+- Context: Stage 2 of the ordered handoff needs one real agent-workflow integration. The user settled that it lives in AgentKit and uses MemoryKit's JSON CLI. The CLI could not record provenance, so captured memories could not carry origin, reason or evidence.
+- Chosen:
+  - The integration is AgentKit's opt-in consumer. It runs `memorykit ... --json` as a child process; neither repository imports the other. Workflow policy (kinds, candidate/accepted, evidence labels, context budget, hooks) is the consumer's, recorded in AgentKit's design.
+  - The CLI takes `--provenance <json>` on every write that the service gives a provenance: create, update, supersede and the three transitions. It is parsed like `--metadata` and validated only by the service.
+  - The installed-package consumer from S12.2 is the conventional non-AI example; no second example.
+- Rejected:
+  - Separate `--origin kind:name:version`, `--reason` and repeatable `--evidence ref=note` flags: names, refs and notes may contain the separators, and the consumer builds the object anyway.
+  - Running the integration over MCP or HTTP: a service process to keep alive per machine for no gain at this stage.
+  - A budgeted context output in the core: the budget is consumer policy and can change without a MemoryKit release.
+- Reversibility: the flag is additive; discrete flags can be added later as sugar over the same object.
+
 ## 2026-10-25 — supersededBy is scoped to what the caller can read
 
 - Context: a supersede may put the replacement in another namespace. `supersededBy` was derived from every `supersedes` link, so a caller who could read only the target saw the replacement's id on get, search, write outcomes and history revisions.
