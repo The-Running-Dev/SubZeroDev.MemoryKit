@@ -58,6 +58,8 @@ export interface Limits {
   maxLinks: number;            // default 64
   maxPageSize: number;         // default 100
 }
+// Fixed bounds, all ValidationFailed: search text 1024 chars, cursor 4096 chars, the bounds in 90-decisions
+// (S1) for key, kind, provenance and operation ids, ill-formed Unicode anywhere, and unknown input fields.
 
 export abstract class MemoryKitError extends Error {
   abstract readonly code: ErrorCode;
@@ -120,7 +122,7 @@ export interface SearchQuery {
 }
 export interface SearchResult {
   items: MemoryRecord[]; nextCursor: string | null;
-  completeness: 'complete' | 'partial'; partialReason?: 'scan_budget' | 'time_budget';
+  completeness: 'complete' | 'partial'; partialReason?: 'scan_budget' | 'time_budget';   // v1 produces scan_budget only
 }
 
 export interface RevisionSummary { revision: number; operation: Operation; operationId: string; actor: string; at: string; historyRef: string }
@@ -135,7 +137,7 @@ export interface PurgeReport { operationId: string; memoryId: MemoryId; boundari
 export interface OperationStatus { operationId: string; memoryId: MemoryId; revision: number; storage: 'persisted'; history: HistoryStatus; historyRef: string | null }
 export interface StoreStatus {
   contractVersion: 1; storage: ProviderDescriptor; history: ProviderDescriptor | null;
-  historyQueue: { pending: number; blocked: { seq: number; operationId: string; error: string } | null };
+  historyQueue: { pending: number; blocked: { seq: number; operationId: string; error: string } | null; lastError: string | null };
 }
 export interface NamespaceInfo { name: Namespace; historyPolicy: HistoryPolicy }
 export type HistoryPolicy = 'full' | 'metadata' | 'none';
@@ -159,11 +161,11 @@ export interface MemoryClient {
   syncHistory(opts?: { retryBlocked?: boolean; budgetMs?: number }): Promise<StoreStatus['historyQueue']>;   // admin
 }
 
-export interface ServiceConfig { limits?: Partial<Limits>; historyWaitMs?: number; operationRetentionDays?: number; drainBudgetMs?: number; maxExportAttempts?: number }
+export interface ServiceConfig { limits?: Partial<Limits>; historyWaitMs?: number; operationRetentionDays?: number; drainBudgetMs?: number; maxExportAttempts?: number; defaultHistoryPolicy?: HistoryPolicy }
 export class MemoryService {
   constructor(storage: StorageProvider, history: HistoryProvider | null, config?: ServiceConfig);
-  open(): Promise<void>;                          // verifies providers, starts a drain
-  close(): Promise<void>;                         // stops the drainer, best-effort drain within budget
+  open(): Promise<void>;                          // verifies providers, prunes expired operations, starts a drain
+  close(): Promise<void>;                         // waits for a drain in flight, then closes the providers
   as(principal: Principal): MemoryClient;
 }
 ```
@@ -184,15 +186,17 @@ export interface OutboxEntry {
   actor: string; at: string; namespace: Namespace; policy: Exclude<HistoryPolicy, 'none'>;
   payload: MemoryRecord | RedactedRecord | null;   // null for purge entries
 }
+export interface StoredOutcome { memory: StoredRow['record']; related: StoredRow['record'][] }   // what a replay returns
 export interface WriteBatch {
   rows: StoredRow[]; outbox: Omit<OutboxEntry, 'seq'>[];
-  operation: { principalId: string; operationId: string; fingerprint: string; memoryId: MemoryId; revision: number };
+  operation: { principalId: string; operationId: string; fingerprint: string; memoryId: MemoryId; revision: number; outcome: StoredOutcome };
 }
 export interface StorageTransaction {
-  findOperation(principalId: string, operationId: string): Promise<{ fingerprint: string; memoryId: MemoryId; revision: number; seq: number | null } | null>;
+  findOperation(principalId: string, operationId: string): Promise<{ fingerprint: string; memoryId: MemoryId; revision: number; seq: number | null; outcome: StoredOutcome | null } | null>;   // outcome null for schema-1 rows
   load(id: MemoryId, scope: RowScope): Promise<StoredRow | null>;
   findByKey(ns: Namespace, key: string): Promise<MemoryId | null>;
   namespacePolicy(ns: Namespace, defaultPolicy: HistoryPolicy): Promise<HistoryPolicy>;   // creates on first use
+  supersededBy(ids: MemoryId[]): Promise<Record<MemoryId, MemoryId[]>>;
   commit(batch: WriteBatch, expected: { id: MemoryId; revision: number | null }[]): Promise<{ seqs: number[] }>;   // throws RevisionConflict / AlreadyExists
 }
 export interface PurgeRequest { principalId: string; operationId: string; fingerprint: string; expectedRevision: number; at: string; queueHistory: boolean }
@@ -205,11 +209,13 @@ export interface StorageProvider {
   supersededBy(ids: MemoryId[]): Promise<Record<MemoryId, MemoryId[]>>;
   search(query: Required<Pick<SearchQuery, 'states' | 'limit'>> & Omit<SearchQuery, 'namespaces'> & RowScope): Promise<SearchResult>;
   operation(principalId: string, operationId: string): Promise<OperationStatus | null>;
+  pruneOperations(before: string): Promise<number>;   // removes operations created before the time
   setNamespacePolicy(ns: Namespace, policy: HistoryPolicy): Promise<NamespaceInfo>;
   getNamespace(ns: Namespace): Promise<NamespaceInfo | null>;
   // outbox
   acquireDrainLease(holder: string, ttlMs: number): Promise<{ token: number } | null>;
-  nextOutbox(): Promise<OutboxEntry | { blocked: OutboxEntry; error: string } | null>;
+  releaseDrainLease(leaseToken: number): Promise<void>;
+  nextOutbox(): Promise<(OutboxEntry & { attempts: number }) | { blocked: OutboxEntry; error: string } | null>;
   lastExportedRef(): Promise<string | null>;
   markExported(seq: number, historyRef: string, leaseToken: number): Promise<boolean>;   // false: lease lost
   markFailed(seq: number, error: { code: string; message: string }, block: boolean, leaseToken: number): Promise<boolean>;
@@ -228,7 +234,9 @@ export interface HistoryProvider {
   get(memoryId: MemoryId, ns: Namespace, revision: number): Promise<RevisionSnapshot | null>;
   purgeCoverage(): Record<HistoryBoundary, BoundaryResult>;
 }
-export class HistoryProviderError extends MemoryKitError { readonly retryable: boolean }
+export class HistoryProviderError extends MemoryKitError {   // code 'HistoryUnavailable'; the drainer retries a retryable one and blocks the entry on any other
+  constructor(message: string, retryable: boolean, details?: Record<string, JsonValue>)
+}
 
 export interface TokenStore {
   issue(principalId: string, grants: Grant[]): Promise<{ tokenId: string; secret: string }>;   // secret shown once
@@ -249,7 +257,9 @@ export interface StoreConfig {
 }
 export function initStore(config: StoreConfig): Promise<void>;                    // throws StoreUnavailable when the path is a store already
 export function openStore(config: StoreConfig, principal?: Principal): Promise<MemoryClient & { close(): Promise<void> }>;
-export function connect(url: string, opts: { token?: string; fetch?: typeof fetch }): MemoryClient;
+export function connect(url: string, opts: { token?: string; fetch?: typeof fetch }): MemoryClient;   // WriteOptions.waitForHistoryMs is not sent
+export function openService(config: StoreConfig): Promise<{ service: MemoryService; tokens: TokenStore; close(): Promise<void> }>;
+export function openTokenStore(config: StoreConfig): Promise<TokenStore & { close(): Promise<void> }>;
 export class SqliteStorage implements StorageProvider { constructor(opts: { path: string; busyTimeoutMs?: number; scanBudget?: number }) }
 export class GitHistory implements HistoryProvider { constructor(opts: { repository: string; branch?: string; gitPath?: string; author?: { name: string; email: string } }) }
 export class MemoryHistory implements HistoryProvider { constructor() }
@@ -261,7 +271,7 @@ export class MemoryHistory implements HistoryProvider { constructor() }
 export interface Authenticator { authenticate(headers: Headers): Promise<Principal> }   // throws Unauthenticated / AuthenticationUnavailable
 export class LocalTokenAuthenticator implements Authenticator { constructor(tokens: TokenStore) }
 export class OidcAuthenticator implements Authenticator {
-  constructor(opts: { issuer: string; audience: string; ceiling: Grant[]; clockToleranceSec?: number })
+  constructor(opts: { issuer: string; audience: string; ceiling: Grant[]; clockToleranceSec?: number; keyTtlMs?: number; minRefreshIntervalMs?: number; fetch?: typeof fetch })   // issuer https, or http on loopback
 }
 export interface ServeOptions {
   store: StoreConfig; listen: { host: string; port: number };
@@ -278,10 +288,10 @@ Bearer token in `Authorization`. `Idempotency-Key` sets `operationId`. Bodies ar
 
 | Method and path | Service call | Success |
 |---|---|---|
-| `POST /v1/memories` | create | 201, or 202 if history is pending: `WriteOutcome` |
+| `POST /v1/memories` | create | 201, or 202 if history is pending or blocked: `WriteOutcome` |
 | `GET /v1/memories/{id}` | get | 200 `MemoryRecord` |
 | `PUT /v1/memories/{id}` | update (body without `id`) | 200, or 202 |
-| `POST /v1/memories/{id}/archive`, `/restore`, `/tombstone`, `/supersede` | transitions | 200, 201 for supersede, or 202 |
+| `POST /v1/memories/{id}/archive`, `POST /v1/memories/{id}/restore`, `POST /v1/memories/{id}/tombstone`, `POST /v1/memories/{id}/supersede` | transitions | 200, 201 for supersede, or 202 |
 | `POST /v1/memories/{id}/purge` | purge | 200 `PurgeReport` |
 | `POST /v1/search` | search | 200 `SearchResult` |
 | `GET /v1/memories/{id}/history` | history | 200 `RevisionSummary[]` |
@@ -292,7 +302,11 @@ Bearer token in `Authorization`. `Idempotency-Key` sets `operationId`. Bodies ar
 | `POST /v1/history/sync` | syncHistory | 200 queue |
 | `GET /.well-known/oauth-protected-resource` | remote profile only | 200 RFC 9728 metadata |
 
-Errors use `application/problem+json` (RFC 9457): `{ type, title, status, code, retryable, details }`.
+Errors use `application/problem+json` (RFC 9457): `{ type, title, status, code, retryable, details }`, with `type` `urn:memorykit:error:<Code>`.
+
+- The service listens on `127.0.0.1:7600` by default. Bodies are capped at 4 MiB (`LimitExceeded`, 413), an empty body reads as `{}`, and an unknown route or method is 404.
+- With the remote profile, a 401 carries `WWW-Authenticate: Bearer resource_metadata="<origin>/.well-known/oauth-protected-resource"`. The TLS certificate and key are checked before the store opens.
+- `waitForHistoryMs` has no HTTP form; the service waits `historyWaitMs`.
 
 ### MCP server
 
@@ -300,7 +314,7 @@ Specification 2026-07-28 only, stateless, through the TypeScript SDK v2. A reque
 
 The tools are `memory_create`, `memory_get`, `memory_update`, `memory_archive`, `memory_restore`, `memory_tombstone`, `memory_supersede`, `memory_search`, `memory_history`, `memory_revision` and `memory_operation`. Each takes the matching service input as its `inputSchema` and returns `structuredContent` shaped as the service result. Write tools also take optional `operationId` and `waitForHistoryMs`, and `memory_history` returns `{ revisions }`, since `structuredContent` is an object.
 
-Domain errors return `isError: true` with `structuredContent: { code, retryable, details }`. Authentication failures on HTTP are HTTP 401 or 403, before MCP dispatch. Purge, namespace policy and history sync are not MCP tools in v1.
+Domain errors return `isError: true` with `structuredContent: { code, retryable, details }`. Authentication failures on HTTP are HTTP 401 or 403, before MCP dispatch. Purge, namespace policy and history sync are not MCP tools in v1. Over HTTP, `subscriptions/listen` is answered `-32601`, and a client disconnect aborts the request.
 
 ### CLI
 
@@ -308,15 +322,15 @@ Domain errors return `isError: true` with `structuredContent: { code, retryable,
 
 The commands are `init`, `create`, `get`, `update`, `archive`, `restore`, `tombstone`, `supersede`, `purge`, `search`, `history`, `revision`, `operation`, `status`, `namespace get|set`, `history-sync`, `token create|list|revoke`, `serve` and `mcp` (stdio).
 
-With `--json`, the output is exactly the service result as JSON. Exit codes:
+With `--json`, the output is exactly the service result as JSON; `init` prints nothing, `serve` prints `{ url }` and `token revoke` prints `{ tokenId, revoked }`. Exit codes:
 - 0: success.
-- 3: success, but history is pending.
+- 3: success, but history is pending or blocked; for `history-sync`, entries remain; for `purge`, a boundary is `failed`.
 - 1: a domain error, with the problem JSON on stderr.
 - 2: a usage error.
 
 ## Persisted schemas
 
-### SQLite (`<store>/memory.db`, WAL, `PRAGMA user_version` = schema version, starting at 1)
+### SQLite (`<store>/memory.db`, WAL, `PRAGMA user_version` = schema version, currently 2)
 
 ```sql
 CREATE TABLE memories (
@@ -343,6 +357,7 @@ CREATE TABLE namespaces (name TEXT PRIMARY KEY, history_policy TEXT NOT NULL CHE
 CREATE TABLE operations (
   principal_id TEXT NOT NULL, operation_id TEXT NOT NULL, fingerprint TEXT NOT NULL,
   memory_id TEXT NOT NULL, revision INTEGER NOT NULL, seq INTEGER, created_at TEXT NOT NULL,
+  outcome TEXT,                                                                   -- JSON StoredOutcome; schema 2, NULL for schema-1 rows
   PRIMARY KEY (principal_id, operation_id)
 ) STRICT;
 
@@ -365,8 +380,8 @@ CREATE TABLE tokens (token_id TEXT PRIMARY KEY, principal_id TEXT NOT NULL, gran
 
 - `secret_hash` is the SHA-256 of a 32-byte random secret, so a constant-time lookup by hash is safe. The secret is shown once.
 - Outbox `seq` uses `AUTOINCREMENT`, so seqs are never reused after a purge.
-- A purge deletes the `memories` row and its `links` and `memories_fts` rows. It nulls the `payload` of that memory's pending outbox entries and marks them exported with `history_ref = 'discarded'`. It then inserts one `purge` outbox entry, unless the store has no history provider or the namespace policy is `none` and nothing of the memory was exported, and a `purges` row whose `report` holds `{ pendingDiscarded, queued }`. The service derives the `PurgeReport` from that and the purge entry's history status on every call.
-- **Existing data:** none, since this is schema 1. Each later migration bumps `user_version` and runs forward-only when the store opens, in one transaction.
+- A purge deletes the `memories` row and its `links` and `memories_fts` rows. It nulls the `payload` of that memory's pending and blocked outbox entries and marks them exported with `history_ref = 'discarded'`, which `operation()` and `lastExportedRef` skip. It nulls stored outcomes that are that memory and drops its id from other outcomes' `related`. It then inserts one `purge` outbox entry, unless the store has no history provider or the namespace policy is `none` and nothing of the memory was exported, and a `purges` row whose `report` holds `{ pendingDiscarded, queued }`. A purge entry queued under policy `none` is recorded as `metadata`. The service derives the `PurgeReport` from that and the purge entry's history status on every call.
+- **Existing data:** migration 2 adds `operations.outcome`; operations recorded by schema 1 replay from the current row. Each migration bumps `user_version` and runs forward-only when the store opens, in one transaction.
 
 ### Git history repository (`<store>/history.git`, bare, branch `main`)
 
@@ -374,9 +389,9 @@ CREATE TABLE tokens (token_id TEXT PRIMARY KEY, principal_id TEXT NOT NULL, gran
   - `<namespace>/<id>/record.json` holds the record without content. Its keys are sorted, it is indented with 2 spaces and it ends with a trailing newline. Under policy `metadata`, it carries `contentHash` and `metadataKeys` in place of the values.
   - `<namespace>/<id>/content.<txt|md|json>` holds the content byte for byte. It is absent under policy `metadata`.
   - `.memorykit/format` contains `1`.
-- **Purge.** A purge commit replaces `record.json` with `{ id, namespace, purged: true, at }` and deletes the content file. Earlier commits are not modified.
-- **Commit.** The subject is `<operation> <namespace>/<id> r<revision>`. The trailers are `MemoryKit-Operation: <operationId>`, `MemoryKit-Memory: <id>`, `MemoryKit-Revision: <n>`, `MemoryKit-Actor: <principal>` and `MemoryKit-Seq: <seq>`. Author and committer are configurable (default `MemoryKit <memorykit@localhost>`), and both dates are the revision's `at`.
-- **Existing data:** none at format 1. The provider refuses a repository whose format is newer, with `UnsupportedContractVersion`.
+- **Purge.** A purge commit replaces `record.json` with `{ id, namespace, purged: true, at }`, where `at` is the purge's time, and deletes every content file. Earlier commits are not modified.
+- **Commit.** The subject is `<operation> <namespace>/<id> r<revision>`. The trailers are `MemoryKit-Operation: <operationId>`, `MemoryKit-Memory: <id>`, `MemoryKit-Revision: <n>`, `MemoryKit-Actor: <principal, URI-encoded>` and `MemoryKit-Seq: <seq>`. Author and committer are configurable (default `MemoryKit <memorykit@localhost>`), and both dates are the revision's `at`.
+- **Existing data:** none at format 1. The provider refuses a repository whose format is not `1`, with `UnsupportedContractVersion`.
 
 ## Error semantics
 
