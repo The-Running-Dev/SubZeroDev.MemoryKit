@@ -62,7 +62,7 @@ Acceptance:
 Out of scope: purge, push, remotes.
 
 ## S5 — Lifecycle: archive, supersede, tombstone and restore
-Status: todo
+Status: done
 Delivers: Applications can retire, replace, delete and restore memories, keeping current knowledge separate from obsolete knowledge. A stale writer cannot undo a delete.
 Touches: model (transition table, InvalidTransition); service (archive, restore, tombstone, supersede, supersededBy); storage-sqlite (links, priorState); cli (archive, restore, tombstone, supersede); conformance
 Depends on: S4

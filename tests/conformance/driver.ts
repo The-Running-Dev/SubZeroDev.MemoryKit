@@ -17,6 +17,17 @@ export interface Driver {
     input: Record<string, unknown>,
     operationId?: string
   ): Promise<Result<Record<string, unknown>>>;
+  transition(
+    store: string,
+    operation: 'archive' | 'restore' | 'tombstone',
+    input: Record<string, unknown>,
+    operationId?: string
+  ): Promise<Result<Record<string, unknown>>>;
+  supersede(
+    store: string,
+    input: Record<string, unknown>,
+    operationId?: string
+  ): Promise<Result<Record<string, unknown>>>;
   get(store: string, id: string): Promise<Result<Record<string, unknown>>>;
   history(store: string, id: string): Promise<Result<unknown>>;
   operation(store: string, operationId: string): Promise<Result<Record<string, unknown>>>;

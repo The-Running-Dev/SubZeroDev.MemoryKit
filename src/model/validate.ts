@@ -36,6 +36,19 @@ export interface NormalizedUpdate {
   >;
 }
 
+export interface NormalizedTransition {
+  id: MemoryId;
+  expectedRevision: number;
+  provenance?: Provenance;
+}
+
+// The replacement's namespace is null when it takes the target's.
+export interface NormalizedSupersede {
+  id: MemoryId;
+  expectedRevision: number;
+  replacement: Omit<NormalizedCreate, 'namespace'> & { namespace: Namespace | null };
+}
+
 export interface NormalizedCreate {
   namespace: Namespace;
   key: string | null;
@@ -197,15 +210,30 @@ export function validateRevision(value: unknown, field = 'expectedRevision'): nu
 }
 
 export function validateCreate(input: unknown, limits: Limits): NormalizedCreate {
-  if (!isPlainObject(input)) invalid('input', 'not_an_object');
+  return newRecord(input, limits, null) as NormalizedCreate;
+}
+
+// The fields of a new memory. Without `supersedes` the namespace is required; with it, a
+// missing namespace is null and a supersedes link to that id is added when it is missing,
+// before the link limit is checked.
+function newRecord(
+  input: unknown,
+  limits: Limits,
+  supersedes: MemoryId | null
+): NormalizedSupersede['replacement'] {
+  if (!isPlainObject(input))
+    invalid(supersedes === null ? 'input' : 'replacement', 'not_an_object');
   onlyFields(
     input,
     ['namespace', 'key', 'kind', 'content', 'contentType', 'metadata', 'links', 'provenance'],
     ''
   );
   requireWellFormed(input, '');
-  if (typeof input.namespace !== 'string') invalid('namespace', 'required');
-  const namespace = parseNamespace(input.namespace);
+  let namespace: Namespace | null = null;
+  if (input.namespace !== undefined || supersedes === null) {
+    if (typeof input.namespace !== 'string') invalid('namespace', 'required');
+    namespace = parseNamespace(input.namespace);
+  }
   const key = input.key === undefined ? null : label(input.key, 'key', MAX_KEY_LENGTH);
   const kind = label(input.kind, 'kind', MAX_KIND_LENGTH);
   if (typeof input.content !== 'string') invalid('content', 'required');
@@ -215,6 +243,12 @@ export function validateCreate(input: unknown, limits: Limits): NormalizedCreate
   const metadata = validateMetadata(input.metadata);
   const links = validateLinks(input.links);
   const provenance = validateProvenance(input.provenance);
+  if (
+    supersedes !== null &&
+    !links.some((link) => link.type === 'supersedes' && link.target === supersedes)
+  ) {
+    links.push({ type: 'supersedes', target: supersedes });
+  }
 
   checkLimit('content', bytes(content), limits.maxContentBytes);
   checkLimit('metadata', bytes(JSON.stringify(metadata)), limits.maxMetadataBytes);
@@ -222,6 +256,28 @@ export function validateCreate(input: unknown, limits: Limits): NormalizedCreate
   checkLimit('links', links.length, limits.maxLinks);
 
   return { namespace, key, kind, content, contentType, metadata, links, provenance };
+}
+
+// archive, restore and tombstone. A provenance replaces the memory's when given.
+export function validateTransition(input: unknown, limits: Limits): NormalizedTransition {
+  if (!isPlainObject(input)) invalid('input', 'not_an_object');
+  onlyFields(input, ['id', 'expectedRevision', 'provenance'], '');
+  requireWellFormed(input, '');
+  const id = validateMemoryId(input.id);
+  const expectedRevision = validateRevision(input.expectedRevision);
+  if (input.provenance === undefined) return { id, expectedRevision };
+  const provenance = validateProvenance(input.provenance);
+  checkLimit('provenance', bytes(JSON.stringify(provenance)), limits.maxMetadataBytes);
+  return { id, expectedRevision, provenance };
+}
+
+// The replacement is validated as a create, with its fields named without a prefix.
+export function validateSupersede(input: unknown, limits: Limits): NormalizedSupersede {
+  if (!isPlainObject(input)) invalid('input', 'not_an_object');
+  onlyFields(input, ['id', 'expectedRevision', 'replacement'], '');
+  const id = validateMemoryId(input.id);
+  const expectedRevision = validateRevision(input.expectedRevision);
+  return { id, expectedRevision, replacement: newRecord(input.replacement, limits, id) };
 }
 
 // Omitted fields keep their value; links and metadata are replaced whole.

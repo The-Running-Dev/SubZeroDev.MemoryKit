@@ -18,6 +18,7 @@ import { initStore, openStore } from '../sdk/index.ts';
 import type {
   CreateInput,
   MemoryClient,
+  SupersedeInput,
   UpdateInput,
   WriteOptions,
   WriteOutcome,
@@ -49,6 +50,12 @@ Commands:
   update <id> --store <dir> --expected-revision <n>
          [--kind <kind>] [--content <text>] [--content-type <type>]
          [--metadata <json>] [--link <type>:<id>]... [--operation-id <id>]
+  archive|restore|tombstone <id> --store <dir> --expected-revision <n>
+         [--operation-id <id>]
+  supersede <id> --store <dir> --expected-revision <n> --kind <kind> --content <text>
+         [--namespace <ns>] [--content-type <type>] [--key <key>] [--metadata <json>]
+         [--link <type>:<id>]... [--operation-id <id>]
+                                   Replace <id> with a new memory that supersedes it
   get <id> --store <dir>
   history <id> --store <dir>        List the revisions history holds
   revision <id> <n> --store <dir>   Show one revision from history
@@ -135,6 +142,25 @@ function parseDuration(text: string): number {
   return /^\d+$/.test(text) ? Number(text) : Number.NaN;
 }
 
+// The fields of a new memory, for create and for a supersede's replacement.
+function newMemory(values: Values): Omit<CreateInput, 'namespace'> {
+  const input: Omit<CreateInput, 'namespace'> = {
+    kind: required(values, 'kind'),
+    content: required(values, 'content'),
+  };
+  if (values.key !== undefined) input.key = values.key;
+  if (values['content-type'] !== undefined) {
+    input.contentType = values['content-type'] as ContentType;
+  }
+  const metadata = parseMetadata(values.metadata);
+  if (metadata !== undefined) input.metadata = metadata;
+  const links = parseLinks(values.link);
+  if (links !== undefined) input.links = links;
+  return input;
+}
+
+const RECORD_FLAGS = ['namespace', 'key', 'kind', 'content', 'content-type', 'metadata', 'link'];
+
 function writeOptions(values: Values): WriteOptions {
   return values['operation-id'] === undefined ? {} : { operationId: values['operation-id'] };
 }
@@ -155,8 +181,12 @@ function formatRecord(record: MemoryRecord): string {
 }
 
 function formatOutcome(outcome: WriteOutcome): string {
-  const { memory } = outcome;
-  return `${memory.id} revision ${memory.revision} ${memory.state} (history: ${outcome.history})\n`;
+  const line = (memory: MemoryRecord): string =>
+    `${memory.id} revision ${memory.revision} ${memory.state}`;
+  return (
+    `${line(outcome.memory)} (history: ${outcome.history})\n` +
+    outcome.related.map((memory) => `${line(memory)}\n`).join('')
+  );
 }
 
 function formatHistory(revisions: RevisionSummary[]): string {
@@ -255,16 +285,8 @@ export async function run(
         only(rest, 0, 'no positional arguments for create');
         const input: CreateInput = {
           namespace: required(values, 'namespace'),
-          kind: required(values, 'kind'),
-          content: required(values, 'content'),
+          ...newMemory(values),
         };
-        if (values.key !== undefined) input.key = values.key;
-        if (values['content-type'] !== undefined)
-          input.contentType = values['content-type'] as ContentType;
-        const metadata = parseMetadata(values.metadata);
-        if (metadata !== undefined) input.metadata = metadata;
-        const links = parseLinks(values.link);
-        if (links !== undefined) input.links = links;
         const outcome = await withStore(values, deps, (client) =>
           client.create(input, writeOptions(values))
         );
@@ -290,6 +312,36 @@ export async function run(
         if (links !== undefined) input.links = links;
         const outcome = await withStore(values, deps, (client) =>
           client.update(input, writeOptions(values))
+        );
+        print(outcome, formatOutcome(outcome));
+        return historyBehind(outcome) ? EXIT_HISTORY_PENDING : EXIT_OK;
+      }
+      case 'archive':
+      case 'restore':
+      case 'tombstone': {
+        const [id] = only(rest, 1, `${command} <id>`);
+        const flag = RECORD_FLAGS.find((name) => values[name as keyof Values] !== undefined);
+        if (flag !== undefined) throw new UsageError(`${command} does not take --${flag}`);
+        const input = {
+          id: id!,
+          expectedRevision: parseRevision(required(values, 'expected-revision')),
+        };
+        const outcome = await withStore(values, deps, (client) =>
+          client[command](input, writeOptions(values))
+        );
+        print(outcome, formatOutcome(outcome));
+        return historyBehind(outcome) ? EXIT_HISTORY_PENDING : EXIT_OK;
+      }
+      case 'supersede': {
+        const [id] = only(rest, 1, 'supersede <id>');
+        const input: SupersedeInput = {
+          id: id!,
+          expectedRevision: parseRevision(required(values, 'expected-revision')),
+          replacement: newMemory(values),
+        };
+        if (values.namespace !== undefined) input.replacement.namespace = values.namespace;
+        const outcome = await withStore(values, deps, (client) =>
+          client.supersede(input, writeOptions(values))
         );
         print(outcome, formatOutcome(outcome));
         return historyBehind(outcome) ? EXIT_HISTORY_PENDING : EXIT_OK;

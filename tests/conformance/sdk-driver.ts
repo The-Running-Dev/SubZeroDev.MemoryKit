@@ -1,7 +1,12 @@
 import { toProblem } from '../../src/model/index.ts';
 import { initStore, openStore } from '../../src/sdk/index.ts';
 import type { HistoryPolicy } from '../../src/contracts/index.ts';
-import type { CreateInput, UpdateInput } from '../../src/service/index.ts';
+import type {
+  CreateInput,
+  SupersedeInput,
+  TransitionInput,
+  UpdateInput,
+} from '../../src/service/index.ts';
 import type { Driver, Result } from './driver.ts';
 
 async function capture<T>(fn: () => Promise<T>): Promise<Result<T>> {
@@ -45,6 +50,22 @@ export const sdkDriver: Driver = {
       plain(
         await withClient(store, (c) =>
           c.update(input as unknown as UpdateInput, operationId ? { operationId } : {})
+        )
+      )
+    ),
+  transition: (store, operation, input, operationId) =>
+    capture(async () =>
+      plain(
+        await withClient(store, (c) =>
+          c[operation](input as unknown as TransitionInput, operationId ? { operationId } : {})
+        )
+      )
+    ),
+  supersede: (store, input, operationId) =>
+    capture(async () =>
+      plain(
+        await withClient(store, (c) =>
+          c.supersede(input as unknown as SupersedeInput, operationId ? { operationId } : {})
         )
       )
     ),
