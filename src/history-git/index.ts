@@ -22,6 +22,7 @@ import {
   type Namespace,
   type Operation,
 } from '../model/index.ts';
+import { RevisionIndex, type IndexEntry } from './revision-index.ts';
 
 export interface GitHistoryOptions {
   repository: string;
@@ -55,6 +56,12 @@ interface Revision extends RevisionSummary {
   dir: string; // <namespace>/<memoryId>, from the subject
 }
 
+// A revision read from its commit, with its record.json and, when asked for, its content file.
+interface Loaded extends Revision {
+  stored: Record<string, unknown>;
+  content: string | null;
+}
+
 // Revisions exported as commits on one branch of a bare repository, through the installed git
 // executable and plumbing commands only (10-design.md, Git provider).
 export class GitHistory implements HistoryProvider {
@@ -76,9 +83,11 @@ export class GitHistory implements HistoryProvider {
   private scratch: string | null = null;
   private indexed: string | null = null;
   private queue: Promise<unknown> = Promise.resolve();
+  private readonly index: RevisionIndex;
 
   constructor(opts: GitHistoryOptions) {
     this.repository = opts.repository;
+    this.index = new RevisionIndex(join(opts.repository, 'memorykit', 'revisions'));
     this.ref = `refs/heads/${opts.branch ?? 'main'}`;
     this.gitPath = opts.gitPath ?? 'git';
     this.author = opts.author ?? { name: 'MemoryKit', email: 'memorykit@localhost' };
@@ -146,6 +155,13 @@ export class GitHistory implements HistoryProvider {
       });
       if (moved.code === 0) {
         this.indexed = commit;
+        this.index.append({
+          commit,
+          parent: head,
+          memoryId: entry.memoryId,
+          revision: entry.revision,
+          dir: `${entry.namespace}/${entry.memoryId}`,
+        });
         return { historyRef: commit };
       }
       refused = moved.stderr.trim();
@@ -161,7 +177,7 @@ export class GitHistory implements HistoryProvider {
   }
 
   async list(memoryId: MemoryId, ns: Namespace): Promise<RevisionSummary[]> {
-    const revisions = await this.revisions(memoryId, ns);
+    const revisions = await this.revisions(memoryId, ns, null);
     return revisions.map(({ revision, operation, operationId, actor, at, historyRef }) => ({
       revision,
       operation,
@@ -173,22 +189,13 @@ export class GitHistory implements HistoryProvider {
   }
 
   async get(memoryId: MemoryId, ns: Namespace, revision: number): Promise<RevisionSnapshot | null> {
-    const found = (await this.revisions(memoryId, ns)).find((item) => item.revision === revision);
+    const [found] = await this.revisions(memoryId, ns, revision);
     if (!found) return null;
-    const dir = `${ns}/${memoryId}`;
-    const stored = JSON.parse(await this.show(found.historyRef, `${dir}/record.json`)) as Record<
-      string,
-      unknown
-    >;
-    const { revision: n, operation, operationId, actor, at, historyRef } = found;
-    let record: MemoryRecord | RedactedRecord;
-    if ('contentHash' in stored) {
-      record = stored as unknown as RedactedRecord;
-    } else {
-      const contentType = stored.contentType as ContentType;
-      const content = await this.show(historyRef, `${dir}/content.${EXTENSIONS[contentType]}`);
-      record = { ...stored, content } as unknown as MemoryRecord;
-    }
+    const { revision: n, operation, operationId, actor, at, historyRef, stored, content } = found;
+    const record =
+      content === null
+        ? (stored as unknown as RedactedRecord)
+        : ({ ...stored, content } as unknown as MemoryRecord);
     return { revision: n, operation, operationId, actor, at, historyRef, record };
   }
 
@@ -244,7 +251,7 @@ export class GitHistory implements HistoryProvider {
     if (entry.after !== null && (await this.isAncestor(entry.after, head))) {
       range.push(`^${entry.after}`);
     }
-    for (const commit of await this.log(range, false)) {
+    for (const commit of await this.log(range)) {
       if (
         commit.operationId === entry.operationId &&
         commit.memoryId === entry.memoryId &&
@@ -335,13 +342,49 @@ export class GitHistory implements HistoryProvider {
     return created.stdout.trim();
   }
 
-  private async revisions(memoryId: MemoryId, ns: Namespace): Promise<Revision[]> {
+  // A memory's revisions, oldest first, or only the one asked for. The revision index names the
+  // commits; each is then read from Git and checked against its index entry. An index with a gap
+  // is rebuilt from the branch, and one that disagrees with a commit is rebuilt and tried once
+  // more before the branch is scanned as if there were no index.
+  private async revisions(
+    memoryId: MemoryId,
+    ns: Namespace,
+    revision: number | null
+  ): Promise<Loaded[]> {
     try {
       await this.ensureReady();
       const head = await this.head();
       if (head === null) return [];
-      const commits = await this.log([head, '--', `${ns}/${memoryId}/record.json`]);
-      return commits.filter((item) => item.memoryId === memoryId).reverse();
+      const dir = `${ns}/${memoryId}`;
+      const wanted = (entries: IndexEntry[]) => {
+        const own = entries.filter((entry) => entry.memoryId === memoryId);
+        return revision === null
+          ? own
+          : own.filter((entry) => entry.revision === revision).slice(0, 1);
+      };
+      for (let attempt = 0; attempt < 2; attempt++) {
+        let entries = this.index.lookup(head, dir);
+        if (entries === null) {
+          await this.rebuildIndex(head);
+          entries = this.index.lookup(head, dir);
+          if (entries === null) break;
+        }
+        const chosen = wanted(entries);
+        // A revision the index does not hold is looked for on the branch itself.
+        if (revision !== null && chosen.length === 0) break;
+        const loaded = await this.load(chosen, dir, revision !== null);
+        if (loaded !== null) return loaded;
+        await this.rebuildIndex(head);
+      }
+      const scanned = (await this.log([head, '--', `${dir}/record.json`])).reverse();
+      const entries = scanned.map((commit) => ({
+        ...commit,
+        commit: commit.historyRef,
+        parent: null,
+      }));
+      const loaded = await this.load(wanted(entries), dir, revision !== null);
+      if (loaded === null) throw new Error('A revision does not match its commit');
+      return loaded;
     } catch (error) {
       if (error instanceof HistoryProviderError) throw error;
       throw new HistoryProviderError('The history repository cannot be read', true, {
@@ -350,9 +393,79 @@ export class GitHistory implements HistoryProvider {
     }
   }
 
-  // Commits newest first, with their trailers. The revision's own timestamp is the record's
-  // updatedAt; Git dates keep whole seconds only.
-  private async log(args: string[], timestamps = true): Promise<Revision[]> {
+  // Every commit on the branch, from one log over it.
+  private async rebuildIndex(head: string): Promise<void> {
+    const trailer = (key: string) => `%(trailers:key=MemoryKit-${key},valueonly,separator=%x2c)`;
+    const format = ['%H', '%P', '%s', trailer('Memory'), trailer('Revision')].join('%x1f');
+    const result = await this.git(['log', '--first-parent', `--format=${format}%x1e`, head]);
+    const entries: IndexEntry[] = [];
+    for (const chunk of result.stdout.split(RECORD)) {
+      const fields = chunk.replace(/^\n/, '').split(FIELD);
+      if (fields.length < 5) continue;
+      const [commit, parents, subject, memoryId, revision] = fields.map((field) =>
+        field.trim()
+      ) as [string, string, string, string, string];
+      const number = Number(revision);
+      entries.push({
+        commit,
+        parent: parents.split(' ')[0] || null,
+        memoryId,
+        revision: Number.isInteger(number) && number >= 0 ? number : 0,
+        dir: subject.split(' ')[1] ?? '',
+      });
+    }
+    this.index.rebuild(head, entries);
+  }
+
+  // Reads each entry's commit and record.json, and its content when asked, with one cat-file
+  // process. Null when a commit is not the revision its entry names.
+  private async load(
+    entries: IndexEntry[],
+    dir: string,
+    content: boolean
+  ): Promise<Loaded[] | null> {
+    if (entries.length === 0) return [];
+    const files = content
+      ? Object.values(EXTENSIONS).map((extension) => `content.${extension}`)
+      : [];
+    const specs = entries.flatMap(({ commit }) => [
+      commit,
+      `${commit}:${dir}/record.json`,
+      ...files.map((file) => `${commit}:${dir}/${file}`),
+    ]);
+    const objects = await this.batch(specs);
+    const loaded: Loaded[] = [];
+    for (const [i, entry] of entries.entries()) {
+      const [object, json, ...contents] = objects.slice(
+        i * (2 + files.length),
+        (i + 1) * (2 + files.length)
+      );
+      const commit = object == null ? null : parseCommit(entry.commit, object);
+      if (
+        commit === null ||
+        json == null ||
+        commit.memoryId !== entry.memoryId ||
+        commit.revision !== entry.revision ||
+        commit.dir !== dir
+      ) {
+        return null;
+      }
+      const stored = JSON.parse(json) as Record<string, unknown>;
+      const at = typeof stored.updatedAt === 'string' ? stored.updatedAt : stored.at;
+      if (typeof at === 'string') commit.at = at;
+      let text: string | null = null;
+      const extension = EXTENSIONS[stored.contentType as ContentType] as string | undefined;
+      if (content && !('contentHash' in stored) && extension !== undefined) {
+        text = contents[files.indexOf(`content.${extension}`)] ?? null;
+        if (text === null) return null;
+      }
+      loaded.push({ ...commit, stored, content: text });
+    }
+    return loaded;
+  }
+
+  // Commits newest first, with their trailers.
+  private async log(args: string[]): Promise<Revision[]> {
     const trailer = (key: string) => `%(trailers:key=MemoryKit-${key},valueonly,separator=%x2c)`;
     const format = [
       '%H',
@@ -384,28 +497,27 @@ export class GitHistory implements HistoryProvider {
         at: date,
       });
     }
-    if (timestamps) await this.readTimestamps(commits);
     return commits;
   }
 
-  private async readTimestamps(commits: Revision[]): Promise<void> {
-    if (commits.length === 0) return;
-    // One cat-file process reads every record.json the listed commits hold.
-    const specs = commits.map((commit) => `${commit.historyRef}:${commit.dir}/record.json`);
+  // The objects named, in order, from one cat-file process: null for each one that is missing.
+  private async batch(specs: string[]): Promise<(string | null)[]> {
     const result = await this.git(['cat-file', '--batch'], { stdin: specs.join('\n') + '\n' });
     let rest = Buffer.from(result.stdout, 'utf8');
-    for (const commit of commits) {
+    const objects: (string | null)[] = [];
+    for (let i = 0; i < specs.length; i++) {
       const newline = rest.indexOf(0x0a);
       const header = rest.subarray(0, newline).toString('utf8');
       rest = rest.subarray(newline + 1);
-      if (header.endsWith(' missing')) continue;
+      if (!/^[0-9a-f]+ [a-z]+ \d+$/.test(header)) {
+        objects.push(null);
+        continue;
+      }
       const size = Number(header.split(' ')[2]);
-      const body = rest.subarray(0, size).toString('utf8');
+      objects.push(rest.subarray(0, size).toString('utf8'));
       rest = rest.subarray(size + 1);
-      const record = JSON.parse(body) as { updatedAt?: unknown; at?: unknown };
-      const at = typeof record.updatedAt === 'string' ? record.updatedAt : record.at;
-      if (typeof at === 'string') commit.at = at;
     }
+    return objects;
   }
 
   private async show(commit: string, path: string): Promise<string> {
@@ -499,4 +611,39 @@ function sortKeys(value: unknown): unknown {
     );
   }
   return value;
+}
+
+// A commit object as the revision it exports, or null when it does not name one.
+function parseCommit(hash: string, text: string): Revision | null {
+  const split = text.indexOf('\n\n');
+  if (split < 0) return null;
+  const author = /^author .* (\d+) ([+-]\d{4})$/m.exec(text.slice(0, split));
+  const [subject = '', ...body] = text.slice(split + 2).split('\n');
+  const trailers = new Map<string, string>();
+  for (const line of body) {
+    const match = /^MemoryKit-(\w+): (.*)$/.exec(line);
+    if (match && !trailers.has(match[1]!)) trailers.set(match[1]!, match[2]!.trim());
+  }
+  const [operation, dir] = subject.split(' ');
+  const operationId = trailers.get('Operation');
+  const memoryId = trailers.get('Memory');
+  if (!operationId || !memoryId || !dir || !author) return null;
+  return {
+    historyRef: hash,
+    dir,
+    operation: operation as Operation,
+    operationId,
+    memoryId,
+    revision: Number(trailers.get('Revision')),
+    actor: decodeActor(trailers.get('Actor') ?? ''),
+    at: isoDate(Number(author[1]), author[2]!),
+  };
+}
+
+// A Git timestamp as git log's %aI prints it.
+function isoDate(seconds: number, zone: string): string {
+  const offset =
+    (zone[0] === '-' ? -1 : 1) * (Number(zone.slice(1, 3)) * 60 + Number(zone.slice(3)));
+  const local = new Date((seconds + offset * 60) * 1000).toISOString().slice(0, 19);
+  return `${local}${zone.slice(0, 3)}:${zone.slice(3)}`;
 }

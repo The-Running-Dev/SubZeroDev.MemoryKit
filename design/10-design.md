@@ -184,7 +184,15 @@ The drain runs:
    4. Move the branch from H to the new commit with an atomic compare-and-swap (`update-ref <new> <H>`).
 4. If the compare-and-swap fails, re-read and start again from step 1. A failed export or a refused compare-and-swap discards the kept index.
 
-A provider runs its exports one at a time. Hooks are disabled for these commands.
+A provider runs its exports one at a time. Hooks are disabled for these commands. After a successful compare-and-swap the provider appends the new commit to its revision index.
+
+**Git provider reads.** The revision index (`memorykit/revisions` in the repository) is an append-only file with one checksummed line per commit: the commit, its first parent, and the memory id, revision and directory it exported. It is an optimization; Git decides every answer.
+1. Read the branch head with `rev-parse`.
+2. Walk the index's parent links from the head to the root. The commits on that walk are the branch; entries off it are ignored.
+3. Read each wanted commit and its `record.json`, and the content file for `get`, with one `cat-file --batch`. The revision, operation, actor and time come from the commit's trailers and author date, never from the index.
+4. If the walk meets a commit the index lacks, a commit's trailers disagree with its entry, an object is missing, or a requested revision is absent, rebuild the index from `git log --first-parent` and try once more. If that still fails, answer from a scan of the branch as before the index existed.
+
+A missing, torn, damaged or foreign index therefore costs one rebuild, never a wrong answer. Writers that cannot append, such as a process that fails after its compare-and-swap, leave a gap that the next read rebuilds.
 
 **What each crash window leaves behind:**
 - **Before the storage commit:** the transaction is rolled back. Nothing is persisted and nothing is pending.
