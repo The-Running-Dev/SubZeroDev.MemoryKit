@@ -38,6 +38,8 @@ const EXTENSIONS: Record<ContentType, string> = {
   'text/markdown': 'md',
   'application/json': 'json',
 };
+// A refused compare-and-swap: the branch moved, was created, or another drainer holds its lock.
+const CAS_REFUSED = /but expected|reference already exists|\.lock'?: File exists/;
 const FIELD = '\x1f';
 const RECORD = '\x1e';
 
@@ -119,6 +121,11 @@ export class GitHistory implements HistoryProvider {
       });
       if (moved.code === 0) return { historyRef: commit };
       refused = moved.stderr.trim();
+      if (!CAS_REFUSED.test(refused)) {
+        throw new HistoryProviderError(`git update-ref failed: ${refused}`, true, {
+          reason: 'git_failed',
+        });
+      }
     }
     throw new HistoryProviderError(`The history branch could not be moved: ${refused}`, true, {
       reason: 'contention',
@@ -178,10 +185,10 @@ export class GitHistory implements HistoryProvider {
     }
     const head = await this.head();
     if (head !== null) {
-      const shown = await this.git(['cat-file', 'blob', `${head}:${FORMAT_PATH}`], {
-        allow: [128],
-      });
-      const format = shown.code === 0 ? shown.stdout.trim() : null;
+      // ls-tree answers an absent path with no output, so any failure here is a real one.
+      const listed = await this.git(['ls-tree', head, '--', FORMAT_PATH]);
+      const format =
+        listed.stdout.trim() === '' ? null : (await this.show(head, FORMAT_PATH)).trim();
       if (format !== FORMAT) {
         throw new UnsupportedContractVersionError(
           'The history repository format is not supported',
@@ -267,7 +274,7 @@ export class GitHistory implements HistoryProvider {
         `MemoryKit-Operation: ${entry.operationId}\n` +
         `MemoryKit-Memory: ${entry.memoryId}\n` +
         `MemoryKit-Revision: ${entry.revision}\n` +
-        `MemoryKit-Actor: ${entry.actor}\n` +
+        `MemoryKit-Actor: ${encodeURIComponent(entry.actor)}\n` +
         `MemoryKit-Seq: ${entry.seq}\n`;
       const dates = { GIT_AUTHOR_DATE: entry.at, GIT_COMMITTER_DATE: entry.at };
       const created = await this.git(['commit-tree', '--no-gpg-sign', tree, ...parents], {
@@ -325,7 +332,7 @@ export class GitHistory implements HistoryProvider {
         operationId,
         memoryId,
         revision: Number(revision),
-        actor,
+        actor: decodeActor(actor),
         at: date,
       });
     }
@@ -370,8 +377,13 @@ export class GitHistory implements HistoryProvider {
       'commit.gpgSign=false',
     ];
     if (opts.bare !== false) base.push('--git-dir', this.repository);
+    // An inherited GIT_DIR, GIT_OBJECT_DIRECTORY or similar, as under a hook, would redirect
+    // the repository.
+    const inherited = Object.fromEntries(
+      Object.entries(process.env).filter(([key]) => !key.toUpperCase().startsWith('GIT_'))
+    );
     const env: Record<string, string | undefined> = {
-      ...process.env,
+      ...inherited,
       GIT_AUTHOR_NAME: this.author.name,
       GIT_AUTHOR_EMAIL: this.author.email,
       GIT_COMMITTER_NAME: this.author.name,
@@ -394,6 +406,7 @@ export class GitHistory implements HistoryProvider {
             return reject(
               new HistoryProviderError('The git executable cannot be run', true, {
                 reason: 'git_unavailable',
+                outage: true,
               })
             );
           }
@@ -404,9 +417,20 @@ export class GitHistory implements HistoryProvider {
           );
         }
       );
+      // git may exit before reading its input; the exit code then reports the failure.
+      child.stdin?.on('error', () => undefined);
       if (opts.stdin !== undefined) child.stdin?.end(opts.stdin);
       else child.stdin?.end();
     });
+  }
+}
+
+// Actors are encoded in their trailer, so a line break or comma cannot forge another trailer.
+function decodeActor(text: string): string {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
   }
 }
 

@@ -332,4 +332,58 @@ describe('git history', () => {
       await client.close();
     }
   });
+
+  it('an actor cannot forge a trailer, and an inherited GIT_ environment is ignored', async () => {
+    const actor = 'bob\nMemoryKit-Operation: forged, x';
+    const recording = new RecordingHistory();
+    const service = await openService(tempDir(), recording);
+    try {
+      await service
+        .as({ ...EMBEDDED_PRINCIPAL, id: actor })
+        .create({ namespace: 'demo', kind: 'note', content: 'a' });
+    } finally {
+      await service.close();
+    }
+    const entry = recording.handed[0]!;
+    const repository = join(tempDir(), 'history.git');
+    const foreign = join(tempDir(), 'objects');
+    const saved = process.env.GIT_OBJECT_DIRECTORY;
+    process.env.GIT_OBJECT_DIRECTORY = foreign;
+    try {
+      const history = new GitHistory({ repository });
+      await history.open();
+      const first = await history.record({ ...entry, after: null });
+      const again = await history.record({ ...entry, after: null });
+      assert.equal(again.historyRef, first.historyRef);
+      const [summary] = await history.list(entry.memoryId, entry.namespace);
+      assert.equal(summary?.actor, actor);
+      assert.equal(summary?.operationId, entry.operationId);
+    } finally {
+      if (saved === undefined) delete process.env.GIT_OBJECT_DIRECTORY;
+      else process.env.GIT_OBJECT_DIRECTORY = saved;
+    }
+    assert.equal(commitCount(repository), 1);
+    assert.equal(existsSync(foreign), false);
+  });
+
+  it('a missing git executable never blocks the queue', async () => {
+    const dir = tempDir();
+    const service = new MemoryService(
+      new SqliteStorage({ path: join(dir, 'memory.db') }),
+      new GitHistory({ repository: join(dir, 'history.git'), gitPath: join(dir, 'no-git') }),
+      { maxExportAttempts: 1, historyWaitMs: 0 }
+    );
+    await service.open();
+    try {
+      const client = service.as(EMBEDDED_PRINCIPAL);
+      const created = await client.create({ namespace: 'demo', kind: 'note', content: 'a' });
+      assert.equal(created.history, 'pending');
+      const queue = await client.syncHistory({ budgetMs: 200 });
+      assert.equal(queue.pending, 1);
+      assert.equal(queue.blocked, null);
+      assert.equal(queue.lastError, 'git_unavailable');
+    } finally {
+      await service.close();
+    }
+  });
 });

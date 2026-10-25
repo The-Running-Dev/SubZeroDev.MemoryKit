@@ -286,8 +286,9 @@ export class MemoryService {
     try {
       ({ historyRef } = await this.history!.record({ ...entry, after }));
     } catch (error) {
-      const { retryable, ...cause } = describeFailure(error);
-      const block = !retryable || attempts + 1 >= this.maxExportAttempts;
+      const { retryable, outage, ...cause } = describeFailure(error);
+      // An outage, such as a missing executable, keeps entries pending however long it lasts.
+      const block = !retryable || (!outage && attempts + 1 >= this.maxExportAttempts);
       if (!(await storage.markFailed(entry.seq, cause, block, token))) return 'lost';
       return block ? 'blocked' : 'retry';
     }
@@ -298,16 +299,22 @@ export class MemoryService {
 
 // The cause recorded on a failed entry. A reason in the details is more specific than the
 // code; an unknown error is retried, and its message is not kept since it may carry values.
-function describeFailure(error: unknown): { code: string; message: string; retryable: boolean } {
+function describeFailure(error: unknown): {
+  code: string;
+  message: string;
+  retryable: boolean;
+  outage: boolean;
+} {
   if (error instanceof MemoryKitError) {
     const reason = error.details.reason;
     return {
       code: typeof reason === 'string' ? reason : error.code,
       message: error.message,
       retryable: error.retryable,
+      outage: error.retryable && error.details.outage === true,
     };
   }
-  return { code: 'Internal', message: 'Internal error', retryable: true };
+  return { code: 'Internal', message: 'Internal error', retryable: true, outage: false };
 }
 
 // What history keeps of a revision under the namespace's policy.

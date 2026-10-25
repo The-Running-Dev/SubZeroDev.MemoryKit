@@ -10,6 +10,17 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-25 — Git export hardening from the S4 review (S4)
+- **Context:** Review of the S4 provider found ways an export could duplicate commits, write outside the repository, crash the host or block on an outage.
+- **Chosen:**
+  - The actor is percent-encoded in its `MemoryKit-Actor` trailer and decoded on read, so a principal id with a line break or comma cannot forge a trailer.
+  - Inherited `GIT_*` variables are dropped from the git environment; only the identity, index and prompt variables the provider sets are passed.
+  - Only an `update-ref` refusal that names a moved, existing or locked ref counts as contention; any other exit 128 fails with `git_failed`. The format check uses `ls-tree`, so a failed read is not taken as a missing format file.
+  - A failed object write during an attempt (two drainers writing the same loose object collide on Windows) retries the attempt.
+  - A provider error may carry `details.outage: true`. The drainer never blocks an entry for an outage, however many attempts it takes; `git_unavailable` is one.
+- **Rejected:**
+  - Rejecting control characters in principal ids at the service: tokens and OIDC subjects arrive in S8 and S9, and the provider should not depend on that.
+
 ## 2026-10-25 — Git history as built (S4)
 - **Context:** S4 makes Git the default history and needs provider health in status; building it settled details the design left open.
 - **Chosen:**
