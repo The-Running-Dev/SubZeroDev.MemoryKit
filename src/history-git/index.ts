@@ -100,7 +100,18 @@ export class GitHistory implements HistoryProvider {
       const head = await this.head();
       const found = await this.findCommit(entry, head);
       if (found) return { historyRef: found };
-      const commit = await this.commit(entry, entry.payload, head);
+      let commit: string;
+      try {
+        commit = await this.commit(entry, entry.payload, head);
+      } catch (error) {
+        // On Windows two drainers writing the same loose object collide; the next attempt
+        // finds the object, or the other drainer's commit.
+        if (!(error instanceof HistoryProviderError) || error.details.reason !== 'git_failed') {
+          throw error;
+        }
+        refused = error.message;
+        continue;
+      }
       // Compare-and-swap: another drainer that moved the branch first, or holds its lock,
       // wins, and the scan above then finds its commit. An empty old value means "absent".
       const moved = await this.git(['update-ref', this.ref, commit, head ?? ''], {
