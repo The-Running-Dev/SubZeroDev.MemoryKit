@@ -202,6 +202,27 @@ describe('history outbox', () => {
     }
   });
 
+  it('an operation with several entries reports the worst of their statuses', async () => {
+    const history = new ControlledHistory();
+    const service = await openService(tempDir(), history);
+    try {
+      const client = service.as(EMBEDDED_PRINCIPAL);
+      const created = await client.create({ namespace: 'demo', kind: 'note', content: 'v1' });
+      history.failure = new HistoryProviderError('The provider refused the entry', false, {
+        reason: 'refused',
+      });
+      const superseded = await client.supersede({
+        id: created.memory.id,
+        expectedRevision: 1,
+        replacement: { kind: 'note', content: 'v2' },
+      });
+      assert.equal(superseded.history, 'blocked');
+      assert.equal((await client.operation(superseded.operationId)).history, 'blocked');
+    } finally {
+      await service.close();
+    }
+  });
+
   it('S3.5 a non-retryable failure blocks the queue until it is retried', async () => {
     const history = new ControlledHistory();
     const service = await openService(tempDir(), history);

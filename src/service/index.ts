@@ -459,18 +459,21 @@ class ServiceClient implements MemoryClient {
     opts: WriteOptions
   ): Promise<WriteOutcome> {
     const normalized = validateTransition(input, this.service.limits);
-    // Visible to a writer or a tombstoner; a visible id without the permission is Forbidden.
+    // Any id the caller can see is Forbidden without the permission, before its revision is
+    // compared; anything else is NotFound.
     const patterns = [
+      ...permittedPatterns(this.principal, 'read'),
       ...permittedPatterns(this.principal, 'write'),
       ...permittedPatterns(this.principal, 'tombstone'),
     ];
     return this.mutate(op, normalized, opts, patterns, async (tx, now) => {
-      const before = await this.loadExpected(tx, normalized, patterns);
-      const needed =
-        op === 'tombstone' || (op === 'restore' && before.state === 'tombstoned')
-          ? 'tombstone'
-          : 'write';
-      authorize(this.principal, needed, before.namespace);
+      const before = await this.loadExpected(tx, normalized, patterns, (current) => {
+        const needed =
+          op === 'tombstone' || (op === 'restore' && current.state === 'tombstoned')
+            ? 'tombstone'
+            : 'write';
+        authorize(this.principal, needed, current.namespace);
+      });
       const record: StoredRow['record'] = {
         ...before,
         state: nextState(op, before.state, before.priorState),
@@ -497,14 +500,17 @@ class ServiceClient implements MemoryClient {
     };
   }
 
-  // The current row, visible under the patterns and still at the expected revision.
+  // The current row, visible under the patterns, permitted by the check and still at the
+  // expected revision.
   private async loadExpected(
     tx: StorageTransaction,
     { id, expectedRevision }: { id: MemoryId; expectedRevision: number },
-    patterns: NamespacePattern[]
+    patterns: NamespacePattern[],
+    check?: (current: StoredRow['record']) => void
   ): Promise<StoredRow['record']> {
     const current = await tx.load(id, { patterns });
     if (!current) throw new NotFoundError('Memory not found', { id });
+    check?.(current.record);
     if (current.record.revision !== expectedRevision) {
       throw new RevisionConflictError('The memory has changed since it was read', {
         id,
@@ -551,7 +557,13 @@ class ServiceClient implements MemoryClient {
         const existing = await tx.load(prior.memoryId, { patterns: replayPatterns });
         if (!existing) throw new NotFoundError('Memory not found', { id: prior.memoryId });
         const seqs = prior.seq === null ? [] : [prior.seq];
-        if (prior.outcome) return { outcome: prior.outcome, seqs };
+        if (prior.outcome) {
+          const related: StoredOutcome['related'] = [];
+          for (const record of prior.outcome.related) {
+            if (await tx.load(record.id, { patterns: replayPatterns })) related.push(record);
+          }
+          return { outcome: { memory: prior.outcome.memory, related }, seqs };
+        }
         // Recorded before schema 2 kept outcomes: the current row is the best answer left.
         return { outcome: { memory: existing.record, related: [] }, seqs };
       }

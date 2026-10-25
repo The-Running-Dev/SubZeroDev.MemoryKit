@@ -183,6 +183,71 @@ describe('lifecycle', () => {
     }
   });
 
+  it('a visible id without the permission is Forbidden before its revision is compared', async () => {
+    const store = tempDir();
+    await initStore({ path: store });
+    const owner = await openStore({ path: store }, EMBEDDED_PRINCIPAL);
+    const as = (id: string, permissions: ('read' | 'write' | 'tombstone')[]) =>
+      openStore(
+        { path: store },
+        { id, profile: 'local', grants: [{ pattern: 'demo', permissions }] }
+      );
+    const reader = await as('reader', ['read']);
+    const tombstoner = await as('tombstoner', ['tombstone']);
+    try {
+      const a = (await owner.create({ namespace: 'demo', kind: 'note', content: 'x' })).memory;
+      await assert.rejects(reader.archive({ id: a.id, expectedRevision: 1 }), code('Forbidden'));
+      await assert.rejects(
+        tombstoner.archive({ id: a.id, expectedRevision: 9 }),
+        code('Forbidden')
+      );
+      await assert.rejects(
+        tombstoner.tombstone({ id: a.id, expectedRevision: 9 }),
+        code('RevisionConflict')
+      );
+      assert.equal((await owner.get(a.id)).revision, 1);
+    } finally {
+      await owner.close();
+      await reader.close();
+      await tombstoner.close();
+    }
+  });
+
+  it('a replayed supersede leaves out a target the caller can no longer write', async () => {
+    const store = tempDir();
+    await initStore({ path: store });
+    const grants = (patterns: string[]) => ({
+      id: 'editor',
+      profile: 'local' as const,
+      grants: patterns.map((pattern) => ({
+        pattern,
+        permissions: ['read' as const, 'write' as const],
+      })),
+    });
+    const before = await openStore({ path: store }, grants(['a', 'b']));
+    const input = {
+      id: '',
+      expectedRevision: 1,
+      replacement: { namespace: 'b', kind: 'note', content: 'new' },
+    };
+    let first;
+    try {
+      input.id = (await before.create({ namespace: 'a', kind: 'note', content: 'old' })).memory.id;
+      first = await before.supersede(input, { operationId: 'op-1' });
+      assert.equal(first.related.length, 1);
+    } finally {
+      await before.close();
+    }
+    const after = await openStore({ path: store }, grants(['b']));
+    try {
+      const again = await after.supersede(input, { operationId: 'op-1' });
+      assert.equal(again.memory.id, first.memory.id);
+      assert.deepEqual(again.related, []);
+    } finally {
+      await after.close();
+    }
+  });
+
   it('a supersede replays its outcome and validates the replacement', async () => {
     const { client } = await newStore();
     try {
