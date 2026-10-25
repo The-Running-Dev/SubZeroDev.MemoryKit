@@ -7,6 +7,8 @@ import {
 } from '../access/index.ts';
 import {
   HISTORY_POLICIES,
+  type BoundaryResult,
+  type HistoryBoundary,
   type HistoryPolicy,
   type HistoryProvider,
   type HistoryQueue,
@@ -14,6 +16,8 @@ import {
   type NamespaceInfo,
   type OperationStatus,
   type OutboxEntry,
+  type PurgeOutcome,
+  type PurgeReport,
   type RedactedRecord,
   type RevisionSnapshot,
   type RevisionSummary,
@@ -44,6 +48,7 @@ import {
   validateUpdate,
   validateMemoryId,
   validateOperationId,
+  validatePurge,
   validateRevision,
   validateSearch,
   validateSupersede,
@@ -111,6 +116,14 @@ export interface SupersedeInput {
   replacement: Omit<CreateInput, 'namespace'> & { namespace?: Namespace }; // defaults to the target's
 }
 
+export interface PurgeInput {
+  id: MemoryId;
+  expectedRevision: number;
+}
+export interface PurgeOptions {
+  operationId?: string;
+}
+
 export interface SyncOptions {
   retryBlocked?: boolean;
   budgetMs?: number;
@@ -123,6 +136,7 @@ export interface MemoryClient {
   restore(input: TransitionInput, opts?: WriteOptions): Promise<WriteOutcome>;
   tombstone(input: TransitionInput, opts?: WriteOptions): Promise<WriteOutcome>;
   supersede(input: SupersedeInput, opts?: WriteOptions): Promise<WriteOutcome>;
+  purge(input: PurgeInput, opts?: PurgeOptions): Promise<PurgeReport>;
   get(id: MemoryId): Promise<MemoryRecord>;
   search(query: SearchQuery): Promise<SearchResult>;
   history(id: MemoryId): Promise<RevisionSummary[]>;
@@ -379,6 +393,46 @@ function batchSupersededBy(id: MemoryId, stored: MemoryId[], writes: Write[]): M
   return sources.sort();
 }
 
+// The report is derived from what the purge recorded and where its history entry is now, so
+// re-running the operation id reports a history export that has since completed.
+function purgeBoundaries(
+  outcome: PurgeOutcome,
+  history: HistoryProvider | null,
+  status: HistoryStatus | null
+): PurgeReport['boundaries'] {
+  type Boundary = { result: BoundaryResult; detail?: string };
+  const pending: Boundary =
+    history === null && outcome.pendingDiscarded === 0
+      ? { result: 'not_modified', detail: 'no history provider' }
+      : { result: 'removed', detail: `${outcome.pendingDiscarded} pending entries discarded` };
+  const boundary = (name: HistoryBoundary): Boundary => {
+    if (history === null) return { result: 'not_modified', detail: 'no history provider' };
+    if (!outcome.queued) {
+      return { result: 'not_modified', detail: 'history holds no revision of the memory' };
+    }
+    const covered = history.purgeCoverage()[name];
+    if (covered !== 'removed' || status === 'persisted') return { result: covered };
+    return {
+      result: 'failed',
+      detail:
+        status === 'blocked'
+          ? 'blocked in the history queue; sync history, then re-run with the same operation id'
+          : 'pending in the history queue; re-run with the same operation id',
+    };
+  };
+  return {
+    current_storage: { result: 'removed' },
+    pending_history: pending,
+    history_current_tree: boundary('history_current_tree'),
+    history_past_revisions: boundary('history_past_revisions'),
+    history_remotes: boundary('history_remotes'),
+    external_copies: {
+      result: 'outside_control',
+      detail: 'copies read out of the store are not tracked',
+    },
+  };
+}
+
 function validateDuration(value: unknown, field: string): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
     throw new ValidationFailedError(`Invalid ${field}: not_a_duration`, {
@@ -462,6 +516,47 @@ class ServiceClient implements MemoryClient {
         { record: target, expected: before.revision },
       ];
     });
+  }
+
+  // Needs purge, which write never implies. Storage removes the row, discards its pending
+  // history and queues the purge entry in one transaction; history then gets the usual wait.
+  async purge(input: PurgeInput, opts: PurgeOptions = {}): Promise<PurgeReport> {
+    const normalized = validatePurge(input);
+    const { id } = normalized;
+    const operationId = validateOperationId(opts.operationId) ?? newMemoryId();
+    const fingerprint = sha256Hex(canonicalJson({ operation: 'purge', input: normalized }));
+    const { storage, history } = this.service;
+    const principalId = this.principal.id;
+    // Any id the caller can see is Forbidden without purge; anything else is NotFound.
+    const visible = await storage.get(id, {
+      patterns: [
+        ...permittedPatterns(this.principal, 'read'),
+        ...permittedPatterns(this.principal, 'write'),
+        ...permittedPatterns(this.principal, 'tombstone'),
+        ...permittedPatterns(this.principal, 'purge'),
+      ],
+    });
+    if (visible) authorize(this.principal, 'purge', visible.record.namespace);
+    const outcome = await storage.purge(
+      id,
+      { patterns: permittedPatterns(this.principal, 'purge') },
+      {
+        principalId,
+        operationId,
+        fingerprint,
+        expectedRevision: normalized.expectedRevision,
+        at: new Date().toISOString(),
+        queueHistory: history !== null,
+      }
+    );
+    // Grants may have changed since the first attempt.
+    if (outcome.replayed) authorize(this.principal, 'purge', outcome.namespace);
+    let status: HistoryStatus | null = null;
+    if (outcome.queued) {
+      await this.service.awaitHistory(this.service.historyWaitMs);
+      status = (await storage.operation(principalId, operationId))?.history ?? 'pending';
+    }
+    return { operationId, memoryId: id, boundaries: purgeBoundaries(outcome, history, status) };
   }
 
   // Tombstoning, and restoring a tombstoned memory, need tombstone; the rest need write.

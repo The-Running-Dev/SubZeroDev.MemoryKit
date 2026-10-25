@@ -9,6 +9,8 @@ import type {
   OperationStatus,
   OutboxEntry,
   ProviderDescriptor,
+  PurgeOutcome,
+  PurgeRequest,
   RowScope,
   StorageProvider,
   StorageSearch,
@@ -21,6 +23,7 @@ import type {
 } from '../contracts/index.ts';
 import {
   AlreadyExistsError,
+  IdempotencyMismatchError,
   InternalError,
   MemoryKitError,
   NotFoundError,
@@ -62,6 +65,8 @@ const DEFAULT_SCAN_BUDGET = 10_000;
 const SQLITE_BUSY = 5;
 const SQLITE_LOCKED = 6;
 const SQLITE_CONSTRAINT_UNIQUE = 2067;
+// The history_ref of an outbox entry a purge discarded before it was exported.
+const DISCARDED = 'discarded';
 
 // What the connection actually provides. Exported so the refusal paths can be tested on
 // builds that do have WAL and FTS5.
@@ -244,7 +249,7 @@ export class SqliteStorage implements StorageProvider, TokenStore {
     id: 'storage-sqlite',
     version: '0.1.0',
     contractVersions: [1],
-    capabilities: ['search.lexical'],
+    capabilities: ['search.lexical', 'purge.current'],
     limitations: ['local-filesystem-only'],
   };
 
@@ -525,27 +530,32 @@ export class SqliteStorage implements StorageProvider, TokenStore {
   }
 
   // An operation's entries were queued together, so they are the run of rows ending at its
-  // seq; the operation reports the worst of them and the last one's ref.
+  // seq; the operation reports the worst of them and the last exported one's ref.
   operation(principalId: string, operationId: string): Promise<OperationStatus | null> {
     return this.read((db) => {
       const row = db
         .prepare(
-          `SELECT o.operation_id, o.memory_id, o.revision, o.seq, x.history_ref
-           FROM operations o LEFT JOIN outbox x ON x.seq = o.seq
-           WHERE o.principal_id = ? AND o.operation_id = ?`
+          `SELECT operation_id, memory_id, revision, seq FROM operations
+           WHERE principal_id = ? AND operation_id = ?`
         )
         .get(principalId, operationId) as Row | undefined;
       if (!row) return null;
       const statuses = new Set<string>();
+      let historyRef: string | null = null;
       if (row.seq !== null) {
         const entries = db
           .prepare(
-            'SELECT operation_id, actor, status FROM outbox WHERE seq <= ? ORDER BY seq DESC'
+            'SELECT operation_id, actor, status, history_ref FROM outbox WHERE seq <= ? ORDER BY seq DESC'
           )
           .iterate(Number(row.seq)) as Iterable<Row>;
         for (const entry of entries) {
           if (entry.operation_id !== operationId || entry.actor !== principalId) break;
+          // An entry a purge discarded never reaches history.
+          if (entry.history_ref === DISCARDED) continue;
           statuses.add(String(entry.status));
+          if (historyRef === null && entry.history_ref !== null) {
+            historyRef = String(entry.history_ref);
+          }
         }
       }
       const history: HistoryStatus = statuses.has('blocked')
@@ -561,8 +571,119 @@ export class SqliteStorage implements StorageProvider, TokenStore {
         revision: Number(row.revision),
         storage: 'persisted',
         history,
-        historyRef: history === 'persisted' ? String(row.history_ref) : null,
+        historyRef: history === 'persisted' ? historyRef : null,
       };
+    });
+  }
+
+  purge(id: MemoryId, scope: RowScope, request: PurgeRequest): Promise<PurgeOutcome> {
+    return this.immediate((db) => {
+      const { principalId, operationId } = request;
+      const prior = db
+        .prepare(
+          `SELECT o.fingerprint, p.namespace, p.report FROM operations o
+           LEFT JOIN purges p ON p.memory_id = o.memory_id AND p.operation_id = o.operation_id
+             AND p.principal_id = o.principal_id
+           WHERE o.principal_id = ? AND o.operation_id = ?`
+        )
+        .get(principalId, operationId) as Row | undefined;
+      if (prior) {
+        if (prior.fingerprint !== request.fingerprint || prior.report === null) {
+          throw new IdempotencyMismatchError('The operation id was used for a different request', {
+            operationId,
+          });
+        }
+        const facts = JSON.parse(String(prior.report)) as Omit<
+          PurgeOutcome,
+          'namespace' | 'replayed'
+        >;
+        return { namespace: String(prior.namespace), ...facts, replayed: true };
+      }
+
+      const current = loadRow(db, id, scope);
+      if (!current) throw new NotFoundError('Memory not found', { id });
+      const { namespace, revision } = current.record;
+      if (revision !== request.expectedRevision) {
+        throw new RevisionConflictError('The memory has changed since it was read', {
+          id,
+          currentRevision: revision,
+        });
+      }
+
+      // The memory's entries not yet exported keep no snapshot and are never exported.
+      const pendingDiscarded = Number(
+        db
+          .prepare(
+            `UPDATE outbox SET status = 'exported', history_ref = ?, payload = NULL, last_error = NULL
+             WHERE memory_id = ? AND status IN ('pending', 'blocked')`
+          )
+          .run(DISCARDED, id).changes
+      );
+      // History is told of the purge when it may hold the memory: its namespace keeps
+      // history, or an earlier revision was exported under another policy.
+      const policyRow = db
+        .prepare('SELECT history_policy FROM namespaces WHERE name = ?')
+        .get(namespace) as Row | undefined;
+      const policy = policyRow ? (String(policyRow.history_policy) as HistoryPolicy) : 'none';
+      const exported = db
+        .prepare(
+          "SELECT 1 FROM outbox WHERE memory_id = ? AND status = 'exported' AND history_ref IS NOT ? LIMIT 1"
+        )
+        .get(id, DISCARDED);
+      const queued = request.queueHistory && (policy !== 'none' || exported !== undefined);
+
+      db.prepare('DELETE FROM links WHERE source = ?').run(id);
+      db.prepare('DELETE FROM memories_fts WHERE id = ?').run(id);
+      db.prepare('DELETE FROM memories WHERE id = ?').run(id);
+
+      let seq: number | null = null;
+      if (queued) {
+        const result = db
+          .prepare(
+            `INSERT INTO outbox (operation_id, memory_id, revision, operation, actor, at, namespace, policy, payload, status)
+             VALUES (?, ?, ?, 'purge', ?, ?, ?, ?, NULL, 'pending')`
+          )
+          .run(
+            operationId,
+            id,
+            revision + 1,
+            principalId,
+            request.at,
+            namespace,
+            policy === 'none' ? 'metadata' : policy
+          );
+        seq = Number(result.lastInsertRowid);
+      }
+      db.prepare(
+        `INSERT INTO operations (principal_id, operation_id, fingerprint, memory_id, revision, seq, created_at, outcome)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`
+      ).run(principalId, operationId, request.fingerprint, id, revision + 1, seq, request.at);
+
+      // Outcomes kept for replays hold copies of the record; none may outlive the purge.
+      const mentions = db
+        .prepare(
+          `SELECT principal_id, operation_id, outcome FROM operations
+           WHERE outcome IS NOT NULL AND instr(outcome, ?) > 0`
+        )
+        .all(JSON.stringify(id)) as Row[];
+      const rewrite = db.prepare(
+        'UPDATE operations SET outcome = ? WHERE principal_id = ? AND operation_id = ?'
+      );
+      for (const row of mentions) {
+        const outcome = JSON.parse(String(row.outcome)) as StoredOutcome;
+        const kept =
+          outcome.memory.id === id
+            ? null
+            : JSON.stringify({ ...outcome, related: outcome.related.filter((r) => r.id !== id) });
+        rewrite.run(kept, String(row.principal_id), String(row.operation_id));
+      }
+
+      const facts = { pendingDiscarded, queued };
+      db.prepare(
+        `INSERT INTO purges (memory_id, namespace, principal_id, operation_id, at, report)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      ).run(id, namespace, principalId, operationId, request.at, JSON.stringify(facts));
+      return { namespace, ...facts, replayed: false };
     });
   }
 
@@ -639,9 +760,9 @@ export class SqliteStorage implements StorageProvider, TokenStore {
     return this.read((db) => {
       const row = db
         .prepare(
-          "SELECT history_ref FROM outbox WHERE status = 'exported' ORDER BY seq DESC LIMIT 1"
+          "SELECT history_ref FROM outbox WHERE status = 'exported' AND history_ref IS NOT ? ORDER BY seq DESC LIMIT 1"
         )
-        .get() as Row | undefined;
+        .get(DISCARDED) as Row | undefined;
       return row ? String(row.history_ref) : null;
     });
   }

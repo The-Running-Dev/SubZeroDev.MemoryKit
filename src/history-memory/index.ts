@@ -1,5 +1,6 @@
 import type {
   BoundaryResult,
+  HistoryBoundary,
   HistoryEntry,
   HistoryProvider,
   ProviderDescriptor,
@@ -15,7 +16,7 @@ export class MemoryHistory implements HistoryProvider {
     id: 'history-memory',
     version: '0.1.0',
     contractVersions: [1],
-    capabilities: ['history.record'],
+    capabilities: ['history.record', 'purge.history'],
     limitations: ['not-durable'],
   };
 
@@ -23,6 +24,9 @@ export class MemoryHistory implements HistoryProvider {
     string,
     { namespace: Namespace; snapshot: RevisionSnapshot }
   >();
+  // Purge entries recorded, by the same key, with their ref.
+  private readonly purges = new Map<string, string>();
+  private refCount = 0;
 
   async open(): Promise<void> {}
 
@@ -34,10 +38,20 @@ export class MemoryHistory implements HistoryProvider {
     const key = `${entry.operationId}\0${entry.memoryId}\0${entry.revision}`;
     const existing = this.entries.get(key);
     if (existing) return { historyRef: existing.snapshot.historyRef };
+    const purged = this.purges.get(key);
+    if (purged !== undefined) return { historyRef: purged };
+    const historyRef = `mem:${++this.refCount}`;
+    // A purge drops every revision held for the memory.
+    if (entry.operation === 'purge') {
+      for (const [other, item] of this.entries) {
+        if (item.snapshot.record.id === entry.memoryId) this.entries.delete(other);
+      }
+      this.purges.set(key, historyRef);
+      return { historyRef };
+    }
     if (entry.payload === null) {
       throw new InternalError('A history entry has no snapshot', { seq: entry.seq });
     }
-    const historyRef = `mem:${this.entries.size + 1}`;
     this.entries.set(key, {
       namespace: entry.namespace,
       snapshot: {
@@ -71,15 +85,12 @@ export class MemoryHistory implements HistoryProvider {
     return found ? structuredClone(found) : null;
   }
 
-  // Purge arrives in S11.
-  purgeCoverage(): Record<
-    'history_current_tree' | 'history_past_revisions' | 'history_remotes',
-    BoundaryResult
-  > {
+  // Nothing is copied anywhere else, so a purge removes every revision.
+  purgeCoverage(): Record<HistoryBoundary, BoundaryResult> {
     return {
-      history_current_tree: 'unsupported',
-      history_past_revisions: 'unsupported',
-      history_remotes: 'unsupported',
+      history_current_tree: 'removed',
+      history_past_revisions: 'removed',
+      history_remotes: 'not_modified',
     };
   }
 

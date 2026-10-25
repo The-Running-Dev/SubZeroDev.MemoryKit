@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import {
   HistoryProviderError,
   type BoundaryResult,
+  type HistoryBoundary,
   type HistoryEntry,
   type HistoryProvider,
   type ProviderDescriptor,
@@ -62,8 +63,8 @@ export class GitHistory implements HistoryProvider {
     id: 'history-git',
     version: '0.1.0',
     contractVersions: [1],
-    capabilities: ['history.record'],
-    limitations: [],
+    capabilities: ['history.record', 'purge.history'],
+    limitations: ['purge-keeps-past-revisions'],
   };
 
   private readonly repository: string;
@@ -94,7 +95,7 @@ export class GitHistory implements HistoryProvider {
 
   async record(entry: HistoryEntry): Promise<{ historyRef: string }> {
     await this.ensureReady();
-    if (entry.payload === null) {
+    if (entry.payload === null && entry.operation !== 'purge') {
       throw new InternalError('A history entry has no snapshot', { seq: entry.seq });
     }
     let refused = '';
@@ -164,15 +165,13 @@ export class GitHistory implements HistoryProvider {
     return { revision: n, operation, operationId, actor, at, historyRef, record };
   }
 
-  // Purge arrives in S11.
-  purgeCoverage(): Record<
-    'history_current_tree' | 'history_past_revisions' | 'history_remotes',
-    BoundaryResult
-  > {
+  // A purge commit clears the memory from the branch's tree; earlier commits, and any clone
+  // or remote, still hold it.
+  purgeCoverage(): Record<HistoryBoundary, BoundaryResult> {
     return {
-      history_current_tree: 'unsupported',
-      history_past_revisions: 'unsupported',
-      history_remotes: 'unsupported',
+      history_current_tree: 'removed',
+      history_past_revisions: 'retained',
+      history_remotes: 'not_modified',
     };
   }
 
@@ -237,9 +236,10 @@ export class GitHistory implements HistoryProvider {
     return result.code === 0;
   }
 
+  // A purge entry has no payload: its record.json is only a marker, and no content is kept.
   private async commit(
     entry: HistoryEntry,
-    payload: MemoryRecord | RedactedRecord,
+    payload: MemoryRecord | RedactedRecord | null,
     head: string | null
   ): Promise<string> {
     const dir = `${entry.namespace}/${entry.memoryId}`;
@@ -250,9 +250,19 @@ export class GitHistory implements HistoryProvider {
       else await this.git(['read-tree', '--empty'], { env });
       const files: [string, string][] = [
         [FORMAT_PATH, `${FORMAT}\n`],
-        [`${dir}/record.json`, recordJson(payload)],
+        [
+          `${dir}/record.json`,
+          payload === null
+            ? recordJson({
+                id: entry.memoryId,
+                namespace: entry.namespace,
+                purged: true,
+                at: entry.at,
+              })
+            : recordJson(payload),
+        ],
       ];
-      if ('content' in payload) {
+      if (payload !== null && 'content' in payload) {
         files.push([`${dir}/content.${EXTENSIONS[payload.contentType]}`, payload.content]);
       }
       const lines: string[] = [];
@@ -435,7 +445,7 @@ function decodeActor(text: string): string {
 }
 
 // The record without its content: sorted keys, two-space indent and a trailing newline.
-function recordJson(payload: MemoryRecord | RedactedRecord): string {
+function recordJson(payload: MemoryRecord | RedactedRecord | Record<string, unknown>): string {
   const rest: Record<string, unknown> = { ...payload };
   delete rest.content;
   return JSON.stringify(sortKeys(rest), null, 2) + '\n';

@@ -82,6 +82,8 @@ export const cliDriver: Driver = {
       ),
       json
     ),
+  purge: async (store, { id, ...input }, operationId) =>
+    parse(runCli(writeArgs(['purge', String(id)], store, input, operationId)), json),
   get: async (store, id) => parse(runCli(['get', id, '--store', store, '--json']), json),
   search: async (store, query) => parse(runCli(searchArgs(store, query)), json),
   history: async (store, id) => parse(runCli(['history', id, '--store', store, '--json']), json),

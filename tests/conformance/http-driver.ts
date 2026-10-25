@@ -7,6 +7,7 @@ import type { SearchQuery } from '../../src/model/index.ts';
 import type {
   CreateInput,
   MemoryClient,
+  PurgeInput,
   SupersedeInput,
   TransitionInput,
   UpdateInput,
@@ -131,6 +132,10 @@ function driverOver(
             await client(store)
           ).supersede(input as unknown as SupersedeInput, opts(operationId))
         )
+      ),
+    purge: (store, input, operationId) =>
+      capture(async () =>
+        plain(await (await client(store)).purge(input as unknown as PurgeInput, opts(operationId)))
       ),
     get: (store, id) => capture(async () => plain(await (await client(store)).get(id))),
     search: (store, query) =>
