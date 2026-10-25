@@ -245,6 +245,42 @@ describe('S8 local HTTP service', () => {
     );
   });
 
+  it('a replacement in an unreadable namespace stays out of supersededBy', async () => {
+    const { store, url, secret } = await started();
+    const owner = connect(url, { token: secret });
+    const { memory } = await owner.create({ namespace: 'public', kind: 'note', content: 'old' });
+    const superseded = await owner.supersede({
+      id: memory.id,
+      expectedRevision: 1,
+      replacement: { namespace: 'private', kind: 'note', content: 'new' },
+    });
+    const reader = await issue(store, [{ pattern: 'public', permissions: ['read', 'history'] }]);
+    const headers = {
+      authorization: `Bearer ${reader.secret}`,
+      'content-type': 'application/json',
+    };
+
+    const read = await fetch(`${url}/v1/memories/${memory.id}`, { headers });
+    assert.equal(read.status, 200);
+    assert.deepEqual(((await read.json()) as { supersededBy: string[] }).supersededBy, []);
+    const found = await fetch(`${url}/v1/search`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ states: ['superseded'] }),
+    });
+    const items = ((await found.json()) as { items: { supersededBy: string[] }[] }).items;
+    assert.deepEqual(
+      items.map((item) => item.supersededBy),
+      [[]]
+    );
+    const revision = await fetch(`${url}/v1/memories/${memory.id}/history/2`, { headers });
+    const snapshot = (await revision.json()) as { record: { supersededBy: string[] } };
+    assert.deepEqual(snapshot.record.supersededBy, []);
+    const hidden = await fetch(`${url}/v1/memories/${superseded.memory.id}`, { headers });
+    assert.equal(hidden.status, 404);
+    assert.deepEqual((await owner.get(memory.id)).supersededBy, [superseded.memory.id]);
+  });
+
   it('a body over the cap is LimitExceeded and the connection closes', async () => {
     const { url, secret } = await started();
     const reply = await rawExchange(

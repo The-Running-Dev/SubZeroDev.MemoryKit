@@ -9,6 +9,18 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-25 — supersededBy is scoped to what the caller can read
+
+- Context: a supersede may put the replacement in another namespace. `supersededBy` was derived from every `supersedes` link, so a caller who could read only the target saw the replacement's id on get, search, write outcomes and history revisions.
+- Chosen:
+  - Every read derives `supersededBy` only from replacements in the caller's `read` patterns: get, search (whatever namespaces the search names), write outcomes and their replays. `StorageProvider.supersededBy` takes a `RowScope`, and `StorageSearch` carries `readable`.
+  - A history revision keeps the `supersededBy` it was exported with; Git is not rewritten. The service returns it with only the replacements the caller can read now, so one that has since been purged is no longer named either.
+  - The history payload still records the whole relationship (the transaction's `supersededBy` stays unscoped).
+  - Explicit `links` are the writer's own data and are returned as written; only the derived field is scoped.
+- Rejected:
+  - Refusing a supersede across namespaces: it is valid, and authorized readers still need the relationship.
+  - Scoping by the search's named namespaces: a caller would see different `supersededBy` for the same record from get and from search.
+
 ## 2026-10-25 — Resolve technical disagreements in issue #14
 
 - Context: PR #15 left four technical disagreements and package naming open. The user authorized resolving the technical items while retaining the settled v1 architecture and leaving naming/publication pending.

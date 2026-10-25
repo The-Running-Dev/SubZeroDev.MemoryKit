@@ -173,6 +173,48 @@ describe('S10 MCP', () => {
     assert.equal(((await missing.json()) as Structured).code, 'Unauthenticated');
   });
 
+  it('a replacement in an unreadable namespace stays out of supersededBy', async () => {
+    // Git history, so the revisions outlive the embedded store that wrote them.
+    const store: StoreConfig = { path: tempDir() };
+    await initStore(store);
+    const embedded = await openStore(store);
+    const { memory } = await embedded.create({ namespace: 'public', kind: 'note', content: 'old' });
+    await embedded.supersede({
+      id: memory.id,
+      expectedRevision: 1,
+      replacement: { namespace: 'private', kind: 'note', content: 'new' },
+    });
+    await embedded.close();
+    const server = await serve({
+      store,
+      listen: { host: '127.0.0.1', port: 0 },
+      auth: { profile: 'local' },
+    });
+    closers.push(server.close);
+    const token = await localToken(store.path, [
+      { pattern: 'public', permissions: ['read', 'history'] },
+    ]);
+    const client = await overHttp(server.url, token);
+
+    const read = await client.callTool({ name: 'memory_get', arguments: { id: memory.id } });
+    assert.deepEqual((read.structuredContent as Structured).supersededBy, []);
+    const found = await client.callTool({
+      name: 'memory_search',
+      arguments: { states: ['superseded'] },
+    });
+    const items = (found.structuredContent as Structured).items as Structured[];
+    assert.deepEqual(
+      items.map((item) => item.supersededBy),
+      [[]]
+    );
+    const revision = await client.callTool({
+      name: 'memory_revision',
+      arguments: { id: memory.id, revision: 2 },
+    });
+    const record = (revision.structuredContent as Structured).record as Structured;
+    assert.deepEqual(record.supersededBy, []);
+  });
+
   it('S10.3 domain errors carry the code, retryable and details', async () => {
     const store = tempDir();
     await initStore({ path: store });

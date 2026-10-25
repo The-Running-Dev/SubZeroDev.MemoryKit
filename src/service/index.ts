@@ -749,10 +749,8 @@ class ServiceClient implements MemoryClient {
   async search(query: SearchQuery): Promise<SearchResult> {
     const { namespaces, ...rest } = validateSearch(query, this.service.limits);
     for (const pattern of namespaces ?? []) authorizePattern(this.principal, 'read', pattern);
-    return this.service.storage.search({
-      ...rest,
-      patterns: namespaces ?? permittedPatterns(this.principal, 'read'),
-    });
+    const readable = permittedPatterns(this.principal, 'read');
+    return this.service.storage.search({ ...rest, patterns: namespaces ?? readable, readable });
   }
 
   async history(id: MemoryId): Promise<RevisionSummary[]> {
@@ -768,7 +766,14 @@ class ServiceClient implements MemoryClient {
       history.get(id, row.record.namespace, revision)
     );
     if (!found) throw new NotFoundError('Revision not found', { id, revision });
-    return found;
+    // The revision keeps the supersededBy it was exported with; the caller sees only the
+    // replacements it can read now.
+    const scope = { patterns: permittedPatterns(this.principal, 'read') };
+    const visible: MemoryId[] = [];
+    for (const source of found.record.supersededBy) {
+      if (await this.service.storage.get(source, scope)) visible.push(source);
+    }
+    return { ...found, record: { ...found.record, supersededBy: visible } };
   }
 
   // The caller's own operations only.
@@ -867,8 +872,11 @@ class ServiceClient implements MemoryClient {
     }
   }
 
+  // supersededBy names only replacements the caller can read.
   private async withDerived(row: StoredRow): Promise<MemoryRecord> {
-    const map = await this.service.storage.supersededBy([row.record.id]);
+    const map = await this.service.storage.supersededBy([row.record.id], {
+      patterns: permittedPatterns(this.principal, 'read'),
+    });
     const supersededBy = map[row.record.id];
     if (!supersededBy) throw new InternalError('Derived links are missing', { id: row.record.id });
     return { ...row.record, supersededBy };

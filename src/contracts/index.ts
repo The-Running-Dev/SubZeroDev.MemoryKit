@@ -85,10 +85,11 @@ export interface RowScope {
   patterns: NamespacePattern[];
 }
 // A search as storage runs it: the service has applied the defaults and replaced the named
-// namespaces with the patterns the caller may read.
+// namespaces with the patterns the caller may read. readable is every pattern the caller may
+// read, which bounds the results' supersededBy.
 export type StorageSearch = Required<Pick<SearchQuery, 'states' | 'limit'>> &
   Omit<SearchQuery, 'namespaces'> &
-  RowScope;
+  RowScope & { readable: NamespacePattern[] };
 export interface StoredRow {
   record: Omit<MemoryRecord, 'supersededBy'>;
 }
@@ -162,7 +163,8 @@ export interface StorageProvider {
   close(): Promise<void>;
   write<T>(fn: (tx: StorageTransaction) => Promise<T>): Promise<T>;
   get(id: MemoryId, scope: RowScope): Promise<StoredRow | null>;
-  supersededBy(ids: MemoryId[]): Promise<Record<MemoryId, MemoryId[]>>;
+  // Only replacements in the scope, so a read never names a memory the caller cannot read.
+  supersededBy(ids: MemoryId[], scope: RowScope): Promise<Record<MemoryId, MemoryId[]>>;
   search(query: StorageSearch): Promise<SearchResult>;
   operation(principalId: string, operationId: string): Promise<OperationStatus | null>;
   pruneOperations(before: string): Promise<number>; // removes operations created before the time
