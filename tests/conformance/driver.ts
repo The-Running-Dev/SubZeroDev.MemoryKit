@@ -39,4 +39,6 @@ export interface Driver {
     ns: string,
     policy: string
   ): Promise<Result<Record<string, unknown>>>;
+  // Releases anything the driver keeps open between calls, such as a running service.
+  close?(): Promise<void>;
 }

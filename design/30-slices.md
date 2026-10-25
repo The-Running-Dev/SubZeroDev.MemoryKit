@@ -102,7 +102,7 @@ Acceptance:
 Out of scope: authentication and listeners (S8, S9).
 
 ## S8 — A local service with an HTTP API
-Status: todo
+Status: done
 Delivers: Applications on the same machine reach a store through a loopback HTTP service that authenticates them with locally issued tokens. A typed client gives them the same interface as embedded use.
 Touches: authn (LocalTokenAuthenticator); contracts (TokenStore); storage-sqlite (tokens); http (v1 routes, problem+json, Idempotency-Key, 202 for pending history); server (serve, local profile, Origin check, drainer loop); sdk (connect); cli (serve, token create, list and revoke; `--url`/`--token-env` for every command); conformance (HTTP driver)
 Depends on: S7

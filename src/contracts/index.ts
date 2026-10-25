@@ -1,6 +1,7 @@
 // Provider interfaces (20-contract.md, contracts). Every value crossing these boundaries is
 // plain JSON data (invariant 19).
 
+import type { Grant, Principal } from '../access/index.ts';
 import {
   MemoryKitError,
   type ErrorDetails,
@@ -180,4 +181,21 @@ export class HistoryProviderError extends MemoryKitError {
   constructor(message: string, retryable: boolean, details: ErrorDetails = {}) {
     super(message, details, retryable);
   }
+}
+
+export interface TokenInfo {
+  tokenId: string;
+  principalId: string;
+  grants: Grant[];
+  createdAt: string;
+  revokedAt: string | null;
+}
+
+// Locally issued service tokens. Only a hash of each secret is kept, so the secret is shown
+// once, when it is issued.
+export interface TokenStore {
+  issue(principalId: string, grants: Grant[]): Promise<{ tokenId: string; secret: string }>;
+  verify(secret: string): Promise<Principal | null>;
+  revoke(tokenId: string): Promise<void>;
+  list(): Promise<TokenInfo[]>;
 }

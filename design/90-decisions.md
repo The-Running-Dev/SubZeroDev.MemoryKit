@@ -10,6 +10,24 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-25 — HTTP service as built (S8)
+
+- **Context:** S8 serves the store over HTTP API v1 with local tokens. The design left the listen default, Origin handling, body limits, status mapping for non-exported history, and the token CLI shape to the build.
+- **Chosen:**
+  - A write whose history is `pending` or `blocked` answers 202; a fully exported write answers 200 or 201. The body is the same `WriteOutcome` either way.
+  - `waitForHistoryMs` is not carried over HTTP; the service applies its own configured wait.
+  - `memorykit serve` listens on `127.0.0.1:7600` by default. A non-loopback host without TLS is refused with `ValidationFailed` on `tls`; TLS and the remote profile answer `Unsupported` (`server.remote`) until S9.
+  - The Origin allow-list is empty by default. A request carrying a disallowed `Origin` gets 403 `Forbidden` (`reason: origin`) before its token is read; a request with no `Origin` is allowed. No CORS response headers or preflight handling: browser use is out of scope for v1.
+  - Request bodies are capped at 4 MiB; a larger one gets 413 `LimitExceeded` and the connection is closed.
+  - An unknown route or method is 404 `NotFound`. No purge route until S11.
+  - Token secrets are `mk_` plus 32 random bytes in base64url; only their SHA-256 is stored. `token create|list|revoke` run against `--store` only, never over the API. Grants are checked when issued and again when a request is served.
+  - `--grant` is `<permissions>:<pattern>`, split at the first `:`.
+  - CLI commands reach a service with `--url` and read the token from the variable named by `--token-env`, so the secret never appears in a process list.
+- **Rejected:**
+  - 200 for pending history: hides that the export has not happened yet.
+  - Passing tokens as a CLI argument: visible to other local users.
+  - Answering preflight requests: no browser client is planned for v1, and an allow-list without CORS headers is the smaller surface.
+
 ## 2026-10-25 — Permissions as built (S7)
 - **Context:** S2 to S6 already authorised every operation as it was built. S7 had to prove the rules end to end and settle what happens to a host-supplied principal that is malformed.
 - **Chosen:**

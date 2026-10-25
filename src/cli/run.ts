@@ -1,11 +1,14 @@
 import { resolve } from 'node:path';
 import { parseArgs, type ParseArgsConfig } from 'node:util';
+import { validatePrincipal, type Grant } from '../access/index.ts';
 import type {
   HistoryPolicy,
   HistoryQueue,
   RevisionSnapshot,
   RevisionSummary,
   StoreStatus,
+  TokenInfo,
+  TokenStore,
 } from '../contracts/index.ts';
 import {
   ValidationFailedError,
@@ -14,10 +17,12 @@ import {
   type Link,
   type LinkType,
   type MemoryState,
+  type Permission,
   type SearchQuery,
   type SearchResult,
 } from '../model/index.ts';
-import { initStore, openStore } from '../sdk/index.ts';
+import { connect, initStore, openStore, openTokenStore, type StoreConfig } from '../sdk/index.ts';
+import { serve } from '../server/index.ts';
 import type {
   CreateInput,
   MemoryClient,
@@ -36,7 +41,14 @@ export interface CliIo {
 // What the CLI opens stores with; tests replace it to run with a chosen history provider.
 export interface CliDeps {
   openStore: typeof openStore;
+  connect?: typeof connect;
+  serve?: typeof serve;
+  openTokenStore?: typeof openTokenStore;
+  untilShutdown?: () => Promise<void>;
+  env?: Record<string, string | undefined>;
 }
+
+export const DEFAULT_LISTEN = '127.0.0.1:7600';
 
 export const EXIT_OK = 0;
 export const EXIT_DOMAIN_ERROR = 1;
@@ -44,6 +56,9 @@ export const EXIT_USAGE = 2;
 export const EXIT_HISTORY_PENDING = 3;
 
 const USAGE = `Usage: memorykit <command> [options]
+
+Every command except init, serve and token takes either --store <dir> or
+--url <url> [--token-env <VAR>], where <VAR> names the variable holding the token.
 
 Commands:
   init <dir>                       Create a store in <dir>
@@ -70,6 +85,12 @@ Commands:
   namespace get <ns> --store <dir>
   namespace set <ns> --history-policy <full|metadata|none> --store <dir>
   history-sync --store <dir> [--retry-blocked] [--budget-ms <n>]
+  serve --store <dir> [--listen <host>:<port>] [--allowed-origin <origin>]...
+                                   Serve the store over HTTP (default ${DEFAULT_LISTEN})
+  token create --store <dir> --principal <id> --grant <permissions>:<pattern>...
+                                   Issue a token; the secret is printed once
+  token list --store <dir>
+  token revoke <token-id> --store <dir>
 
 Exit codes: 0 success, 3 success with history pending, 1 domain error, 2 usage error.
 
@@ -97,6 +118,12 @@ const OPTIONS = {
   state: { type: 'string', multiple: true },
   limit: { type: 'string' },
   cursor: { type: 'string' },
+  url: { type: 'string' },
+  'token-env': { type: 'string' },
+  listen: { type: 'string' },
+  'allowed-origin': { type: 'string', multiple: true },
+  principal: { type: 'string' },
+  grant: { type: 'string', multiple: true },
 } satisfies ParseArgsConfig['options'];
 
 type Values = ReturnType<typeof parse>['values'];
@@ -289,17 +316,113 @@ function formatStatus(status: StoreStatus): string {
   );
 }
 
+function storeConfig(values: Values): StoreConfig {
+  return { path: resolve(required(values, 'store')) };
+}
+
+// A store opened in this process, or a service reached over HTTP.
+async function openClient(
+  values: Values,
+  deps: CliDeps
+): Promise<MemoryClient & { close(): Promise<void> }> {
+  if (values.url === undefined) {
+    if (values['token-env'] !== undefined) throw new UsageError('--token-env needs --url');
+    return deps.openStore(storeConfig(values));
+  }
+  if (values.store !== undefined) throw new UsageError('Give --store or --url, not both');
+  const name = values['token-env'];
+  let token: string | undefined;
+  if (name !== undefined) {
+    token = (deps.env ?? process.env)[name];
+    if (token === undefined || token === '') {
+      // A token pasted in place of the name must not be echoed back.
+      const shown = /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) && !name.startsWith('mk_') ? name : '';
+      throw new UsageError(
+        shown === ''
+          ? '--token-env must name an environment variable that is set'
+          : `The environment variable ${shown} is not set`
+      );
+    }
+  }
+  const client = (deps.connect ?? connect)(values.url, token === undefined ? {} : { token });
+  return Object.assign(client, { close: async () => {} });
+}
+
 async function withStore<T>(
   values: Values,
   deps: CliDeps,
   fn: (client: MemoryClient) => Promise<T>
 ): Promise<T> {
-  const client = await deps.openStore({ path: resolve(required(values, 'store')) });
+  const client = await openClient(values, deps);
   try {
     return await fn(client);
   } finally {
     await client.close();
   }
+}
+
+// Tokens live in the store, so they are managed locally, never over the API.
+async function withTokens<T>(
+  values: Values,
+  deps: CliDeps,
+  fn: (tokens: TokenStore) => Promise<T>
+): Promise<T> {
+  if (values.url !== undefined) throw new UsageError('token commands take --store, not --url');
+  const tokens = await (deps.openTokenStore ?? openTokenStore)(storeConfig(values));
+  try {
+    return await fn(tokens);
+  } finally {
+    await tokens.close();
+  }
+}
+
+// <permissions>:<pattern>, where permissions are comma-separated, as in read,write:demo/*.
+function parseGrants(items: string[] | undefined): Grant[] {
+  if (items === undefined) throw new UsageError('--grant is required');
+  return items.map((item) => {
+    const at = item.indexOf(':');
+    if (at <= 0) throw new UsageError(`--grant must be <permissions>:<pattern>, got "${item}"`);
+    return {
+      pattern: item.slice(at + 1),
+      permissions: item.slice(0, at).split(',') as Permission[],
+    };
+  });
+}
+
+function parseListen(text: string): { host: string; port: number } {
+  const at = text.lastIndexOf(':');
+  if (at <= 0) throw new UsageError(`--listen must be <host>:<port>, got "${text}"`);
+  const host = text.slice(0, at);
+  const port = text.slice(at + 1);
+  return {
+    host: host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host,
+    port: /^\d+$/.test(port) ? Number(port) : Number.NaN,
+  };
+}
+
+function untilSignal(): Promise<void> {
+  return new Promise((resolve) => {
+    const stop = (): void => {
+      process.off('SIGINT', stop);
+      process.off('SIGTERM', stop);
+      resolve();
+    };
+    process.on('SIGINT', stop);
+    process.on('SIGTERM', stop);
+  });
+}
+
+function formatTokens(tokens: TokenInfo[]): string {
+  if (tokens.length === 0) return 'No tokens\n';
+  return tokens
+    .map((token) => {
+      const grants = token.grants
+        .map((grant) => `${grant.permissions.join(',')}:${grant.pattern}`)
+        .join(' ');
+      const state = token.revokedAt === null ? 'active' : `revoked ${token.revokedAt}`;
+      return `${token.tokenId}  ${token.principalId}  ${grants}  ${token.createdAt}  ${state}\n`;
+    })
+    .join('');
 }
 
 export async function run(
@@ -326,6 +449,7 @@ export async function run(
   try {
     switch (command) {
       case 'init': {
+        if (values.url !== undefined) throw new UsageError('init takes a directory, not --url');
         const dir =
           rest.length === 0 && values.store !== undefined
             ? values.store
@@ -473,6 +597,56 @@ export async function run(
         const queue = await withStore(values, deps, (client) => client.syncHistory(opts));
         print(queue, formatQueue(queue));
         return queue.pending > 0 || queue.blocked !== null ? EXIT_HISTORY_PENDING : EXIT_OK;
+      }
+      case 'serve': {
+        only(rest, 0, 'no positional arguments for serve');
+        if (values.url !== undefined) throw new UsageError('serve takes --store, not --url');
+        const server = await (deps.serve ?? serve)({
+          store: storeConfig(values),
+          listen: parseListen(values.listen ?? DEFAULT_LISTEN),
+          auth: { profile: 'local' },
+          ...(values['allowed-origin'] === undefined
+            ? {}
+            : { allowedOrigins: values['allowed-origin'] }),
+        });
+        try {
+          print({ url: server.url }, `Listening on ${server.url}\n`);
+          await (deps.untilShutdown ?? untilSignal)();
+        } finally {
+          await server.close();
+        }
+        return EXIT_OK;
+      }
+      case 'token': {
+        const [action, ...args] = rest;
+        if (action === 'create') {
+          only(args, 0, 'token create --principal <id> --grant <permissions>:<pattern>');
+          if (values.principal === undefined) throw new UsageError('--principal is required');
+          const principal = validatePrincipal({
+            id: values.principal,
+            profile: 'local',
+            grants: parseGrants(values.grant),
+          });
+          const issued = await withTokens(values, deps, (tokens) =>
+            tokens.issue(principal.id, principal.grants)
+          );
+          print(
+            issued,
+            `token id: ${issued.tokenId}\nsecret:   ${issued.secret}\n` +
+              'The secret is shown only now; keep it somewhere safe.\n'
+          );
+        } else if (action === 'list') {
+          only(args, 0, 'token list');
+          const tokens = await withTokens(values, deps, (store) => store.list());
+          print(tokens, formatTokens(tokens));
+        } else if (action === 'revoke') {
+          const [tokenId] = only(args, 1, 'token revoke <token-id>');
+          await withTokens(values, deps, (tokens) => tokens.revoke(tokenId!));
+          print({ tokenId, revoked: true }, `Revoked ${tokenId}\n`);
+        } else {
+          throw new UsageError('Expected token create|list|revoke');
+        }
+        return EXIT_OK;
       }
       default:
         throw new UsageError(`Unknown command "${command}"`);
