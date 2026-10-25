@@ -9,6 +9,25 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-25 — Purge as built (S11)
+
+- Context: S11 adds purge on the SDK, HTTP and CLI. The contract's storage signature returned a boundary result and an outbox seq the service does not need, and did not say how a replay rebuilds its report or what happens to history the purge cannot wait for.
+- Chosen:
+  - `StorageProvider.purge(id, scope, PurgeRequest): Promise<PurgeOutcome>` in one transaction: replay check, revision check, discard of the memory's pending and blocked entries (exported, `history_ref = 'discarded'`, payload nulled), row deletion, the purge outbox entry, the operations row and the `purges` row.
+  - The `purges.report` column stores the facts `{ pendingDiscarded, queued }`; the service derives the report on every call. Re-running the same operation id after history catches up reports `history_current_tree: removed`, which S11.2 relies on.
+  - A history boundary the provider would remove is reported `failed` until the purge entry is persisted, with a detail saying to re-run the same operation id. The CLI exits 3 for that, as for any write with history pending.
+  - No purge entry is queued without a history provider, or when the namespace policy is `none` and nothing of the memory was exported; history boundaries are then `not_modified`. A queued entry under policy `none` (exported earlier) is recorded as `metadata`.
+  - Stored outcomes of earlier writes that name the purged id are scrubbed: the outcome is nulled when it is that memory, and the id is dropped from `related` otherwise. Replays of those writes then report only what still exists.
+  - `operation()` skips discarded entries, so an operation whose entries were all discarded reports history `not_required`; `lastExportedRef` ignores them.
+  - Git: a purge commit writes `record.json` as `{ id, namespace, purged: true, at }` and removes every content file; the provider advertises `purge.history` and the limitation `purge-keeps-past-revisions`. Past revisions are `retained`, remotes `not_modified`.
+  - MemoryHistory drops every stored revision of the memory, so it reports past revisions `removed` (S11.5). Its refs now come from a counter, since a purge shrinks the list.
+  - Visibility follows writes: any id the caller can read, write, tombstone or purge is `Forbidden` without `purge`; anything else is `NotFound`. Purge stays off MCP.
+- Rejected:
+  - Storing the rendered report: a replay could never report an export that completed after the first call.
+  - Waiting for history inside the storage transaction, or failing the purge when history is down: the row and pending content would stay while the outage lasts.
+  - Rewriting Git history to drop past revisions: out of scope for S11, and the report says they are retained.
+  - Cancelling an export already in flight when the purge commits: it may still land, but the purge commit then replaces its tree, and past revisions are already reported retained, so the report stays true.
+
 ## 2026-10-25 — MCP as built (S10)
 
 - Context: S10 serves the service over MCP on stdio and Streamable HTTP. The design left the accepted revisions open and did not say how tool schemas, validation, write options or the HTTP principal are handled.

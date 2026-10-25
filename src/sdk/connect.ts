@@ -6,6 +6,7 @@ import type {
   HistoryQueue,
   NamespaceInfo,
   OperationStatus,
+  PurgeReport,
   RevisionSnapshot,
   RevisionSummary,
   StoreStatus,
@@ -26,6 +27,8 @@ import {
 import type {
   CreateInput,
   MemoryClient,
+  PurgeInput,
+  PurgeOptions,
   SupersedeInput,
   SyncOptions,
   TransitionInput,
@@ -140,6 +143,9 @@ class HttpClient implements MemoryClient {
   }
   supersede(input: SupersedeInput, opts?: WriteOptions): Promise<WriteOutcome> {
     return this.call('POST', `${idPath(input?.id)}/supersede`, withoutId(input), opts);
+  }
+  purge(input: PurgeInput, opts?: PurgeOptions): Promise<PurgeReport> {
+    return this.call('POST', `${idPath(input?.id)}/purge`, withoutId(input), opts);
   }
   get(id: MemoryId): Promise<MemoryRecord> {
     return this.call('GET', idPath(id));

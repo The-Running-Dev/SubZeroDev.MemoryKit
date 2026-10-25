@@ -24,6 +24,19 @@ export type RedactedRecord = Omit<MemoryRecord, 'content' | 'metadata'> & {
 
 export type BoundaryResult =
   'removed' | 'retained' | 'not_modified' | 'outside_control' | 'unsupported' | 'failed';
+export type PurgeBoundary =
+  | 'current_storage'
+  | 'pending_history'
+  | 'history_current_tree'
+  | 'history_past_revisions'
+  | 'history_remotes'
+  | 'external_copies';
+export type HistoryBoundary = Extract<PurgeBoundary, `history_${string}`>;
+export interface PurgeReport {
+  operationId: string;
+  memoryId: MemoryId;
+  boundaries: Record<PurgeBoundary, { result: BoundaryResult; detail?: string }>;
+}
 
 export interface RevisionSummary {
   revision: number;
@@ -108,6 +121,21 @@ export interface WriteBatch {
     outcome: StoredOutcome;
   };
 }
+export interface PurgeRequest {
+  principalId: string;
+  operationId: string;
+  fingerprint: string;
+  expectedRevision: number;
+  at: string;
+  queueHistory: boolean; // false without a history provider
+}
+// What a purge did, as recorded; a replay of the operation id returns the same facts.
+export interface PurgeOutcome {
+  namespace: Namespace;
+  pendingDiscarded: number;
+  queued: boolean;
+  replayed: boolean;
+}
 export interface StorageTransaction {
   findOperation(
     principalId: string,
@@ -139,6 +167,9 @@ export interface StorageProvider {
   operation(principalId: string, operationId: string): Promise<OperationStatus | null>;
   pruneOperations(before: string): Promise<number>; // removes operations created before the time
   setNamespacePolicy(ns: Namespace, policy: HistoryPolicy): Promise<NamespaceInfo>;
+  // Removes the row in the scope, discards its pending history and queues a purge entry, in
+  // one transaction; a known operation id replays instead.
+  purge(id: MemoryId, scope: RowScope, request: PurgeRequest): Promise<PurgeOutcome>;
   getNamespace(ns: Namespace): Promise<NamespaceInfo | null>;
   // outbox
   acquireDrainLease(holder: string, ttlMs: number): Promise<{ token: number } | null>;
@@ -168,10 +199,7 @@ export interface HistoryProvider {
   record(entry: HistoryEntry): Promise<{ historyRef: string }>; // idempotent by operation, memory and revision
   list(memoryId: MemoryId, ns: Namespace): Promise<RevisionSummary[]>;
   get(memoryId: MemoryId, ns: Namespace, revision: number): Promise<RevisionSnapshot | null>;
-  purgeCoverage(): Record<
-    'history_current_tree' | 'history_past_revisions' | 'history_remotes',
-    BoundaryResult
-  >;
+  purgeCoverage(): Record<HistoryBoundary, BoundaryResult>; // what an exported purge entry removes
 }
 
 // A history provider's failure. The drainer retries a retryable one and blocks the entry on

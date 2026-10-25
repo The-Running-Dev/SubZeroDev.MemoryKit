@@ -4,6 +4,7 @@ import { validatePrincipal, type Grant } from '../access/index.ts';
 import type {
   HistoryPolicy,
   HistoryQueue,
+  PurgeReport,
   RevisionSnapshot,
   RevisionSummary,
   StoreStatus,
@@ -75,6 +76,8 @@ Commands:
          [--namespace <ns>] [--content-type <type>] [--key <key>] [--metadata <json>]
          [--link <type>:<id>]... [--operation-id <id>]
                                    Replace <id> with a new memory that supersedes it
+  purge <id> --store <dir> --expected-revision <n> [--operation-id <id>]
+                                   Remove a memory and report each place it was held
   get <id> --store <dir>
   search --store <dir> [--text <words>] [--namespace <pattern>]... [--kind <kind>]...
          [--state <state>]... [--metadata <json>] [--limit <n>] [--cursor <cursor>]
@@ -276,6 +279,18 @@ function formatOutcome(outcome: WriteOutcome): string {
   return (
     `${line(outcome.memory)} (history: ${outcome.history})\n` +
     outcome.related.map((memory) => `${line(memory)}\n`).join('')
+  );
+}
+
+function formatPurge(report: PurgeReport): string {
+  const lines = Object.entries(report.boundaries).map(
+    ([name, { result, detail }]) =>
+      `${name.padEnd(22)} ${result}${detail === undefined ? '' : ` (${detail})`}
+`
+  );
+  return (
+    `${report.memoryId} purged (operation ${report.operationId})
+` + lines.join('')
   );
 }
 
@@ -562,6 +577,22 @@ export async function run(
         );
         print(outcome, formatOutcome(outcome));
         return historyBehind(outcome) ? EXIT_HISTORY_PENDING : EXIT_OK;
+      }
+      // A history boundary still waiting on the queue is success with history pending.
+      case 'purge': {
+        const [id] = only(rest, 1, 'purge <id>');
+        const flag = RECORD_FLAGS.find((name) => values[name as keyof Values] !== undefined);
+        if (flag !== undefined) throw new UsageError(`purge does not take --${flag}`);
+        const input = {
+          id: id!,
+          expectedRevision: parseRevision(required(values, 'expected-revision')),
+        };
+        const report = await withStore(values, deps, (client) =>
+          client.purge(input, writeOptions(values))
+        );
+        print(report, formatPurge(report));
+        const failed = Object.values(report.boundaries).some((item) => item.result === 'failed');
+        return failed ? EXIT_HISTORY_PENDING : EXIT_OK;
       }
       case 'get': {
         const [id] = only(rest, 1, 'get <id>');

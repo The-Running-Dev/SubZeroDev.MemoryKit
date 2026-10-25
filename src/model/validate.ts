@@ -366,6 +366,15 @@ export function validateTransition(input: unknown, limits: Limits): NormalizedTr
   return { id, expectedRevision, provenance };
 }
 
+export function validatePurge(input: unknown): { id: string; expectedRevision: number } {
+  if (!isPlainObject(input)) invalid('input', 'not_an_object');
+  onlyFields(input, ['id', 'expectedRevision'], '');
+  return {
+    id: validateMemoryId(input.id),
+    expectedRevision: validateRevision(input.expectedRevision),
+  };
+}
+
 // The replacement is validated as a create, with its fields named without a prefix.
 export function validateSupersede(input: unknown, limits: Limits): NormalizedSupersede {
   if (!isPlainObject(input)) invalid('input', 'not_an_object');

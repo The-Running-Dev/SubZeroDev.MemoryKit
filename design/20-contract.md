@@ -129,6 +129,7 @@ export type RedactedRecord = Omit<MemoryRecord, 'content' | 'metadata'> & { cont
 
 export type PurgeBoundary = 'current_storage' | 'pending_history' | 'history_current_tree' | 'history_past_revisions' | 'history_remotes' | 'external_copies';
 export type BoundaryResult = 'removed' | 'retained' | 'not_modified' | 'outside_control' | 'unsupported' | 'failed';
+export type HistoryBoundary = Extract<PurgeBoundary, `history_${string}`>;
 export interface PurgeReport { operationId: string; memoryId: MemoryId; boundaries: Record<PurgeBoundary, { result: BoundaryResult; detail?: string }> }
 
 export interface OperationStatus { operationId: string; memoryId: MemoryId; revision: number; storage: 'persisted'; history: HistoryStatus; historyRef: string | null }
@@ -194,6 +195,8 @@ export interface StorageTransaction {
   namespacePolicy(ns: Namespace, defaultPolicy: HistoryPolicy): Promise<HistoryPolicy>;   // creates on first use
   commit(batch: WriteBatch, expected: { id: MemoryId; revision: number | null }[]): Promise<{ seqs: number[] }>;   // throws RevisionConflict / AlreadyExists
 }
+export interface PurgeRequest { principalId: string; operationId: string; fingerprint: string; expectedRevision: number; at: string; queueHistory: boolean }
+export interface PurgeOutcome { namespace: Namespace; pendingDiscarded: number; queued: boolean; replayed: boolean }   // a replay returns what the first attempt recorded
 export interface StorageProvider {
   readonly descriptor: ProviderDescriptor;
   open(): Promise<void>; close(): Promise<void>;
@@ -213,7 +216,7 @@ export interface StorageProvider {
   unblock(): Promise<number>;
   queue(): Promise<StoreStatus['historyQueue']>;
   // purge
-  purge(id: MemoryId, scope: RowScope, record: { principalId: string; operationId: string; expectedRevision: number }): Promise<{ current: BoundaryResult; pendingDiscarded: number; outboxPurgeSeq: number }>;
+  purge(id: MemoryId, scope: RowScope, request: PurgeRequest): Promise<PurgeOutcome>;   // throws NotFound / RevisionConflict / IdempotencyMismatch
 }
 
 export interface HistoryEntry extends OutboxEntry { after: string | null }   // historyRef of the previously exported entry
@@ -223,7 +226,7 @@ export interface HistoryProvider {
   record(entry: HistoryEntry): Promise<{ historyRef: string }>;    // idempotent by operationId
   list(memoryId: MemoryId, ns: Namespace): Promise<RevisionSummary[]>;
   get(memoryId: MemoryId, ns: Namespace, revision: number): Promise<RevisionSnapshot | null>;
-  purgeCoverage(): Record<'history_current_tree' | 'history_past_revisions' | 'history_remotes', BoundaryResult>;
+  purgeCoverage(): Record<HistoryBoundary, BoundaryResult>;
 }
 export class HistoryProviderError extends MemoryKitError { readonly retryable: boolean }
 
@@ -362,7 +365,7 @@ CREATE TABLE tokens (token_id TEXT PRIMARY KEY, principal_id TEXT NOT NULL, gran
 
 - `secret_hash` is the SHA-256 of a 32-byte random secret, so a constant-time lookup by hash is safe. The secret is shown once.
 - Outbox `seq` uses `AUTOINCREMENT`, so seqs are never reused after a purge.
-- A purge deletes the `memories` row and its `links` and `memories_fts` rows. It nulls the `payload` of that memory's pending outbox entries and marks them exported with `history_ref = 'discarded'`. It then inserts one `purge` outbox entry and a `purges` row.
+- A purge deletes the `memories` row and its `links` and `memories_fts` rows. It nulls the `payload` of that memory's pending outbox entries and marks them exported with `history_ref = 'discarded'`. It then inserts one `purge` outbox entry, unless the store has no history provider or the namespace policy is `none` and nothing of the memory was exported, and a `purges` row whose `report` holds `{ pendingDiscarded, queued }`. The service derives the `PurgeReport` from that and the purge entry's history status on every call.
 - **Existing data:** none, since this is schema 1. Each later migration bumps `user_version` and runs forward-only when the store opens, in one transaction.
 
 ### Git history repository (`<store>/history.git`, bare, branch `main`)

@@ -4,6 +4,7 @@ import type { HistoryPolicy } from '../../src/contracts/index.ts';
 import type { SearchQuery } from '../../src/model/index.ts';
 import type {
   CreateInput,
+  PurgeInput,
   SupersedeInput,
   TransitionInput,
   UpdateInput,
@@ -67,6 +68,14 @@ export const sdkDriver: Driver = {
       plain(
         await withClient(store, (c) =>
           c.supersede(input as unknown as SupersedeInput, operationId ? { operationId } : {})
+        )
+      )
+    ),
+  purge: (store, input, operationId) =>
+    capture(async () =>
+      plain(
+        await withClient(store, (c) =>
+          c.purge(input as unknown as PurgeInput, operationId ? { operationId } : {})
         )
       )
     ),

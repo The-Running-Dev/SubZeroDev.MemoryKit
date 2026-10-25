@@ -12,6 +12,7 @@ import {
 import type {
   CreateInput,
   MemoryClient,
+  PurgeInput,
   SupersedeInput,
   SyncOptions,
   TransitionInput,
@@ -125,6 +126,10 @@ async function route(client: MemoryClient, request: HttpRequest): Promise<HttpRe
       if (action === 'supersede') {
         const input = { ...object(body), id } as unknown as SupersedeInput;
         return written(201, await client.supersede(input, opts));
+      }
+      if (action === 'purge') {
+        const input = { ...object(body), id } as unknown as PurgeInput;
+        return json(200, await client.purge(input, opts));
       }
       return null;
     }

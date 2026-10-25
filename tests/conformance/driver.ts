@@ -28,6 +28,12 @@ export interface Driver {
     input: Record<string, unknown>,
     operationId?: string
   ): Promise<Result<Record<string, unknown>>>;
+  // MCP has no purge tool, so its drivers leave this out and the scenario skips them.
+  purge?(
+    store: string,
+    input: Record<string, unknown>,
+    operationId?: string
+  ): Promise<Result<Record<string, unknown>>>;
   get(store: string, id: string): Promise<Result<Record<string, unknown>>>;
   search(store: string, query: Record<string, unknown>): Promise<Result<Record<string, unknown>>>;
   history(store: string, id: string): Promise<Result<unknown>>;

@@ -224,6 +224,42 @@ export const SCENARIOS: Scenario[] = [
     },
   },
   {
+    name: 'S11 purge reports each boundary, replays by operation id and refuses a stale revision',
+    async run(driver) {
+      if (driver.purge === undefined) return;
+      const store = tempDir();
+      value(await driver.init(store));
+      const created = value(
+        await driver.create(store, { namespace: 'demo', kind: 'note', content: 'secret' })
+      );
+      const id = (created.memory as Record<string, unknown>).id as string;
+      problem(await driver.purge(store, { id, expectedRevision: 2 }), 'RevisionConflict');
+      const report = value(await driver.purge(store, { id, expectedRevision: 1 }, 'purge-1'));
+      assert.equal(report.memoryId, id);
+      assert.equal(report.operationId, 'purge-1');
+      const results = Object.fromEntries(
+        Object.entries(report.boundaries as Record<string, { result: string }>).map(
+          ([name, item]) => [name, item.result]
+        )
+      );
+      // The default store keeps Git history, which the service waits for.
+      assert.deepEqual(results, {
+        current_storage: 'removed',
+        pending_history: 'removed',
+        history_current_tree: 'removed',
+        history_past_revisions: 'retained',
+        history_remotes: 'not_modified',
+        external_copies: 'outside_control',
+      });
+      problem(await driver.get(store, id), 'NotFound');
+      assert.deepEqual(
+        value(await driver.purge(store, { id, expectedRevision: 1 }, 'purge-1')),
+        report
+      );
+      problem(await driver.purge(store, { id, expectedRevision: 1 }), 'NotFound');
+    },
+  },
+  {
     name: 'S6 search pages, filters and rejects an oversized limit and a foreign cursor',
     async run(driver) {
       const store = tempDir();

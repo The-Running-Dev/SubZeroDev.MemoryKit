@@ -141,7 +141,7 @@ Acceptance:
 Out of scope: MCP resources, prompts, subscriptions.
 
 ## S11 — Purge with an honest coverage report
-Status: todo
+Status: done
 Delivers: An administrator removes a memory's content from current storage and from the current history tree, and gets a report that says exactly what was removed and what was not.
 Touches: service (purge, PurgeReport); storage-sqlite (purge, purges table, discarding pending entries); history-git (purge commit, purgeCoverage); history-memory (purgeCoverage); http (purge route); cli (purge); conformance (SDK, CLI, HTTP)
 Depends on: S10
