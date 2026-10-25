@@ -5,7 +5,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync }
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import { EMBEDDED_PRINCIPAL } from '../src/access/index.ts';
-import type { HistoryEntry, HistoryProvider } from '../src/contracts/index.ts';
+import type { HistoryEntry, HistoryProvider, RevisionSummary } from '../src/contracts/index.ts';
 import { GitHistory } from '../src/history-git/index.ts';
 import { MemoryHistory } from '../src/history-memory/index.ts';
 import type { MemoryId, MemoryKitError } from '../src/model/index.ts';
@@ -143,18 +143,63 @@ function scanned(repository: string, ids: MemoryId[]): Read[][] {
   );
 }
 
+// Complete list summaries from Git alone, without consulting or repairing the revision index.
+function scannedLists(repository: string, ids: MemoryId[]): RevisionSummary[][] {
+  const hashes = git(repository, ['rev-list', '--reverse', 'main']).trim().split('\n');
+  return ids.map((id, i) =>
+    hashes.flatMap((historyRef) => {
+      const subject = git(repository, ['show', '-s', '--format=%s', historyRef]).trim();
+      if (subject.split(' ')[1] !== `${NAMESPACES[i]}/${id}`) return [];
+      const trailer = (key: string) =>
+        git(repository, [
+          'show',
+          '-s',
+          `--format=%(trailers:key=MemoryKit-${key},valueonly)`,
+          historyRef,
+        ]).trim();
+      const record = JSON.parse(
+        git(repository, ['show', `${historyRef}:${NAMESPACES[i]}/${id}/record.json`])
+      ) as { updatedAt: string };
+      return [
+        {
+          revision: Number(trailer('Revision')),
+          operation: subject.split(' ')[0] as RevisionSummary['operation'],
+          operationId: trailer('Operation'),
+          actor: decodeURIComponent(trailer('Actor')),
+          at: record.updatedAt,
+          historyRef,
+        },
+      ];
+    })
+  );
+}
+
+// Rewrite a valid index entry, including its checksum, so corruption reaches semantic checks.
+function indexRow(fields: string[]): string {
+  const body = fields.slice(0, 5).join(' ');
+  return `${body} ${createHash('sha256').update(body).digest('hex').slice(0, 16)}`;
+}
+
 // A provider whose git subcommands are recorded.
-function counted(history: GitHistory): { history: GitHistory; calls: string[] } {
+function counted(history: GitHistory): {
+  history: GitHistory;
+  calls: string[];
+  batches: string[][];
+} {
   const calls: string[] = [];
+  const batches: string[][] = [];
   const target = history as unknown as {
     git: (args: string[], exec?: object) => Promise<unknown>;
   };
   const git = target.git;
   target.git = function (this: unknown, args, exec) {
     calls.push(args[0]!);
+    if (args[0] === 'cat-file' && args[1] === '--batch') {
+      batches.push(((exec as { stdin?: string } | undefined)?.stdin ?? '').trim().split('\n'));
+    }
     return git.call(this, args, exec);
   };
-  return { history, calls };
+  return { history, calls, batches };
 }
 
 async function openService(
@@ -578,6 +623,14 @@ describe('git history', () => {
     const reader = counted(new GitHistory({ repository }));
     await reader.history.open();
     reader.calls.length = 0;
+    const summaries = scannedLists(repository, ids);
+    assert.deepEqual(await reader.history.list(ids[0]!, 'demo'), summaries[0]);
+    assert.deepEqual(reader.calls, ['rev-parse', 'cat-file'], 'cold list stays two processes');
+    assert.equal(reader.batches.at(-1)?.length, 6 + 2 * 3, 'cold list verifies all six commits');
+    reader.calls.length = 0;
+    assert.deepEqual(await reader.history.list(ids[0]!, 'demo'), summaries[0]);
+    assert.deepEqual(reader.calls, ['rev-parse', 'cat-file'], 'warm list stays two processes');
+    assert.equal(reader.batches.at(-1)?.length, 2 * 3, 'warm list reads only this memory');
     assert.deepEqual(await readAll(reader.history, ids), expected);
     assert.equal(reader.calls.includes('log'), false, 'no history scan');
     reader.calls.length = 0;
@@ -635,11 +688,60 @@ describe('git history', () => {
     assert.deepEqual(await readAll(new GitHistory({ repository }), ids), expected);
   });
 
+  for (const wrong of ['memory', 'directory', 'both', 'parent'] as const) {
+    for (const hidden of ['one', 'all'] as const) {
+      it(`list first recovers ${hidden} revision(s) with a valid-checksum wrong ${wrong}`, async () => {
+        const { repository, ids } = await exported();
+        const path = join(repository, 'memorykit', 'revisions');
+        const original = readFileSync(path, 'utf8');
+        const expected = scannedLists(repository, ids);
+        const snapshots = scanned(repository, ids);
+        // Exercise both memories as the very first list: no get or unaffected list can repair it.
+        for (const target of [0, 1]) {
+          const lines = original.split('\n').map((row) => {
+            const fields = row.split(' ');
+            if (fields.length !== 6 || fields[2] !== ids[target]) return row;
+            if (hidden === 'one' && fields[3] !== '2') return row;
+            if (wrong === 'memory' || wrong === 'both') fields[2] = ids[1 - target]!;
+            if (wrong === 'directory') {
+              fields[4] = encodeURIComponent(`${NAMESPACES[1 - target]}/${ids[target]}`);
+            }
+            if (wrong === 'both') {
+              fields[4] = encodeURIComponent(`${NAMESPACES[1 - target]}/${ids[1 - target]}`);
+            }
+            // A false root can hide an entire prefix even if every selected entry is correct.
+            if (wrong === 'parent') fields[1] = '';
+            return indexRow(fields);
+          });
+          writeFileSync(path, lines.join('\n'));
+          const history = counted(new GitHistory({ repository }));
+          try {
+            await history.history.open();
+            history.calls.length = 0;
+            assert.deepEqual(
+              await history.history.list(ids[target]!, NAMESPACES[target]!),
+              expected[target]
+            );
+            assert.equal(history.calls.filter((call) => call === 'log').length, 1, 'one rebuild');
+            for (const i of [0, 1]) {
+              assert.deepEqual(await history.history.list(ids[i]!, NAMESPACES[i]!), expected[i]);
+            }
+            assert.deepEqual(await readAll(history.history, ids), snapshots);
+          } finally {
+            await history.history.close();
+          }
+        }
+      });
+    }
+  }
+
   it('a reader picks up commits another process appends to the index', async () => {
     const { handed } = await recorded();
     const repository = join(tempDir(), 'history.git');
     const writer = new GitHistory({ repository });
     const reader = counted(new GitHistory({ repository }));
+    await writer.open();
+    await reader.history.open();
     let after: string | null = null;
     for (const entry of handed) {
       after = (await writer.record({ ...entry, after })).historyRef;
@@ -648,10 +750,92 @@ describe('git history', () => {
       reader.calls.length = 0;
       const listed = await reader.history.list(id, ns);
       assert.equal(listed.at(-1)?.revision, entry.revision);
-      assert.equal(reader.calls.includes('log'), false, 'no rebuild');
+      assert.deepEqual(reader.calls, ['rev-parse', 'cat-file'], 'two processes after append');
+      assert.equal(
+        reader.batches.at(-1)?.length,
+        1 + listed.length * 2,
+        'verify only the new commit'
+      );
     }
     await writer.close();
     await reader.history.close();
+  });
+
+  it('a cold empty list verifies the chain before excluding every commit', async () => {
+    const { repository, ids } = await exported();
+    const reader = counted(new GitHistory({ repository }));
+    try {
+      await reader.history.open();
+      reader.calls.length = 0;
+      assert.deepEqual(await reader.history.list(ids[0]!, 'absent'), []);
+      assert.deepEqual(reader.calls, ['rev-parse', 'cat-file']);
+      assert.equal(reader.batches.at(-1)?.length, 6);
+      reader.calls.length = 0;
+      assert.deepEqual(await reader.history.list(ids[0]!, 'absent'), []);
+      assert.deepEqual(reader.calls, ['rev-parse'], 'verified empty list needs no object reads');
+    } finally {
+      await reader.history.close();
+    }
+  });
+
+  it('list recovers a mislabeled append after this reader verified the old head', async () => {
+    const { handed, ids } = await recorded();
+    const repository = join(tempDir(), 'history.git');
+    const writer = new GitHistory({ repository });
+    const reader = counted(new GitHistory({ repository }));
+    try {
+      const first = await writer.record({ ...handed[0]!, after: null });
+      const listed = await reader.history.list(ids[0]!, 'demo');
+      assert.deepEqual(
+        listed.map((item) => item.revision),
+        [1]
+      );
+      await writer.record({ ...handed[1]!, after: first.historyRef });
+      const path = join(repository, 'memorykit', 'revisions');
+      const rows = readFileSync(path, 'utf8').split('\n');
+      const fields = rows[2]!.split(' ');
+      fields[2] = ids[1]!;
+      fields[4] = encodeURIComponent(`other/${ids[1]}`);
+      rows[2] = indexRow(fields);
+      writeFileSync(path, rows.join('\n'));
+      reader.calls.length = 0;
+      assert.deepEqual(
+        await reader.history.list(ids[0]!, 'demo'),
+        scannedLists(repository, ids)[0]
+      );
+      assert.equal(reader.calls.filter((call) => call === 'log').length, 1);
+    } finally {
+      await writer.close();
+      await reader.history.close();
+    }
+  });
+
+  it('list reports a history error when a wrong index cannot be rebuilt from Git', async () => {
+    const { repository, ids } = await exported();
+    const path = join(repository, 'memorykit', 'revisions');
+    const rows = readFileSync(path, 'utf8').split('\n');
+    const fields = rows[2]!.split(' ');
+    fields[2] = ids[1]!;
+    rows[2] = indexRow(fields);
+    writeFileSync(path, rows.join('\n'));
+    const reader = new GitHistory({ repository });
+    const target = reader as unknown as {
+      git: (args: string[], exec?: object) => Promise<unknown>;
+    };
+    const run = target.git;
+    target.git = function (args, exec) {
+      if (args[0] === 'log') return Promise.reject(new Error('scan unavailable'));
+      return run.call(this, args, exec);
+    };
+    try {
+      await assert.rejects(reader.list(ids[0]!, 'demo'), (error: MemoryKitError) => {
+        assert.equal(error.code, 'HistoryUnavailable');
+        assert.equal(error.retryable, true);
+        return true;
+      });
+    } finally {
+      await reader.close();
+    }
   });
 
   it('a missing git executable never blocks the queue', async () => {
