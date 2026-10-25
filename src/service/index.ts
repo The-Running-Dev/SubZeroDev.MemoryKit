@@ -1,4 +1,10 @@
-import { authorize, authorizePattern, permittedPatterns, type Principal } from '../access/index.ts';
+import {
+  authorize,
+  authorizePattern,
+  permittedPatterns,
+  validatePrincipal,
+  type Principal,
+} from '../access/index.ts';
 import {
   HISTORY_POLICIES,
   type HistoryPolicy,
@@ -205,8 +211,10 @@ export class MemoryService {
     await this.storage.close();
   }
 
+  // The principal is checked and copied once; every call on the client authorises against
+  // that copy.
   as(principal: Principal): MemoryClient {
-    return new ServiceClient(this, principal);
+    return new ServiceClient(this, validatePrincipal(principal));
   }
 
   // Exports pending entries. A call while a pass runs asks for one more pass, so an entry

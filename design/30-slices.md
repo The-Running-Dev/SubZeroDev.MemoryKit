@@ -89,7 +89,7 @@ Acceptance:
 Out of scope: ranking beyond FTS5 bm25, embeddings.
 
 ## S7 — Namespaces and permissions are enforced in the core
-Status: todo
+Status: done
 Delivers: A host gives each caller a principal limited to certain namespaces and permissions. Requests outside those grants are refused before any protected data leaves storage.
 Touches: access (Principal, Grant, authorize, permittedPatterns, EMBEDDED_PRINCIPAL); service (authorisation on every operation); storage-sqlite (RowScope in every by-id query and search); sdk (openStore with a principal); conformance
 Depends on: S6

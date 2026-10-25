@@ -10,6 +10,18 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-25 — Permissions as built (S7)
+- **Context:** S2 to S6 already authorised every operation as it was built. S7 had to prove the rules end to end and settle what happens to a host-supplied principal that is malformed.
+- **Chosen:**
+  - `MemoryService.as(principal)` validates the principal (a non-empty id of at most 256 characters, a known profile, valid grant patterns, known permissions) and keeps a frozen copy. A malformed principal is `ValidationFailed` with a `principal.*` field, and a host changing its object later cannot widen an open client.
+  - `history` and `revision` look the id up within the `history` grants only, so a visible id without `history` is `NotFound`, as the design's by-id rule says; transitions stay `Forbidden` for a visible id.
+  - The `actor` on every revision is the client's principal id. Provenance is stored as given and never read for the actor.
+  - The acceptance tests drive the SDK directly. The conformance surfaces get a principal only once S8 issues local tokens, so the cross-surface permission scenarios land with S8.
+  - `purge` never being implied by `write` is tested with purge itself in S11.
+- **Rejected:**
+  - Trusting the host's principal as given: one bad grant pattern would otherwise fail later, inside a query, as an internal error.
+  - `Forbidden` for history on a visible id: it would tell a caller without `history` that the id exists in a namespace it can read, which the by-id rule does not distinguish.
+
 ## 2026-10-25 — Search as built (S6)
 - **Context:** The contract fixes the query, the result shape and the scan budget, but leaves open what a cursor holds, how a partial page resumes, where the metadata filter runs and how a named pattern is authorised.
 - **Chosen:**
