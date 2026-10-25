@@ -238,6 +238,25 @@ describe('history outbox', () => {
     }
   });
 
+  it('writes during a retry backoff leave the entry to the timer', async () => {
+    const history = new ControlledHistory();
+    const service = await openService(tempDir(), history, { maxExportAttempts: 3 });
+    try {
+      const client = service.as(EMBEDDED_PRINCIPAL);
+      history.failure = new HistoryProviderError('History is unreachable', true);
+      for (let i = 0; i < 6; i++) {
+        const outcome = await client.create({ namespace: 'demo', kind: 'note', content: `${i}` });
+        assert.equal(outcome.history, 'pending');
+      }
+      assert.equal(history.calls.length, 1, 'one attempt, then backoff');
+      assert.deepEqual(await client.syncHistory({ budgetMs: 1000 }), { pending: 6, blocked: null });
+      history.failure = null;
+      assert.deepEqual(await client.syncHistory(), { pending: 0, blocked: null });
+    } finally {
+      await service.close();
+    }
+  });
+
   it('S3.6 policy metadata keeps a hash instead of content; policy none keeps nothing', async () => {
     const history = new ControlledHistory();
     const service = await openService(tempDir(), history);

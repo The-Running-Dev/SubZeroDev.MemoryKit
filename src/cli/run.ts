@@ -180,6 +180,11 @@ function formatSnapshot(snapshot: RevisionSnapshot): string {
   );
 }
 
+// A write whose history has not caught up, whether still pending or blocked, exits 3.
+function historyBehind(outcome: WriteOutcome): boolean {
+  return outcome.history === 'pending' || outcome.history === 'blocked';
+}
+
 function formatQueue(queue: HistoryQueue): string {
   const blocked =
     queue.blocked === null
@@ -261,7 +266,7 @@ export async function run(
           client.create(input, writeOptions(values))
         );
         print(outcome, formatOutcome(outcome));
-        return outcome.history === 'pending' ? EXIT_HISTORY_PENDING : EXIT_OK;
+        return historyBehind(outcome) ? EXIT_HISTORY_PENDING : EXIT_OK;
       }
       case 'update': {
         const [id] = only(rest, 1, 'update <id>');
@@ -284,7 +289,7 @@ export async function run(
           client.update(input, writeOptions(values))
         );
         print(outcome, formatOutcome(outcome));
-        return outcome.history === 'pending' ? EXIT_HISTORY_PENDING : EXIT_OK;
+        return historyBehind(outcome) ? EXIT_HISTORY_PENDING : EXIT_OK;
       }
       case 'get': {
         const [id] = only(rest, 1, 'get <id>');

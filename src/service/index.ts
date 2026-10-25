@@ -137,6 +137,7 @@ export class MemoryService {
   private budgetMs: number;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private backoffMs = MIN_BACKOFF_MS;
+  private retryAt = 0;
 
   constructor(
     storage: StorageProvider,
@@ -188,8 +189,10 @@ export class MemoryService {
     return this.draining;
   }
 
-  // Starts a drain and waits up to waitMs for it.
+  // Starts a drain and waits up to waitMs for it. While a failed export backs off, a write
+  // leaves its entry to the timer, so writes alone never use up the attempts.
   async awaitHistory(waitMs: number): Promise<void> {
+    if (Date.now() < this.retryAt) return;
     const drained = this.drain();
     if (waitMs === 0) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -206,6 +209,7 @@ export class MemoryService {
       while (this.again && !this.closed) {
         this.again = false;
         result = await this.pass(this.budgetMs).catch((): PassResult => 'error');
+        if (result !== 'idle') break;
       }
     } finally {
       this.draining = null;
@@ -218,13 +222,17 @@ export class MemoryService {
   private schedule(result: PassResult): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+    this.retryAt = 0;
     if (this.closed || result === 'lost' || result === 'blocked') return;
     if (result === 'idle') {
       this.backoffMs = MIN_BACKOFF_MS;
       return;
     }
     const delay = result === 'budget' ? 0 : this.backoffMs;
-    if (result !== 'budget') this.backoffMs = Math.min(this.backoffMs * 2, MAX_BACKOFF_MS);
+    if (result !== 'budget') {
+      this.retryAt = Date.now() + delay;
+      this.backoffMs = Math.min(this.backoffMs * 2, MAX_BACKOFF_MS);
+    }
     this.timer = setTimeout(() => {
       this.timer = null;
       void this.drain();

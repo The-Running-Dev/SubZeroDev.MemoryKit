@@ -15,9 +15,10 @@ import { runCli, tempDir } from './helpers.ts';
 
 class FailingHistory extends MemoryHistory {
   failing = true;
+  retryable = true;
 
   override async record(entry: HistoryEntry): Promise<{ historyRef: string }> {
-    if (this.failing) throw new HistoryProviderError('History is unreachable', true);
+    if (this.failing) throw new HistoryProviderError('History is unreachable', this.retryable);
     return super.record(entry);
   }
 }
@@ -133,12 +134,13 @@ describe('cli', () => {
     const store = tempDir();
     assert.equal(runCli(['init', store]).status, 0);
     const history = new FailingHistory();
+    let historyWaitMs = 0;
     const deps: CliDeps = {
       async openStore(config) {
         const service = new MemoryService(
           new SqliteStorage({ path: join(config.path, DATABASE_FILE) }),
           history,
-          { historyWaitMs: 0 }
+          { historyWaitMs }
         );
         await service.open();
         return Object.assign(service.as(EMBEDDED_PRINCIPAL), { close: () => service.close() });
@@ -193,6 +195,23 @@ describe('cli', () => {
     const status = await cli('status', '--store', store);
     assert.match(status.stdout, /history: history-memory 0\.1\.0/);
     assert.match(status.stdout, /history blocked: none/);
+
+    history.failing = true;
+    history.retryable = false;
+    historyWaitMs = 5000;
+    const blocked = await cli(
+      'update',
+      outcome.memory.id,
+      '--store',
+      store,
+      '--expected-revision',
+      '1',
+      '--content',
+      'y',
+      '--json'
+    );
+    assert.equal(JSON.parse(blocked.stdout).history, 'blocked');
+    assert.equal(blocked.status, 3, 'a blocked write exits 3 too');
   });
 
   it('status, namespace and history commands without a history provider', () => {
