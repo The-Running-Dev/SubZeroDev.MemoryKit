@@ -9,6 +9,78 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-28 — Stage 4: compact retrieval is a separate `retrieve` operation (S15)
+
+- Context: Stage 4A. `search` returns whole records, so a page of 100 records at the 256 KiB content limit is about 25 MiB. An agent needs candidates it can judge before fetching any record whole. The contract must be chosen before implementing.
+- Chosen:
+  - A new operation, `retrieve`, on every adapter. It has the same filters, authorization and paging as `search`, and returns bounded items: identity and state, a bounded excerpt, evidence refs, `supersededBy` ids, matched terms and a rank score. Full records come from `get`.
+  - The bounds are fixed in the contract, so exceeding one is `ValidationFailed`: limit 10 by default and at most the smaller of 50 and `maxPageSize`; excerpt 280 code points by default and 1,000 at most; 5 evidence refs of up to 256 characters; 8 `supersededBy` ids. Omitted refs and ids are counted; a longer ref is omitted, never truncated.
+  - The excerpt comes from the content column only and is cut in code at a code-point boundary. SQLite's `snippet` bounds tokens, not characters, and can pick the metadata column, so it only locates the match.
+  - The serialized result never exceeds 64 KiB. A page that would cross the bound ends early with a cursor to the next item, so the bound never drops an item.
+  - `match.score` is documented as a rank, never as confidence or probability. BM25 uses index-wide term statistics, so the score is comparable only within one result.
+  - `search` is untouched, so its documented behaviour cannot drift.
+- Rejected:
+  - A `view: 'compact'` flag on `search`. One operation would then return two shapes, which weakens the SDK types and the MCP output schema. It would also tie `search`'s documented every-word semantics to the ranked matching that S17 gives `retrieve`.
+  - Truncating `content` inside `search` results. A full-record response would then be silently incomplete.
+  - Including metadata in compact items. Its size is bounded only at 16 KiB per record, and it is application-owned.
+  - A size bound enforced by refusing the request. It would fail a valid query because of what is stored, not what was asked.
+
+## 2026-10-28 — Stage 4: the SQLite work a query starts is measured and bounded where it is unbounded (S16)
+
+- Context: Stage 4B. The scan budget counts the rows JavaScript examines. It does not count what SQLite does before the first row, and SQLite calls are synchronous.
+- A probe on 2026-10-28 used an in-memory database with 50,000 synthetic rows, Node 26.12.1, win32 and an i7-11850H. It is a probe for planning, not a benchmark.
+  - A term matching every row: 117 ms to the first row. The plan scans all FTS matches, joins each to `memories` and sorts them in a temporary B-tree before returning any.
+  - The same term within one namespace: 50 ms, because scope is applied after the full match.
+  - No text over all namespaces: 37 ms, from a full scan and a sort.
+  - A namespace prefix: 8 ms. `substr` cannot use `memories_ns_state_updated`, so it also scans and sorts.
+  - One exact namespace uses the index: 0.1 ms.
+- Chosen:
+  - S16 first commits a benchmark at 10,000, 50,000 and 100,000 rows with the query plans.
+  - Prefix scope always becomes an indexable range, since that changes no result.
+  - An ordering index, and capping FTS candidates at the scan budget, are each adopted only if the benchmark shows they are needed. The thresholds are fixed in the slice before it runs: the index must make the first row at least twice as fast at 50,000; the cap applies if a term matching most memories takes more than 50 ms to the first row at 100,000.
+  - If the cap applies, it amends the 2026-10-25 entry "Search as built (S6)": the budget then counts FTS candidates, including those the scope, state and kind filters drop, not only rows after those filters.
+  - The contract will say what the scan budget bounds and what it does not.
+- Rejected:
+  - Claiming a time budget. A JavaScript timer cannot interrupt a statement running synchronously on the same thread.
+  - Moving search to a worker thread or a second connection. That adds concurrency to the storage layer to hide work that a smaller query shape bounds.
+  - Paginating `history` in Stage 4. Its size grows with one memory's revisions, not with the store, and paging it changes the return type on every adapter. It is deferred to Stage 5's API review.
+
+## 2026-10-28 — Stage 4: ranked lexical retrieval first; vector and hybrid retrieval deferred with a trigger (S17)
+
+- Context: Stage 3 baseline at filler 0: paraphrase recall@10 0, correction 0.6 and overall 0.735. Two causes:
+  - `search` ANDs every word (the 2026-10-25 entry "Search as built (S6)"), so "how long do Alpha credentials stay valid" needs "how", "long" and "do" in the memory.
+  - The `unicode61` tokenizer treats "cached" and "caches" as different words.
+- A probe on 2026-10-28 ran the S14 corpus at filler 0 with the words ORed, then ORed under Porter stemming. The probe code was not kept.
+
+  | Metric | Baseline | Words ORed | ORed + Porter |
+  | --- | --- | --- | --- |
+  | overall recall@10 | 0.735 | 0.912 | 0.971 |
+  | paraphrase recall@10 | 0 | 0.571 | 0.857 |
+  | MRR | 0.691 | 0.831 | 0.896 |
+  | non-relevant in top 10 | 0.15 | 5.71 | 5.65 |
+  | no-answer returning anything | 0% | 100% | 100% |
+
+  Hard thresholds held in all three. Recall is within lexical reach; precision is the open problem.
+- Chosen:
+  - S17 gives `retrieve` any-word matching under Porter stemming, ranked by BM25. A second FTS5 table keeps `search` on its existing tokenizer and semantics.
+  - A precision rule is chosen by comparing alternatives on the S14 corpus.
+  - Held-out queries are committed before any tuning run, and are reported but never tuned on. They are the confirmation; S14 corpus numbers are reported as fitted.
+  - The S14 targets are unchanged.
+- Deferred: embeddings, vector indexes, rank fusion, rerankers, query expansion and LLM ranking.
+  - Reopen trigger: after S17, held-out paraphrase recall@10 is below 0.70, or the non-relevant or no-answer target is missed with the lexical precision options exhausted.
+  - If reopened, these requirements carry over:
+    - Lexical, vector and hybrid are compared on the same fixture, with rank fusion considered before a reranker.
+    - Models are optional, and lexical keeps working with no download or network.
+    - Freshness and rebuilds are tracked after update, supersede and delete.
+    - Any derived index respects namespaces and purge.
+    - A separate retrieval contract is introduced only with a concrete implementation and a migration plan, since StorageProvider owns search.
+    - Model or backend unavailability follows a documented fallback or error.
+    - This needs a new entry, because brief lines 70, 104 and 156 rule out mandatory embeddings and model inference.
+- Rejected:
+  - Changing `search` to any-word or stemmed matching. Callers rely on its documented every-word semantics.
+  - Vector retrieval now. Stemmed lexical matching already reaches the recall targets on the corpus, and it adds no model, download or index-freshness risk.
+  - Reporting S14-fitted numbers as the result. A rule chosen on the 42 S14 queries would report its own fit, so the held-out set confirms it.
+
 ## 2026-10-27 — Stage 3: retrieval is evaluated on a synthetic corpus, with thresholds fixed before tuning
 
 - Context: Stage 3 of the ordered handoff must show which queries the lexical search fails and what better retrieval must improve, before Stage 4 changes ranking or response shape. S14 delivers it.
