@@ -288,8 +288,11 @@ describe('git history', () => {
       'first',
       '--json',
     ]);
-    assert.equal(created.status, 0, created.stderr);
+    // A slow export can outlast historyWaitMs, so a write may exit 3 with history pending; the
+    // export still finishes before the process exits, so the log below is complete.
+    assert.ok(created.status === 0 || created.status === 3, created.stderr);
     const first = JSON.parse(created.stdout);
+    assert.equal(first.history, created.status === 0 ? 'persisted' : 'pending');
     const id = first.memory.id as string;
     const updated = runCli([
       'update',
@@ -302,9 +305,9 @@ describe('git history', () => {
       'second',
       '--json',
     ]);
-    assert.equal(updated.status, 0, updated.stderr);
+    assert.ok(updated.status === 0 || updated.status === 3, updated.stderr);
     const second = JSON.parse(updated.stdout);
-    assert.equal(second.history, 'persisted');
+    assert.equal(second.history, updated.status === 0 ? 'persisted' : 'pending');
 
     const repository = join(store, 'history.git');
     const log = git(repository, [

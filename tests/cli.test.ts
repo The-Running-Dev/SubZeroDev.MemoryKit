@@ -42,14 +42,20 @@ describe('cli', () => {
       'hello',
       '--json',
     ]);
-    assert.equal(create.status, 0, create.stderr);
+    // A slow export can outlast historyWaitMs, so the create may exit 3 with history pending;
+    // the export still finishes before the process exits.
+    assert.ok(create.status === 0 || create.status === 3, create.stderr);
     assert.equal(create.stderr, '');
     const outcome = JSON.parse(create.stdout);
-    assert.equal(outcome.history, 'persisted', 'Git history is the default');
+    assert.equal(outcome.history, create.status === 0 ? 'persisted' : 'pending');
 
     const get = runCli(['get', outcome.memory.id, '--store', store, '--json']);
     assert.equal(get.status, 0, get.stderr);
     assert.deepEqual(JSON.parse(get.stdout), outcome.memory);
+
+    const operation = runCli(['operation', outcome.operationId, '--store', store, '--json']);
+    assert.equal(operation.status, 0, operation.stderr);
+    assert.equal(JSON.parse(operation.stdout).history, 'persisted', 'Git history is the default');
 
     const human = runCli(['get', outcome.memory.id, '--store', store]);
     assert.equal(human.status, 0, human.stderr);

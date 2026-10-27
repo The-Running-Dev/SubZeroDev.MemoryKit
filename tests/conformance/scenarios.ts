@@ -34,11 +34,18 @@ export const SCENARIOS: Scenario[] = [
         })
       );
       assert.equal(outcome.storage, 'persisted');
-      assert.equal(outcome.history, 'persisted', 'Git history is the default');
+      // A slow export can outlast historyWaitMs, so the write may report pending.
+      assert.ok(
+        outcome.history === 'persisted' || outcome.history === 'pending',
+        String(outcome.history)
+      );
       const memory = outcome.memory as Record<string, unknown>;
       assert.equal(memory.revision, 1);
       assert.equal(memory.state, 'active');
       assert.deepEqual(value(await driver.get(store, memory.id as string)), memory);
+      const status = value(await driver.status(store));
+      const history = status.history as Record<string, unknown>;
+      assert.equal(history.id, 'history-git', 'Git history is the default');
     },
   },
   {
