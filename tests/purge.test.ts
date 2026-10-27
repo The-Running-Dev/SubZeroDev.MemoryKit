@@ -34,9 +34,11 @@ class FailingGit extends GitHistory {
   }
 }
 
+// The wait ends as soon as the export does, so it only bounds a hung export. A short one lets a
+// slow Git export on a loaded machine outlast it, and S11.1 then sees the purge still pending.
 async function openService(dir: string, history: HistoryProvider | null): Promise<MemoryService> {
   const storage = new SqliteStorage({ path: join(dir, 'memory.db') });
-  const service = new MemoryService(storage, history, { historyWaitMs: 2_000 });
+  const service = new MemoryService(storage, history, { historyWaitMs: 60_000 });
   await service.open();
   return service;
 }
