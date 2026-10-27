@@ -176,7 +176,7 @@ Acceptance:
 Out of scope: consumer conventions (kinds, candidate/accepted, evidence labels) as core states; a compact or token-budgeted output format (the consumer enforces its own byte budget); AgentKit as a dependency.
 
 ## S14 — Retrieval is measured against a fixed synthetic corpus
-Status: in progress
+Status: done
 Delivers: Stage 3 of the ordered handoff. A checked-in synthetic corpus with hand-written expected results shows which queries the lexical search answers, which it misses and at what cost, so later retrieval work (Stage 4) is judged against numbers recorded before it starts.
 Touches: eval (corpus, harness, report); tests (deterministic retrieval subset); package script `eval`; CI benchmark job
 Depends on: S13
