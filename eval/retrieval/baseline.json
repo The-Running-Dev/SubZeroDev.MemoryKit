@@ -1,22 +1,22 @@
 {
-  "commit": "780f2689196be9e56395ef1745eefa9c4e5c101d",
+  "commit": "254bf73e4bbb349d7b240db154734b96b6210c7e",
   "dirty": false,
   "runs": [
     {
       "filler": 0,
       "quality": {
         "overall": {
-          "recall5": 0.6471,
-          "recall10": 0.6471,
-          "mrr": 0.6176,
-          "ndcg10": 0.6253,
+          "recall5": 0.7353,
+          "recall10": 0.7353,
+          "mrr": 0.6912,
+          "ndcg10": 0.7027,
           "nonRelevant10": 0.1471,
           "noAnswerReturned": 0,
           "obsolete": 0,
           "exposure": 0,
           "errors": 0,
           "fetches": 0,
-          "pages": 40,
+          "pages": 41,
           "partialPages": 3
         },
         "categories": {
@@ -91,10 +91,10 @@
             "partialPages": 0
           },
           "distractor": {
-            "recall5": 0.4,
-            "recall10": 0.4,
-            "mrr": 0.2,
-            "ndcg10": 0.2524,
+            "recall5": 1,
+            "recall10": 1,
+            "mrr": 0.7,
+            "ndcg10": 0.7786,
             "nonRelevant10": 1,
             "noAnswerReturned": 0,
             "obsolete": 0,
@@ -157,7 +157,7 @@
             "exposure": 0,
             "errors": 0,
             "fetches": 0,
-            "pages": 3,
+            "pages": 4,
             "partialPages": 0
           },
           "duplicate": {
@@ -307,18 +307,18 @@
           },
           "noise-release": {
             "outcome": "ok",
-            "rank": null,
-            "recall10": 0
+            "rank": 1,
+            "recall10": 1
           },
           "noise-backup": {
             "outcome": "ok",
-            "rank": null,
-            "recall10": 0
+            "rank": 1,
+            "recall10": 1
           },
           "noise-stale-cache": {
             "outcome": "ok",
-            "rank": null,
-            "recall10": 0
+            "rank": 2,
+            "recall10": 1
           },
           "noise-session": {
             "outcome": "ok",
@@ -370,6 +370,11 @@
             "rank": null,
             "recall10": 0
           },
+          "none-scattered-words": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
           "dup-timeout": {
             "outcome": "ok",
             "rank": 1,
@@ -402,17 +407,17 @@
       "filler": 10000,
       "quality": {
         "overall": {
-          "recall5": 0.5294,
-          "recall10": 0.5294,
-          "mrr": 0.5147,
-          "ndcg10": 0.5186,
-          "nonRelevant10": 1.8235,
+          "recall5": 0.6176,
+          "recall10": 0.6176,
+          "mrr": 0.5882,
+          "ndcg10": 0.5959,
+          "nonRelevant10": 1.2941,
           "noAnswerReturned": 0,
           "obsolete": 0,
           "exposure": 0,
           "errors": 0,
           "fetches": 0,
-          "pages": 40,
+          "pages": 41,
           "partialPages": 3
         },
         "categories": {
@@ -487,11 +492,11 @@
             "partialPages": 0
           },
           "distractor": {
-            "recall5": 0.2,
-            "recall10": 0.2,
-            "mrr": 0.1,
-            "ndcg10": 0.1262,
-            "nonRelevant10": 6.4,
+            "recall5": 0.8,
+            "recall10": 0.8,
+            "mrr": 0.6,
+            "ndcg10": 0.6524,
+            "nonRelevant10": 2.8,
             "noAnswerReturned": 0,
             "obsolete": 0,
             "exposure": 0,
@@ -553,7 +558,7 @@
             "exposure": 0,
             "errors": 0,
             "fetches": 0,
-            "pages": 3,
+            "pages": 4,
             "partialPages": 0
           },
           "duplicate": {
@@ -703,18 +708,18 @@
           },
           "noise-release": {
             "outcome": "ok",
-            "rank": null,
-            "recall10": 0
+            "rank": 1,
+            "recall10": 1
           },
           "noise-backup": {
             "outcome": "ok",
-            "rank": null,
-            "recall10": 0
+            "rank": 1,
+            "recall10": 1
           },
           "noise-stale-cache": {
             "outcome": "ok",
-            "rank": null,
-            "recall10": 0
+            "rank": 2,
+            "recall10": 1
           },
           "noise-session": {
             "outcome": "ok",
@@ -762,6 +767,11 @@
             "recall10": 0
           },
           "none-queue-current": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "none-scattered-words": {
             "outcome": "ok",
             "rank": null,
             "recall10": 0
