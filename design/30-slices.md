@@ -188,3 +188,66 @@ Acceptance:
   - S14.5 `npm run eval -- --filler <n> --out <file>` runs the same corpus with n deterministic irrelevant memories added, and the manual CI benchmark job runs it at 10,000.
   - S14.6 The lexical baseline report (`eval/retrieval/baseline.md`) is committed with the commit it ran at, Node, OS and CPU. It shows every threshold recorded in `90-decisions.md` (2026-10-27) next to the measured value and whether it is met; none is adjusted after the run.
 Out of scope: compact responses, embeddings, rank fusion and any retrieval change (Stage 4); an LLM judge; real or personal data in fixtures; QMD or any researched project as a dependency.
+
+## S15 — Agents retrieve compact, bounded results and fetch full records only when needed
+Status: planned
+Delivers: Stage 4A. A caller that wants candidates rather than whole records, typically an agent with a context budget, runs `retrieve`. For each match it receives the identity, state, a bounded excerpt, evidence refs and why it matched, and the response has a fixed upper size whatever the stored content. It then calls `get` for the records it needs. `search` is unchanged.
+Touches: contracts (`RetrieveQuery`, `RetrieveItem`, `RetrieveResult`, `StorageProvider.retrieve`, capability `retrieve.lexical`); model (retrieve validation and bounds); storage-sqlite (retrieve over the existing FTS index, excerpts through FTS5 `snippet`); service (`retrieve`, with the same authorization as `search`); sdk; cli (`retrieve`); http (`POST /v1/retrieve`); mcp (`memory_retrieve`); conformance; eval (the harness also measures `retrieve`); design (10-design, 20-contract)
+Depends on: S14
+Acceptance:
+  - S15.1 `retrieve({ text, namespaces?, kinds?, states?, metadata?, limit?, excerptChars?, cursor? })` returns `{ items, nextCursor, completeness, partialReason? }`. `text` is required. `limit` defaults to 10, at most the smaller of 50 and the configured `maxPageSize`; `excerptChars` defaults to 280, at most 1,000. These are fixed bounds, so larger values are `ValidationFailed`, like any other invalid input. Namespace authorization, state defaults and filters match `search` with the same input; order matches `search` until S17 changes how `retrieve` ranks.
+  - S15.2 Each item is `{ id, revision, namespace, key, kind, state, updatedAt, contentBytes, excerpt: { text, truncated }, evidence: { refs, omitted }, supersededBy: { ids, omitted }, match: { score, terms } }`.
+    - The excerpt comes from the content column only, never from metadata. It is taken around the first matched term, or from the start of the content when no term matched in the content. It is cut in code at a code-point boundary to at most `excerptChars` code points (SQLite's `snippet` bounds tokens, not characters, so it cannot be the bound). `truncated` is true whenever the excerpt is not the whole content.
+    - At most 5 evidence refs of at most 256 characters each are listed. A longer ref is counted in `omitted`, never truncated, and so are the refs past the fifth.
+    - At most 8 readable `supersededBy` ids are listed; the rest are counted.
+    - Metadata, provenance origin and reason, and links are never included.
+  - S15.3 `match.terms` lists the query words the record matched. `match.score` orders results and is documented as a rank, not a confidence or probability. The score uses index-wide term statistics (BM25), so it is comparable only within one result and reveals no record content. `match.terms` is computed from the returned record alone.
+  - S15.4 The serialized result never exceeds 65,536 bytes. A page stops before an item that would cross that bound and returns a `nextCursor` that resumes at that item, so nothing is dropped. Every field is bounded, so every item fits on its own.
+  - S15.5 A record outside the caller's grants never contributes an item, an excerpt, a matched term, a `supersededBy` id or an evidence ref. Conformance checks this on every adapter, including a caller who can read only one of two namespaces.
+  - S15.6 `get(id)` on any returned id returns the full record at the returned revision, and the eval reports full-record fetches needed per query. `search` results, codes and order are byte-for-byte unchanged on the S14 corpus and in the existing conformance scenarios.
+  - S15.7 On the S14 corpus at 10,000 filler memories, `retrieve` meets the S14 response-size target (bytes p95 ≤ 32 KiB at limit 10), and the large-content query stays within the S15.4 bound. The report shows `search` and `retrieve` side by side.
+Out of scope: changing what matches or how it ranks (S17); any change to `search`; embeddings.
+
+## S16 — Search and retrieve bound the SQLite work they start
+Status: planned
+Delivers: Stage 4B. A broad query or a selective filter can no longer make one call do unbounded SQLite work while the scan budget reports it as bounded. The work SQLite does before the first row is measured. The smallest changes that bound it are made without changing order, authorization, pagination or completeness.
+Touches: storage-sqlite (query shapes, scope predicates, indexes through a forward-only migration); eval (a work benchmark at 10,000, 50,000 and 100,000 memories); design (10-design, and 20-contract where it describes the scan budget)
+Depends on: S15
+Acceptance:
+  - S16.1 A benchmark (`npm run eval -- --work`) runs the storage adapter's SQL directly, not through the SDK, and reports the time to the first row and to a full page at each size. It covers six query shapes, each with its `EXPLAIN QUERY PLAN`: a term matching most memories; a rare term; a term within one namespace; a namespace prefix with no text; all readable namespaces with no text; and a selective metadata filter. The report is committed with its environment.
+  - S16.2 A namespace prefix pattern (`a/*`) reaches SQLite as a range on `namespace` that an index can use, not as `substr`. It returns exactly the rows it returned before; unit tests cover boundary names such as `a`, `a/b`, `a-b`, `ab` and `a0`.
+  - S16.3 A listing with no text over all readable namespaces reads rows in order from an index instead of sorting the whole table, but only if the S16.1 benchmark shows it at least twice as fast to the first row at 50,000. This is a fixed decision rule, not a quality target. Otherwise the decision records the measurement and the index is not added.
+  - S16.4 If S16.1 shows the time to the first row at 100,000 for a term matching most memories above the S14 latency target (50 ms), a text query examines at most the scan budget of FTS candidates, in rank order. In that case:
+    - Candidates filtered out by scope, state or kind count towards the budget.
+    - A page that stops at the budget is `partial` with `scan_budget`, and its cursor resumes after the last candidate examined.
+    - The conformance and eval runs show which queries become partial.
+    - This changes what the S6 scan budget counts, which the S16 decision records.
+  - S16.5 Results, order, cursors, completeness and authorization are unchanged on the S14 corpus and in every existing conformance scenario. The only exception is pages that S16.4 makes partial, which the PR lists.
+  - S16.6 The contract and design state what the scan budget bounds and what it does not. No time budget is claimed: a JavaScript timer does not interrupt a running SQLite statement, and `partialReason: 'time_budget'` is still never produced.
+Out of scope: paginated `history` (a response-size concern, deferred with the reason in 90-decisions); worker threads or a second connection for search; changing the scan budget's default.
+
+## S17 — Retrieve ranks memories that share some of the question's words, measured on held-out queries
+Status: planned
+Delivers: the quality part of Stage 4. Stage 3's misses are lexical: every word is required and word forms differ. So `retrieve` stops requiring every word of the question and matches word forms (`cached` finds `caches`), and a measured precision rule keeps unrelated memories out. Paraphrased questions then find their memories with no model, download or network. `search` keeps its exact, every-word semantics. Vector and hybrid retrieval (4C) are deferred with a trigger in 90-decisions.
+Touches: storage-sqlite (a second FTS5 table with the Porter stemmer, maintained in the same transaction as the record, created and filled by a forward-only migration); service and contract (retrieve matching semantics); eval (held-out queries, retrieve quality per category, index size and write cost); design (10-design, 20-contract)
+Depends on: S15, S16
+Acceptance:
+  - S17.1 Held-out queries are committed before any S17 code runs against the corpus. They live in a separate file (`eval/retrieval/heldout.json`), in their own commit, with hand-written expected results. They cover paraphrase, correction, distractor and no-answer questions over the existing memories. Their results are reported separately and are never used to choose a parameter. The held-out results are the confirmation; S14 corpus results are reported as fitted, because S17.2 chooses on that corpus.
+  - S17.2 `retrieve` matches a memory that contains any of the query words, under Porter stemming, ranked by BM25. A precision rule keeps unrelated memories out, for example a minimum share of the query words matched, or a cut relative to the best score. It is chosen by comparing the alternatives on the S14 corpus. The comparison is in the PR, and the rule is documented in the contract.
+  - S17.3 On the S14 corpus without filler, `retrieve` meets the S14 targets:
+    - exact recall@5 = 1.0
+    - overall recall@10 ≥ 0.90
+    - paraphrase recall@10 ≥ 0.70
+    - MRR ≥ 0.75
+    - non-relevant in the top 10 ≤ 2
+    - no-answer queries returning anything ≤ 20%
+
+    A missed target is reported as missed, with its value, and is not adjusted. Held-out results are reported next to these.
+  - S17.4 Hard thresholds hold for `retrieve` on both query sets: no unauthorized exposure, no obsolete result in a current answer, no unexpected error.
+  - S17.5 The stemmed index stays in step with the record.
+    - After create, update, supersede, archive, restore, tombstone and purge, `retrieve` returns exactly the current state (conformance).
+    - A purge leaves no row for the memory in either FTS table.
+    - The migration fills the new table from current records in one transaction. Opening a store at the previous schema migrates it, and a test checks the row counts.
+  - S17.6 At 10,000 filler memories, `retrieve` p95 stays within the S14 latency target (50 ms). The report shows the database size and write latency before and after the second index, and the S16.1 benchmark is re-run for `retrieve` at 100,000.
+  - S17.7 `search` results, codes and order are unchanged on the S14 corpus and in every existing conformance scenario.
+Out of scope: embeddings, vector indexes, rerankers, query expansion and LLM ranking (deferred with a trigger in 90-decisions); synonyms (`toggles` for `flags`); changing `search`.
