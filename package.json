@@ -33,6 +33,7 @@
     "lint": "eslint . --max-warnings 0",
     "check:package": "node scripts/check-package.ts",
     "bench": "node --no-warnings bench/baseline.ts",
+    "eval": "node --no-warnings eval/retrieval/run.ts",
     "start": "node dist/cli/main.js"
   },
   "keywords": [

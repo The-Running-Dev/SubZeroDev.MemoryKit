@@ -65,7 +65,8 @@ jobs:
         # verification: true
         run: npm run check:package
 
-  # The baseline benchmark, run by hand: its table goes to the job summary.
+  # The baseline benchmark and the retrieval evaluation, run by hand: their reports go to the job
+  # summary.
   bench:
     name: Benchmark
     if: github.event_name == 'workflow_dispatch'
@@ -88,3 +89,6 @@ jobs:
 
       - name: Benchmark
         run: npm run bench -- --out "$GITHUB_STEP_SUMMARY"
+
+      - name: Retrieval evaluation
+        run: npm run eval -- --filler 0,10000 --out "$GITHUB_STEP_SUMMARY"
