@@ -1,0 +1,530 @@
+{
+  "version": 1,
+  "about": "Synthetic retrieval corpus for S14. Every name, identifier and fact is invented. Expected results are written by hand as {ref, revision} and never derived from a search.",
+  "principals": {
+    "alpha-reader": [{ "pattern": "eval/alpha/*", "permissions": ["read"] }]
+  },
+  "memories": [
+    {
+      "ref": "db-engine-v1",
+      "namespace": "eval/alpha",
+      "kind": "decision",
+      "content": "Alpha stores session data in PostgreSQL 15 on the primary cluster."
+    },
+    {
+      "ref": "release-day",
+      "namespace": "eval/alpha",
+      "kind": "decision",
+      "content": "Alpha releases ship on Tuesday afternoons after the change review."
+    },
+    {
+      "ref": "api-token-ttl",
+      "namespace": "eval/alpha",
+      "kind": "fact",
+      "content": "API tokens for Alpha expire after 30 days and must be rotated by the platform team."
+    },
+    {
+      "ref": "error-e4012",
+      "namespace": "eval/alpha",
+      "kind": "lesson",
+      "content": "Error E4012 in the Alpha billing worker means the invoice queue is full; drain it before restarting."
+    },
+    {
+      "ref": "ticket-alp-1182",
+      "namespace": "eval/alpha",
+      "kind": "handoff",
+      "content": "ALP-1182: migrate the Alpha search index to the new schema; blocked on the reindex window."
+    },
+    {
+      "ref": "owner-billing",
+      "namespace": "eval/alpha",
+      "kind": "fact",
+      "content": "Mira Okafor owns the Alpha billing worker and approves its schema changes."
+    },
+    {
+      "ref": "price-cache",
+      "namespace": "eval/alpha",
+      "kind": "decision",
+      "content": "Alpha caches product prices in Redis for five minutes; longer caching caused stale checkout totals."
+    },
+    {
+      "ref": "on-call",
+      "namespace": "eval/alpha",
+      "kind": "fact",
+      "content": "The Alpha on-call rotation changes every Monday at 09:00 UTC."
+    },
+    {
+      "ref": "backup-schedule",
+      "namespace": "eval/alpha",
+      "kind": "fact",
+      "content": "Alpha database backups run nightly at 02:00 UTC and are kept for 35 days."
+    },
+    {
+      "ref": "feature-flags",
+      "namespace": "eval/alpha",
+      "kind": "decision",
+      "content": "Alpha uses environment variables for feature flags instead of a flag service."
+    },
+    {
+      "ref": "log-format",
+      "namespace": "eval/alpha",
+      "kind": "decision",
+      "content": "Alpha services log in JSON lines with a request id on every entry."
+    },
+    {
+      "ref": "failover-old",
+      "namespace": "eval/alpha",
+      "kind": "runbook",
+      "content": "Alpha failover runbook for the 2024 data centre: promote the replica in rack B."
+    },
+    {
+      "ref": "failover-current",
+      "namespace": "eval/alpha",
+      "kind": "runbook",
+      "content": "Alpha failover runbook for the cloud region: promote the standby in the second zone."
+    },
+    {
+      "ref": "staging-old",
+      "namespace": "eval/alpha",
+      "kind": "note",
+      "content": "The Alpha staging cluster was named kestrel-staging-old before the rename."
+    },
+    {
+      "ref": "staging-current",
+      "namespace": "eval/alpha",
+      "kind": "fact",
+      "content": "The Alpha staging cluster is named kestrel-staging."
+    },
+    {
+      "ref": "timeout-a",
+      "namespace": "eval/alpha",
+      "kind": "fact",
+      "content": "Alpha HTTP client timeout is 10 seconds."
+    },
+    {
+      "ref": "timeout-b",
+      "namespace": "eval/alpha",
+      "kind": "fact",
+      "content": "Alpha HTTP client timeout is 10 seconds."
+    },
+    {
+      "ref": "audit-90",
+      "namespace": "eval/alpha",
+      "kind": "decision",
+      "content": "Alpha keeps audit logs for 90 days."
+    },
+    {
+      "ref": "audit-365",
+      "namespace": "eval/alpha",
+      "kind": "decision",
+      "content": "Alpha keeps audit logs for 365 days."
+    },
+    {
+      "ref": "queue-v1",
+      "namespace": "eval/alpha",
+      "kind": "decision",
+      "content": "The Alpha message queue is RabbitMQ."
+    },
+    {
+      "ref": "noise-token-ui",
+      "namespace": "eval/alpha",
+      "kind": "note",
+      "content": "The token counter in the Alpha editor shows how many tokens a draft uses."
+    },
+    {
+      "ref": "noise-backup-ui",
+      "namespace": "eval/alpha",
+      "kind": "note",
+      "content": "The Alpha admin page has a button that writes backups of user settings to a file."
+    },
+    {
+      "ref": "noise-release-notes",
+      "namespace": "eval/alpha",
+      "kind": "note",
+      "content": "Notes for Alpha releases are drafted by the writer on duty and published to the wiki."
+    },
+    {
+      "ref": "noise-browser-cache",
+      "namespace": "eval/alpha",
+      "kind": "note",
+      "content": "Clearing browser caches fixes stale icons in the Alpha dashboard."
+    },
+    {
+      "ref": "noise-e4-codes",
+      "namespace": "eval/alpha",
+      "kind": "note",
+      "content": "Alpha error codes starting with E4 come from the billing service."
+    },
+    {
+      "ref": "noise-session-ui",
+      "namespace": "eval/alpha",
+      "kind": "note",
+      "content": "The Alpha login page shows a warning when the browser session is about to end."
+    },
+    {
+      "ref": "beta-token-ttl",
+      "namespace": "eval/beta",
+      "kind": "fact",
+      "content": "API tokens for Beta expire after 7 days."
+    },
+    {
+      "ref": "beta-session-plan",
+      "namespace": "eval/beta",
+      "kind": "decision",
+      "content": "Beta will move session data to SQLite next quarter."
+    },
+    {
+      "ref": "ops-sev1-disk",
+      "namespace": "eval/ops",
+      "kind": "incident",
+      "content": "Ops incident: the primary disk filled and writes stopped for twelve minutes.",
+      "metadata": { "severity": "sev1" }
+    },
+    {
+      "ref": "ops-sev1-dns",
+      "namespace": "eval/ops",
+      "kind": "incident",
+      "content": "Ops incident: a DNS change sent all traffic to the retired region.",
+      "metadata": { "severity": "sev1" }
+    },
+    {
+      "series": "ops-routine-",
+      "count": 38,
+      "namespace": "eval/ops",
+      "kind": "incident",
+      "content": "Ops incident {i}: a disk usage warning cleared without action.",
+      "metadata": { "severity": "sev3" }
+    },
+    {
+      "ref": "arch-overview",
+      "namespace": "eval/docs",
+      "kind": "document",
+      "content": "Alpha architecture overview, section {i}: the gateway forwards requests to the billing worker and the search service, and every hop carries the request id.",
+      "repeat": 1200
+    },
+    {
+      "ref": "arch-summary",
+      "namespace": "eval/docs",
+      "kind": "summary",
+      "content": "Alpha architecture summary: the gateway, the billing worker and the search service."
+    }
+  ],
+  "steps": [
+    {
+      "op": "supersede",
+      "ref": "db-engine-v1",
+      "replacement": {
+        "ref": "db-engine-v2",
+        "kind": "decision",
+        "content": "Alpha stores session data in SQLite with WAL mode on each node; PostgreSQL was retired for sessions."
+      }
+    },
+    {
+      "op": "update",
+      "ref": "release-day",
+      "content": "Alpha releases ship on Thursday mornings after the change review."
+    },
+    { "op": "archive", "ref": "failover-old" },
+    { "op": "tombstone", "ref": "staging-old" },
+    {
+      "op": "supersede",
+      "ref": "queue-v1",
+      "replacement": {
+        "ref": "queue-v2",
+        "namespace": "eval/beta",
+        "kind": "decision",
+        "content": "Beta and Alpha share the Kafka message queue."
+      }
+    }
+  ],
+  "queries": [
+    {
+      "id": "exact-error-code",
+      "category": "exact",
+      "search": { "text": "E4012" },
+      "relevant": [{ "ref": "error-e4012", "revision": 1 }]
+    },
+    {
+      "id": "exact-ticket",
+      "category": "exact",
+      "search": { "text": "ALP-1182" },
+      "relevant": [{ "ref": "ticket-alp-1182", "revision": 1 }]
+    },
+    {
+      "id": "exact-person",
+      "category": "exact",
+      "search": { "text": "Mira Okafor" },
+      "relevant": [{ "ref": "owner-billing", "revision": 1 }]
+    },
+    {
+      "id": "exact-cluster",
+      "category": "exact",
+      "search": { "text": "kestrel-staging" },
+      "relevant": [{ "ref": "staging-current", "revision": 1 }]
+    },
+
+    {
+      "id": "para-token-lifetime",
+      "category": "paraphrase",
+      "search": { "text": "how long do Alpha credentials stay valid" },
+      "relevant": [{ "ref": "api-token-ttl", "revision": 1 }]
+    },
+    {
+      "id": "para-price-cache",
+      "category": "paraphrase",
+      "search": { "text": "where are price quotes cached and for how long" },
+      "relevant": [{ "ref": "price-cache", "revision": 1 }]
+    },
+    {
+      "id": "para-billing-owner",
+      "category": "paraphrase",
+      "search": { "text": "who maintains the invoicing worker" },
+      "relevant": [{ "ref": "owner-billing", "revision": 1 }]
+    },
+    {
+      "id": "para-snapshots",
+      "category": "paraphrase",
+      "search": { "text": "when are Alpha database snapshots taken" },
+      "relevant": [{ "ref": "backup-schedule", "revision": 1 }]
+    },
+    {
+      "id": "para-rotation-day",
+      "category": "paraphrase",
+      "search": { "text": "which day does the Alpha on-call shift change" },
+      "relevant": [{ "ref": "on-call", "revision": 1 }]
+    },
+    {
+      "id": "para-toggles",
+      "category": "paraphrase",
+      "search": { "text": "how are Alpha feature toggles configured" },
+      "relevant": [{ "ref": "feature-flags", "revision": 1 }]
+    },
+    {
+      "id": "para-log-shape",
+      "category": "paraphrase",
+      "search": { "text": "what format do Alpha logs use" },
+      "relevant": [{ "ref": "log-format", "revision": 1 }]
+    },
+
+    {
+      "id": "correct-release-new",
+      "category": "correction",
+      "search": { "text": "Alpha releases Thursday" },
+      "relevant": [{ "ref": "release-day", "revision": 2 }]
+    },
+    {
+      "id": "correct-release-stale",
+      "category": "correction",
+      "search": { "text": "do Alpha releases ship on Tuesday" },
+      "relevant": [{ "ref": "release-day", "revision": 2 }]
+    },
+    {
+      "id": "correct-session-store",
+      "category": "correction",
+      "search": { "text": "Alpha session data" },
+      "relevant": [{ "ref": "db-engine-v2", "revision": 1 }]
+    },
+    {
+      "id": "correct-postgres",
+      "category": "correction",
+      "search": { "text": "PostgreSQL session data" },
+      "relevant": [{ "ref": "db-engine-v2", "revision": 1 }]
+    },
+    {
+      "id": "correct-rabbitmq",
+      "category": "correction",
+      "search": { "text": "is the queue still RabbitMQ" },
+      "relevant": [{ "ref": "queue-v2", "revision": 1 }]
+    },
+
+    {
+      "id": "history-session-store",
+      "category": "historical",
+      "search": { "text": "Alpha session data", "states": ["active", "superseded"] },
+      "relevant": [
+        { "ref": "db-engine-v2", "revision": 1 },
+        { "ref": "db-engine-v1", "revision": 2 }
+      ]
+    },
+    {
+      "id": "history-queue",
+      "category": "historical",
+      "search": { "text": "message queue", "states": ["active", "superseded"] },
+      "relevant": [
+        { "ref": "queue-v2", "revision": 1 },
+        { "ref": "queue-v1", "revision": 2 }
+      ]
+    },
+
+    {
+      "id": "state-failover-default",
+      "category": "lifecycle",
+      "search": { "text": "failover runbook" },
+      "relevant": [{ "ref": "failover-current", "revision": 1 }]
+    },
+    {
+      "id": "state-failover-archived",
+      "category": "lifecycle",
+      "search": { "text": "failover runbook", "states": ["archived"] },
+      "relevant": [{ "ref": "failover-old", "revision": 2 }]
+    },
+    {
+      "id": "state-staging-default",
+      "category": "lifecycle",
+      "search": { "text": "Alpha staging cluster" },
+      "relevant": [{ "ref": "staging-current", "revision": 1 }]
+    },
+    {
+      "id": "state-staging-tombstoned",
+      "category": "lifecycle",
+      "search": { "text": "staging cluster", "states": ["tombstoned"] },
+      "relevant": [{ "ref": "staging-old", "revision": 2 }]
+    },
+
+    {
+      "id": "noise-tokens",
+      "category": "distractor",
+      "search": { "text": "Alpha tokens" },
+      "relevant": [{ "ref": "api-token-ttl", "revision": 1 }]
+    },
+    {
+      "id": "noise-release",
+      "category": "distractor",
+      "search": { "text": "Alpha releases" },
+      "relevant": [{ "ref": "release-day", "revision": 2 }]
+    },
+    {
+      "id": "noise-backup",
+      "category": "distractor",
+      "search": { "text": "Alpha backups" },
+      "relevant": [{ "ref": "backup-schedule", "revision": 1 }]
+    },
+    {
+      "id": "noise-stale-cache",
+      "category": "distractor",
+      "search": { "text": "Alpha stale caches" },
+      "relevant": [{ "ref": "price-cache", "revision": 1 }]
+    },
+    {
+      "id": "noise-session",
+      "category": "distractor",
+      "search": { "text": "Alpha session" },
+      "relevant": [{ "ref": "db-engine-v2", "revision": 1 }]
+    },
+
+    {
+      "id": "scope-tokens",
+      "category": "cross-namespace",
+      "principal": "alpha-reader",
+      "search": { "text": "API tokens expire" },
+      "relevant": [{ "ref": "api-token-ttl", "revision": 1 }]
+    },
+    {
+      "id": "scope-session",
+      "category": "cross-namespace",
+      "principal": "alpha-reader",
+      "search": { "text": "session data" },
+      "relevant": [{ "ref": "db-engine-v2", "revision": 1 }]
+    },
+    {
+      "id": "scope-queue-history",
+      "category": "cross-namespace",
+      "principal": "alpha-reader",
+      "search": { "text": "message queue", "states": ["active", "superseded"] },
+      "relevant": [{ "ref": "queue-v1", "revision": 2 }]
+    },
+    {
+      "id": "scope-named-foreign",
+      "category": "cross-namespace",
+      "principal": "alpha-reader",
+      "search": { "namespaces": ["eval/beta"], "text": "tokens" },
+      "error": "Forbidden"
+    },
+
+    {
+      "id": "sparse-sev1",
+      "category": "sparse-filter",
+      "scanBudget": 10,
+      "paginate": true,
+      "search": { "namespaces": ["eval/ops"], "metadata": { "severity": "sev1" }, "limit": 10 },
+      "relevant": [
+        { "ref": "ops-sev1-disk", "revision": 1 },
+        { "ref": "ops-sev1-dns", "revision": 1 }
+      ]
+    },
+
+    {
+      "id": "large-architecture",
+      "category": "large-content",
+      "search": { "text": "Alpha architecture gateway" },
+      "relevant": [
+        { "ref": "arch-overview", "revision": 1 },
+        { "ref": "arch-summary", "revision": 1 }
+      ]
+    },
+
+    {
+      "id": "none-autoscaling",
+      "category": "no-answer",
+      "search": { "text": "Alpha Kubernetes autoscaling policy" },
+      "relevant": []
+    },
+    {
+      "id": "none-budget",
+      "category": "no-answer",
+      "search": { "text": "what is the Gamma project budget" },
+      "relevant": []
+    },
+    {
+      "id": "none-queue-current",
+      "category": "no-answer",
+      "principal": "alpha-reader",
+      "search": { "text": "message queue" },
+      "relevant": []
+    },
+    {
+      "id": "none-scattered-words",
+      "category": "no-answer",
+      "search": { "text": "Mira Okafor Kafka" },
+      "relevant": []
+    },
+
+    {
+      "id": "dup-timeout",
+      "category": "duplicate",
+      "search": { "text": "Alpha HTTP timeout" },
+      "relevant": [
+        { "ref": "timeout-a", "revision": 1 },
+        { "ref": "timeout-b", "revision": 1 }
+      ]
+    },
+    {
+      "id": "contra-audit",
+      "category": "duplicate",
+      "search": { "text": "Alpha audit logs" },
+      "relevant": [
+        { "ref": "audit-90", "revision": 1 },
+        { "ref": "audit-365", "revision": 1 }
+      ]
+    },
+
+    {
+      "id": "reject-no-terms",
+      "category": "error",
+      "search": { "text": "?? !!" },
+      "error": "ValidationFailed"
+    },
+    {
+      "id": "reject-limit",
+      "category": "error",
+      "search": { "text": "Alpha", "limit": 101 },
+      "error": "LimitExceeded"
+    },
+    {
+      "id": "reject-state",
+      "category": "error",
+      "search": { "text": "Alpha", "states": ["deleted"] },
+      "error": "ValidationFailed"
+    }
+  ]
+}

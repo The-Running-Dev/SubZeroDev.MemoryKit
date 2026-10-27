@@ -9,6 +9,28 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-27 — Stage 3: retrieval is evaluated on a synthetic corpus, with thresholds fixed before tuning
+
+- Context: Stage 3 of the ordered handoff must show which queries the lexical search fails and what better retrieval must improve, before Stage 4 changes ranking or response shape. S14 delivers it.
+- Chosen:
+  - Expected results are exact `{ref, revision}` pairs written by hand in `eval/retrieval/corpus.json`. Refs map to ids only when the harness builds the store, so no expectation comes from a search.
+  - The harness uses the SDK in process with no history provider. A query error is recorded with its code and kept out of the ranking metrics; it is never an empty result.
+  - Metrics: recall@5 and recall@10 (relevant found ÷ relevant expected), MRR (1 ÷ rank of the first relevant, 0 if none), nDCG@10 with binary gains. No-answer queries are left out of these and reported as the share that returned anything.
+  - Response bytes are the UTF-8 length of the SDK result as JSON. The token estimate is bytes ÷ 4, rounded up, and is labelled as such; no tokenizer is claimed.
+  - The storage does not expose scanned rows, so the sparse filter is measured as pages and partial pages to exhaust it at a fixed scan budget of 10.
+  - CI runs the corpus without filler and gates only what is deterministic: safety invariants, error codes, and drift of the quality numbers from `eval/retrieval/baseline.json`. Timing, bytes and filler runs belong to `npm run eval` and the manual benchmark job.
+  - Ideas taken from QMD at `86d2365d17fc682e491c2c53d1e4a884aee8682a` (`test/eval-harness.ts`): exact expected ids, failures not swallowed as empty results, and hit@k, reciprocal rank, latency and bytes tracked separately. No QMD code is copied or depended on.
+- Thresholds, recorded before the first run. Hard thresholds apply to every retrieval implementation and gate CI. Targets are what Stage 4 must reach and are reported without gating.
+  - Hard: unauthorized exposure 0; obsolete results in current answers 0; unexpected errors 0; every error case fails with its expected code.
+  - Target, corpus without filler: exact-identifier recall@5 = 1.0; overall recall@10 ≥ 0.90; paraphrase recall@10 ≥ 0.70; overall MRR ≥ 0.75; mean non-relevant items in the top 10 ≤ 2; no-answer queries returning anything ≤ 20%.
+  - Target, at 10,000 filler memories: search p95 ≤ 50 ms; response bytes p95 ≤ 32 KiB at limit 10; cold start ≤ 500 ms.
+- Rejected:
+  - Gating recall or MRR targets in CI: the lexical baseline is expected to miss paraphrases, and a red build would not tell Stage 4 more than the report does.
+  - An LLM judge or generated relevance labels: they make expectations depend on a model.
+  - A token count from a specific tokenizer: it would add a dependency and tie the numbers to one model family.
+  - Live or personal data, even redacted.
+- Reversibility: the targets may be revised only in a new entry made before tuning starts, never after a measured run.
+
 ## 2026-10-25 — Stage 2: AgentKit integrates through the JSON CLI, and provenance is one JSON flag
 
 - Context: Stage 2 of the ordered handoff needs one real agent-workflow integration. The user settled that it lives in AgentKit and uses MemoryKit's JSON CLI. The CLI could not record provenance, so captured memories could not carry origin, reason or evidence.
