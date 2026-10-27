@@ -135,19 +135,19 @@
       "ref": "noise-backup-ui",
       "namespace": "eval/alpha",
       "kind": "note",
-      "content": "The Alpha admin page has a backup button that exports user settings to a file."
+      "content": "The Alpha admin page has a button that writes backups of user settings to a file."
     },
     {
       "ref": "noise-release-notes",
       "namespace": "eval/alpha",
       "kind": "note",
-      "content": "Alpha release notes are drafted by the writer on duty and published to the wiki."
+      "content": "Notes for Alpha releases are drafted by the writer on duty and published to the wiki."
     },
     {
       "ref": "noise-browser-cache",
       "namespace": "eval/alpha",
       "kind": "note",
-      "content": "Clearing the browser cache fixes stale icons in the Alpha dashboard."
+      "content": "Clearing browser caches fixes stale icons in the Alpha dashboard."
     },
     {
       "ref": "noise-e4-codes",
@@ -390,19 +390,19 @@
     {
       "id": "noise-release",
       "category": "distractor",
-      "search": { "text": "Alpha release" },
+      "search": { "text": "Alpha releases" },
       "relevant": [{ "ref": "release-day", "revision": 2 }]
     },
     {
       "id": "noise-backup",
       "category": "distractor",
-      "search": { "text": "Alpha backup" },
+      "search": { "text": "Alpha backups" },
       "relevant": [{ "ref": "backup-schedule", "revision": 1 }]
     },
     {
       "id": "noise-stale-cache",
       "category": "distractor",
-      "search": { "text": "Alpha stale cache" },
+      "search": { "text": "Alpha stale caches" },
       "relevant": [{ "ref": "price-cache", "revision": 1 }]
     },
     {
@@ -480,6 +480,12 @@
       "category": "no-answer",
       "principal": "alpha-reader",
       "search": { "text": "message queue" },
+      "relevant": []
+    },
+    {
+      "id": "none-scattered-words",
+      "category": "no-answer",
+      "search": { "text": "Mira Okafor Kafka" },
       "relevant": []
     },
 

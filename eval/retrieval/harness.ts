@@ -7,6 +7,7 @@
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import {
   EMBEDDED_PRINCIPAL,
   MemoryService,
@@ -270,10 +271,26 @@ export async function buildStore(dir: string, corpus: Corpus, fillerCount = 0): 
         record.namespace !== entry.namespace ||
         record.state !== entry.state ||
         record.revision !== entry.revision ||
-        record.content !== entry.content
+        record.kind !== entry.kind ||
+        record.content !== entry.content ||
+        !isDeepStrictEqual(record.metadata, entry.metadata)
       ) {
         throw new Error(`Store does not match the corpus model for ${ref}`);
       }
+    }
+    let stored = 0;
+    let cursor: string | null = null;
+    do {
+      const page: SearchResult = await client.search({
+        states: ['active', 'superseded', 'archived', 'tombstoned'],
+        limit: 100,
+        ...(cursor === null ? {} : { cursor }),
+      });
+      stored += page.items.length;
+      cursor = page.nextCursor;
+    } while (cursor !== null);
+    if (stored !== model.size) {
+      throw new Error(`The store holds ${stored} memories; the corpus model has ${model.size}`);
     }
   } finally {
     await close();
@@ -336,31 +353,35 @@ export interface QueryScore {
   fetches: number; // relevant results that came back without their full content
   pages: number;
   partialPages: number;
-  bytes: number;
-  latencies: number[]; // ms per search call
+  bytes: number[]; // per search response
+  latencies: number[]; // ms per successful search call
 }
 
 interface Execution {
   items: MemoryRecord[];
   pages: number;
   partialPages: number;
-  bytes: number;
+  bytes: number[];
   error: string | null;
 }
 
+// A query without its own limit runs at the top 10, the page size the thresholds are judged at.
 async function execute(client: MemoryClient, query: QuerySpec, samples: number[]) {
-  const run: Execution = { items: [], pages: 0, partialPages: 0, bytes: 0, error: null };
+  const run: Execution = { items: [], pages: 0, partialPages: 0, bytes: [], error: null };
+  const base: SearchQuery = { limit: TOP, ...query.search };
   try {
     let cursor: string | null = null;
     do {
-      const search: SearchQuery = cursor === null ? query.search : { ...query.search, cursor };
-      const page: SearchResult = await timed(samples, () => client.search(search));
+      if (run.pages === MAX_PAGES) throw new Error(`More than ${MAX_PAGES} pages`);
+      const start = performance.now();
+      const page: SearchResult = await client.search(cursor === null ? base : { ...base, cursor });
+      samples.push(performance.now() - start);
       run.items.push(...page.items);
       run.pages++;
       if (page.completeness === 'partial') run.partialPages++;
-      run.bytes += Buffer.byteLength(JSON.stringify(page), 'utf8');
+      run.bytes.push(Buffer.byteLength(JSON.stringify(page), 'utf8'));
       cursor = query.paginate === true ? page.nextCursor : null;
-    } while (cursor !== null && run.pages < MAX_PAGES);
+    } while (cursor !== null);
   } catch (error) {
     run.error = (error as Partial<MemoryKitError>).code ?? `Thrown: ${String(error)}`;
   }
@@ -395,10 +416,15 @@ function score(
   grants: Grant[] | null
 ): QueryScore {
   const expected = query.relevant ?? [];
-  const isHit = (item: MemoryRecord) =>
-    expected.some(
+  // Each expected result counts once, so a repeated item cannot lift recall.
+  const unmatched = [...expected];
+  const isHit = (item: MemoryRecord) => {
+    const i = unmatched.findIndex(
       ({ ref, revision }) => built.ids.get(ref) === item.id && item.revision === revision
     );
+    if (i !== -1) unmatched.splice(i, 1);
+    return i !== -1;
+  };
   let outcome: Outcome;
   if (run.error !== null) {
     outcome =
@@ -461,7 +487,8 @@ function score(
   };
 }
 
-// The client a query runs as, over storage opened with the query's scan budget.
+// The client a query runs as. A query with a scan budget opens storage directly, because
+// openService takes no scan budget; both paths run the same MemoryService.
 async function withClient<T>(
   dir: string,
   corpus: Corpus,
@@ -553,7 +580,7 @@ export interface Summary {
   pages: number;
   partialPages: number;
   latency: Timing;
-  bytes: Timing;
+  bytes: Timing & { max: number }; // per response
 }
 
 const mean = (values: number[]) =>
@@ -582,7 +609,10 @@ export function summarize(scores: QueryScore[]): Summary {
     pages: sum(scores.map((s) => s.pages)),
     partialPages: sum(scores.map((s) => s.partialPages)),
     latency: percentiles(scores.flatMap((s) => s.latencies)),
-    bytes: percentiles(ran.map((s) => s.bytes)),
+    bytes: {
+      ...percentiles(ran.flatMap((s) => s.bytes)),
+      max: Math.max(0, ...ran.flatMap((s) => s.bytes)),
+    },
   };
 }
 

@@ -92,11 +92,11 @@ function thresholds(runs: Run[]): string[] {
 
 function summaryTable(rows: Array<[string, Summary]>): string[] {
   return [
-    '| Category | Queries | Recall@5 | Recall@10 | MRR | nDCG@10 | Non-relevant in top 10 | No-answer returned | Obsolete | Exposure | Errors | Duplicates | Fetches needed | Pages (partial) | Latency p50 / p95 (ms) | Bytes p50 / p95 |',
+    '| Category | Queries | Recall@5 | Recall@10 | MRR | nDCG@10 | Non-relevant in top 10 | No-answer returned | Obsolete | Exposure | Errors | Duplicates | Fetches needed | Pages (partial) | Latency p50 / p95 (ms) | Bytes per response p50 / p95 / max |',
     '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
     ...rows.map(
       ([name, s]) =>
-        `| ${name} | ${s.queries} | ${ratio(s.recall5)} | ${ratio(s.recall10)} | ${ratio(s.mrr)} | ${ratio(s.ndcg10)} | ${s.nonRelevant10.toFixed(2)} | ${s.noAnswer === 0 ? '—' : ratio(s.noAnswerReturned)} | ${s.obsolete} | ${s.exposure} | ${s.errors} | ${s.duplicates} | ${s.fetches} | ${s.pages} (${s.partialPages}) | ${ms(s.latency.p50)} / ${ms(s.latency.p95)} | ${s.bytes.p50} / ${s.bytes.p95} |`
+        `| ${name} | ${s.queries} | ${ratio(s.recall5)} | ${ratio(s.recall10)} | ${ratio(s.mrr)} | ${ratio(s.ndcg10)} | ${s.nonRelevant10.toFixed(2)} | ${s.noAnswer === 0 ? '—' : ratio(s.noAnswerReturned)} | ${s.obsolete} | ${s.exposure} | ${s.errors} | ${s.duplicates} | ${s.fetches} | ${s.pages} (${s.partialPages}) | ${ms(s.latency.p50)} / ${ms(s.latency.p95)} | ${s.bytes.p50} / ${s.bytes.p95} / ${s.bytes.max} |`
     ),
   ];
 }
@@ -107,7 +107,7 @@ function report(runs: Run[], commit: string, dirty: boolean, repeat: number): st
     '',
     `Commit \`${commit || 'unknown'}\`${dirty ? ' (with uncommitted changes)' : ''}. Node ${process.version} on ${process.platform} ${process.arch}, ${cpus()[0]?.model ?? 'unknown CPU'}. Each query ran ${repeat} time(s); the first run is scored.`,
     '',
-    'Bytes are the UTF-8 length of each search result as JSON. Tokens are estimated as ceil(bytes / 4), not counted by a tokenizer. Latency is per search call, in process. Cold start is open plus one search, in process, on a closed store.',
+    'Queries without their own limit run at limit 10. Bytes are the UTF-8 length of each search response as JSON. Tokens are estimated as ceil(bytes / 4), not counted by a tokenizer. Latency is per successful search call, in process. Cold start is open plus one search, in process, on a closed store. Duplicates are reported, not scored or gated; each expected result counts once.',
     '',
     '## Thresholds',
     '',
@@ -131,6 +131,7 @@ function report(runs: Run[], commit: string, dirty: boolean, repeat: number): st
       `| database with WAL | ${(run.indexing.databaseBytes / 1_048_576).toFixed(1)} MiB |`,
       `| cold start p50 / p95 (ms) | ${ms(run.cold.p50)} / ${ms(run.cold.p95)} |`,
       `| response bytes p95 | ${size(run.overall.bytes.p95)} |`,
+      `| response bytes max | ${size(run.overall.bytes.max)} |`,
       ''
     );
   }
@@ -149,6 +150,7 @@ function report(runs: Run[], commit: string, dirty: boolean, repeat: number): st
     '',
     '- Search has no stemming or synonyms, so paraphrases that share no word with the memory are not found.',
     '- An earlier revision of a memory updated in place is reachable through `revision()`, not search; historical queries cover superseded memories only.',
+    '- The large-content query returns one memory larger than the 32 KiB response target; the target is judged at p95, and the max is shown beside it.',
     '- Sparse metadata filters are measured as pages and partial pages at a scan budget of 10; storage does not report rows scanned.',
     ''
   );
