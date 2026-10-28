@@ -9,6 +9,38 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-28 — Stage 5 re-planned: measure a cross-encoder reranker (S21) before building anything; S17 stays if it fails
+
+- Context: S18's gate failed (entry below), and that entry leaves this re-plan to choose between a reranker, a recall-first rule without the no-answer condition, and keeping S17.
+  - On the corpus, 21 rules fail only the no-answer condition. On `heldout-2.json` the closest of them also misses recall@10 (0.857).
+  - S17 lexical returns something for no-answer questions at 0.500 on the corpus, 0.500 on `heldout.json` and 0.308 on `heldout-2.json`. On `heldout-2.json` it reaches recall@10 0.429 and paraphrase recall@10 0.143 (`eval/retrieval/embed.md`).
+- Chosen:
+  - Measure a reranker first (S21), the path the Stage 5 entry's revisit names. A cosine floor does not separate a question with no answer from a paraphrase: MiniLM vector-only reaches no-answer 0 at floor 0.45 only by dropping paraphrase recall@10 to 0.571. A cross-encoder reads the question and the memory together and is trained to score relevance, so its score is the remaining candidate for a threshold that empties no-answer questions and keeps paraphrases. That is unverified, which is why it is measured before anything is built.
+  - The rerankers are two MS MARCO cross-encoders published as ONNX for `@huggingface/transformers`:
+    - `Xenova/ms-marco-MiniLM-L-6-v2`, 86.8 MiB fp32, revision `a091443`;
+    - `Xenova/ms-marco-TinyBERT-L-2-v2`, 16.8 MiB, revision `b76bb5e`.
+
+    Each is downloaded only with the user's approval.
+  - Three candidate sources, so the result also says whether vectors are needed:
+    - S17's list;
+    - S17's list with any word;
+    - that list fused with MiniLM vectors at floor 0.30.
+
+    The first two need no embedder and no vector index.
+  - The gate keeps S18's quality conditions unchanged. It adds a cost condition: model time p95 ≤ 50 ms per query, the S14 latency target. Reranking cost is fixed by depth, not store size, so it is known at measurement time.
+  - The reranker's contract and build slices wait for S21's result. S19 now depends on S21 and is kept only if the chosen source fuses vectors. With a failed gate, Stage 5 closes with S17's `retrieve`, and S19 and S20 are retired.
+- Rejected:
+  - A recall-first rule without the no-answer condition. It drops a gate condition after seeing the results, which the S18 entry rejected as "choosing the best rule anyway", and nothing since contradicts that condition. The best fusion rule returns something for 75% of corpus no-answer questions, against S17's 50%.
+  - Keeping S17 without measuring a reranker. `heldout-2.json` shows S17 finds fresh paraphrases poorly (recall@10 0.429), and the Stage 5 entry committed to a reranker when the gate fails on no-answer alone, which it did on the corpus.
+  - Writing the reranker contract and build slices now. The S19 and S20 contract was written before S18 measured anything and is unused after its gate failed; measuring first avoids repeating that.
+  - A third held-out set. `heldout-2.json` has chosen nothing, and S21's grid is fixed here, before any reranker run.
+  - Larger rerankers: `Xenova/bge-reranker-base` (1,061 MiB fp32) and `mixedbread-ai/mxbai-rerank-xsmall-v1` (271 MiB) are several times the embedder's size.
+  - Quantized models. S18 measured fp32, and quantization is a cost choice once quality is shown.
+  - LLM ranking: a far larger model, and too much latency for a per-query step.
+- Revisit: quantized variants of the rerankers if a configuration meets every quality condition and misses only the cost condition.
+
+---
+
 ## 2026-10-28 — S18 gate failed: embeddings recover paraphrases but no floor empties no-answer questions; S19 and S20 are not started
 
 - Context: S18 compared S17 lexical with 55 vector and hybrid rules per model (`eval/retrieval/embed.md`; `Xenova/all-MiniLM-L6-v2` at `751bff3`, `Xenova/bge-small-en-v1.5` at `ea104da`, `@huggingface/transformers` 4.3.2, fp32, exact cosine, RRF k = 60, depth 50; Node 26.12.1, win32, i7-11850H). `heldout-2.json` was committed alone first (d4a00fc) and chose nothing.

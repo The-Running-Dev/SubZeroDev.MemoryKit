@@ -278,7 +278,7 @@ Out of scope: product code; rerankers; query expansion; fine-tuning; hosted embe
 Status: todo
 Delivers: Stage 5. An application or service that opts into an embedder gets a vector for every memory, kept current after every write and removed by purge, and no write waits on the model. A store without an embedder behaves as before and loads no model code. Retrieval does not use the vectors until S20.
 Touches: contracts (`Embedder`, `EmbeddingModel`, `EmbedderDescriptor`, `StorageProvider.staleVectors`, `putVectors`, `vectorCounts`, `StoreStatus.vectors`, `syncVectors`, `ServiceConfig.indexBatchSize`); storage-sqlite (schema 5, `memory_vectors`, purge); service (the indexer, `syncVectors`, status); embedder-hash (`HashEmbedder`); embedder-transformers (`TransformersEmbedder` on `<package>/embedder-transformers`); sdk (`StoreConfig.embedder`, lazy loading); cli (`--embedder`, `--model`, `--model-dir`, `--allow-download`, `vectors-sync`, status); http (`POST /v1/vectors/sync`); conformance; package (exports, optional peer dependency, `check:package`)
-Depends on: S18, only if its gate (S18.5) passed
+Depends on: S21, only if its gate (S21.5) passed with a candidate source that fuses vectors and the plan re-run after S21 keeps this slice
 Acceptance:
   - S19.1 With no embedder configured, `@huggingface/transformers` is never imported (a test runs a child process whose resolve hook records every specifier), status reports `vectors: null`, `syncVectors` fails with `Unsupported`, and every existing test and conformance scenario passes unchanged.
   - S19.2 Migration 5 creates `memory_vectors` empty; opening a schema-4 store migrates it, and a test checks it. `staleVectors` returns exactly the memories whose vector is missing or from another revision, model id or model revision. `putVectors` skips a memory whose revision has moved on or that was purged, and a test races a write against it.
@@ -305,3 +305,25 @@ Acceptance:
   - S20.6 At 10,000 filler memories, hybrid `retrieve` p95 including query embedding, and response bytes p95, are reported against the S14 targets (50 ms, 32 KiB), with query embedding also shown alone. At 100,000 the vector-side time is reported. A missed target is reported as missed, and the Stage 5 revisit trigger applies.
   - S20.7 `search` results, codes and order are unchanged on the S14 corpus and in every existing conformance scenario. `match.similarity` appears only on hybrid results, and the contract documents `match.score` there as the fused rank score.
 Out of scope: sqlite-vec or approximate search; rerankers; changing `search`; making hybrid the default.
+
+## S21 — Measure whether a reranker separates questions with no answer from paraphrased ones
+Status: todo
+Delivers: Stage 5, measurement again. Before any product code, the eval shows whether a small local reranker, which reads the question and each candidate memory together, keeps paraphrased answers while giving an agent nothing for a question no memory answers. The result decides whether Stage 5 builds anything or closes with S17's lexical retrieval (90-decisions, Stage 5 re-plan).
+Touches: eval (a reranker runner in `eval/embed/` on the pinned `@huggingface/transformers`; reranking over S18's candidate lists; costs; `eval/retrieval/rerank.md`); design (90-decisions)
+Depends on: S18
+Acceptance:
+  - S21.1 The corpus, `heldout.json` and `heldout-2.json` are scored as in S18 and are not changed. Configurations are chosen on the corpus alone; both held-out sets are reported beside the chosen one and choose nothing.
+  - S21.2 `npm run eval -- --rerank <model>[,<model>] [--allow-download]` scores each pair of query text and candidate memory content with the named cross-encoder, through `@huggingface/transformers` 4.3.2 under `eval/embed/`, in-process and from the local model cache. It downloads only with `--allow-download`. Relevance is the sigmoid of the model's logit. The models are `Xenova/ms-marco-MiniLM-L-6-v2` at `a09144355adeed5f58c8ed011d209bf8ee5a1fec` and `Xenova/ms-marco-TinyBERT-L-2-v2` at `b76bb5e1fefd66aa36cd108622d768e86c015ff1`, both fp32. The report records the package version, each model's revision, dtype and maximum input tokens. No file under `src/` changes, and tests use a stand-in scorer, so CI loads no model.
+  - S21.3 For each reranker, the report compares every S14 metric on the corpus and both held-out sets for every configuration of:
+    - a candidate source: (a) S17's `retrieve` list; (b) S17's list with the word share relaxed to any word; (c) reciprocal rank fusion (k = 60) of (b) and the MiniLM vector list at floor 0.30, each cut to depth 50;
+    - a depth D of 10, 20 or 50 candidates, reranked by relevance;
+    - a threshold t of 0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5 or 0.7. A candidate is kept when its relevance is at least t. Ties go to the candidate's source rank, then the ref, and the list is cut to the query's limit.
+
+    S17 lexical and S18's best rule (MiniLM RRF ≥ 0.40) are shown as reference rows.
+  - S21.4 A configuration qualifies when it meets every S18.4 corpus condition (recall@10 ≥ 0.90, exact recall@5 = 1.0, paraphrase recall@10 ≥ 0.70, MRR ≥ 0.75, non-relevant in the top 10 ≤ 2, no-answer ≤ 20%) and the cost condition. The cost condition is that model time p95 per corpus query is ≤ 50 ms: reranking at its depth, plus query embedding for source (c). Among qualifying configurations, the highest recall@10 wins, then MRR, then the fewest non-relevant, then the smaller model, then the smaller depth. When none qualifies, the report names the best configuration by the same order without the conditions.
+  - S21.5 Gate. It passes when a configuration qualifies under S21.4 and the chosen one keeps recall@10 ≥ 0.90 and no-answer ≤ 20% on each held-out set. The S17.4 hard thresholds hold for every configuration on every set. A failed gate is reported as failed, with its values.
+  - S21.6 For each reranker, the report gives the size on disk, the cold start (load plus the first scoring), and scoring p50 and p95 per query at each depth, with Node, OS and CPU. Scoring time depends on depth, not store size, so there is no filler run.
+  - S21.7 A 90-decisions entry records the chosen reranker, source, depth and threshold, or the failed gate. Either way, S19 and S20 are not started and the plan is re-run with the result:
+    - with a passed gate, to add the reranker to the contract and plan its build, keeping S19 and S20 only if the chosen source is (c);
+    - with a failed gate, to close Stage 5 with S17's `retrieve` and retire S19 and S20.
+Out of scope: product code; contract changes; LLM ranking; fine-tuning; hosted APIs; rerankers over 100 MiB in fp32; quantized models; new or changed query sets.
