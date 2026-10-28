@@ -1,6 +1,6 @@
 # Retrieval evaluation
 
-Commit `f49ea9cb960c426024667ed5a3c08651a159f77c`. Node v26.12.1 on win32 x64, 11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz. Each query ran 5 time(s); the first run is scored.
+Commit `abfad3a8d020ff94f51b80804bc0c1e75954caf5`. Node v26.12.1 on win32 x64, 11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz. Each query ran 5 time(s); the first run is scored.
 
 Queries without their own limit run at limit 10. Bytes are the UTF-8 length of each response as JSON. Tokens are estimated as ceil(bytes / 4), not counted by a tokenizer. Latency is per successful call, in process. Cold start is open plus one search, in process, on a closed store. Duplicates are reported, not scored or gated; each expected result counts once. A fetch is needed for a relevant result that came back without its whole content: a truncated retrieve excerpt, or content that differs from the expected revision.
 
@@ -21,9 +21,9 @@ Recorded in `design/90-decisions.md` (2026-10-27) before the first run; the retr
 | overall MRR | target | 0 | ≥ 0.75 | 0.691 | **no** |
 | mean non-relevant items in top 10 | target | 0 | ≤ 2 | 0.147 | yes |
 | no-answer queries returning anything | target | 0 | ≤ 20% | 0 | yes |
-| search p95 (ms) | target | 10,000 | ≤ 50 | 9.603 | yes |
+| search p95 (ms) | target | 10,000 | ≤ 50 | 12.295 | yes |
 | response bytes p95 | target | 10,000 | ≤ 32 KiB | 5265 | yes |
-| cold start p95 (ms) | target | 10,000 | ≤ 500 | 48.880 | yes |
+| cold start p95 (ms) | target | 10,000 | ≤ 500 | 44.577 | yes |
 | retrieve response bytes p95 | target | 10,000 | ≤ 32 KiB | 5395 | yes |
 | retrieve large-content response bytes | hard | 10,000 | ≤ 64 KiB | 1157 | yes |
 
@@ -31,35 +31,35 @@ Recorded in `design/90-decisions.md` (2026-10-27) before the first run; the retr
 
 | Category | Queries | Recall@5 | Recall@10 | MRR | nDCG@10 | Non-relevant in top 10 | No-answer returned | Obsolete | Exposure | Errors | Duplicates | Fetches needed | Pages (partial) | Latency p50 / p95 (ms) | Bytes per response p50 / p95 / max |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| overall | 42 | 0.735 | 0.735 | 0.691 | 0.703 | 0.15 | 0.000 | 0 | 0 | 0 | 1 | 0 | 41 (3) | 0.25 / 0.38 | 472 / 982 / 189320 |
-| exact | 4 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 4 (0) | 0.24 / 0.34 | 472 / 500 / 500 |
-| paraphrase | 7 | 0.000 | 0.000 | 0.000 | 0.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 7 (0) | 0.19 / 0.26 | 56 / 56 / 56 |
-| correction | 5 | 0.600 | 0.600 | 0.600 | 0.600 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 5 (0) | 0.24 / 0.32 | 467 / 561 / 561 |
-| historical | 2 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 2 (0) | 0.32 / 0.39 | 920 / 1006 / 1006 |
-| lifecycle | 4 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 4 (0) | 0.23 / 0.28 | 480 / 485 / 485 |
-| distractor | 5 | 1.000 | 1.000 | 0.700 | 0.779 | 1.00 | — | 0 | 0 | 0 | 0 | 0 | 5 (0) | 0.28 / 0.37 | 897 / 982 / 982 |
-| cross-namespace | 4 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 3 (0) | 0.29 / 0.37 | 481 / 561 / 561 |
-| sparse-filter | 1 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 4 (3) | 0.17 / 0.43 | 282 / 921 / 921 |
-| large-content | 1 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 1 (0) | 0.77 / 0.99 | 189320 / 189320 / 189320 |
-| no-answer | 4 | 0.000 | 0.000 | 0.000 | 0.000 | 0.00 | 0.000 | 0 | 0 | 0 | 0 | 0 | 4 (0) | 0.14 / 0.19 | 56 / 56 / 56 |
-| duplicate | 2 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 1 | 0 | 2 (0) | 0.28 / 0.30 | 820 / 821 / 821 |
+| overall | 42 | 0.735 | 0.735 | 0.691 | 0.703 | 0.15 | 0.000 | 0 | 0 | 0 | 1 | 0 | 41 (3) | 0.31 / 0.47 | 472 / 982 / 189320 |
+| exact | 4 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 4 (0) | 0.33 / 0.43 | 472 / 500 / 500 |
+| paraphrase | 7 | 0.000 | 0.000 | 0.000 | 0.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 7 (0) | 0.26 / 0.34 | 56 / 56 / 56 |
+| correction | 5 | 0.600 | 0.600 | 0.600 | 0.600 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 5 (0) | 0.32 / 0.40 | 467 / 561 / 561 |
+| historical | 2 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 2 (0) | 0.39 / 0.47 | 920 / 1006 / 1006 |
+| lifecycle | 4 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 4 (0) | 0.30 / 0.39 | 480 / 485 / 485 |
+| distractor | 5 | 1.000 | 1.000 | 0.700 | 0.779 | 1.00 | — | 0 | 0 | 0 | 0 | 0 | 5 (0) | 0.33 / 0.43 | 897 / 982 / 982 |
+| cross-namespace | 4 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 3 (0) | 0.34 / 0.66 | 481 / 561 / 561 |
+| sparse-filter | 1 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 4 (3) | 0.18 / 0.38 | 282 / 921 / 921 |
+| large-content | 1 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 1 (0) | 1.14 / 1.32 | 189320 / 189320 / 189320 |
+| no-answer | 4 | 0.000 | 0.000 | 0.000 | 0.000 | 0.00 | 0.000 | 0 | 0 | 0 | 0 | 0 | 4 (0) | 0.17 / 0.22 | 56 / 56 / 56 |
+| duplicate | 2 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 1 | 0 | 2 (0) | 0.32 / 0.41 | 820 / 821 / 821 |
 | error | 3 | 0.000 | 0.000 | 0.000 | 0.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 0 (0) | 0.00 / 0.00 | 0 / 0 / 0 |
 
 search and retrieve, over the queries with text:
 
 | Operation | Queries | Recall@10 | MRR | Obsolete | Exposure | Errors | Fetches needed | Fetches per answerable query | Pages (partial) | Latency p50 / p95 (ms) | Bytes per response p50 / p95 / max | Large-content bytes max |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| search | 41 | 0.727 | 0.682 | 0 | 0 | 0 | 0 | 0.000 | 37 (0) | 0.25 / 0.37 | 480 / 1006 / 189320 | 189,320 |
-| retrieve | 41 | 0.727 | 0.682 | 0 | 0 | 0 | 1 | 0.030 | 37 (0) | 0.24 / 0.37 | 487 / 975 / 1155 | 1,155 |
+| search | 41 | 0.727 | 0.682 | 0 | 0 | 0 | 0 | 0.000 | 37 (0) | 0.31 / 0.48 | 480 / 1006 / 189320 | 189,320 |
+| retrieve | 41 | 0.727 | 0.682 | 0 | 0 | 0 | 1 | 0.030 | 37 (0) | 0.37 / 0.56 | 487 / 975 / 1155 | 1,155 |
 
 | Cost | Value |
 | --- | --- |
 | memories written | 72 |
-| create p50 / p95 (ms) | 0.74 / 1.76 |
-| lifecycle step p50 / p95 (ms) | 1.06 / 4.32 |
+| create p50 / p95 (ms) | 0.98 / 1.73 |
+| lifecycle step p50 / p95 (ms) | 1.40 / 5.36 |
 | build and check (s) | 0.1 |
 | database with WAL | 0.8 MiB |
-| cold start p50 / p95 (ms) | 3.33 / 4.20 |
+| cold start p50 / p95 (ms) | 4.78 / 5.05 |
 | response bytes p95 | 982 B (~246 tokens) |
 | response bytes max | 189,320 B (~47,330 tokens) |
 
@@ -67,35 +67,35 @@ search and retrieve, over the queries with text:
 
 | Category | Queries | Recall@5 | Recall@10 | MRR | nDCG@10 | Non-relevant in top 10 | No-answer returned | Obsolete | Exposure | Errors | Duplicates | Fetches needed | Pages (partial) | Latency p50 / p95 (ms) | Bytes per response p50 / p95 / max |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| overall | 42 | 0.618 | 0.618 | 0.588 | 0.596 | 1.29 | 0.000 | 0 | 0 | 0 | 1 | 0 | 41 (3) | 0.37 / 9.60 | 472 / 5265 / 189320 |
-| exact | 4 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 4 (0) | 0.23 / 0.38 | 472 / 500 / 500 |
-| paraphrase | 7 | 0.000 | 0.000 | 0.000 | 0.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 7 (0) | 0.22 / 0.45 | 56 / 56 / 56 |
-| correction | 5 | 0.400 | 0.400 | 0.400 | 0.400 | 2.00 | — | 0 | 0 | 0 | 0 | 0 | 5 (0) | 0.56 / 7.31 | 467 / 5235 / 5235 |
-| historical | 2 | 0.500 | 0.500 | 0.500 | 0.500 | 5.00 | — | 0 | 0 | 0 | 0 | 0 | 2 (0) | 0.69 / 10.62 | 920 / 5235 / 5235 |
-| lifecycle | 4 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 4 (0) | 0.42 / 1.02 | 480 / 485 / 485 |
-| distractor | 5 | 0.800 | 0.800 | 0.600 | 0.652 | 2.80 | — | 0 | 0 | 0 | 0 | 0 | 5 (0) | 0.48 / 12.51 | 897 / 5295 / 5295 |
-| cross-namespace | 4 | 0.667 | 0.667 | 0.667 | 0.667 | 3.33 | — | 0 | 0 | 0 | 0 | 0 | 3 (0) | 0.49 / 12.00 | 481 / 5265 / 5265 |
-| sparse-filter | 1 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 4 (3) | 0.22 / 0.40 | 282 / 921 / 921 |
-| large-content | 1 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 1 (0) | 0.85 / 1.17 | 189320 / 189320 / 189320 |
-| no-answer | 4 | 0.000 | 0.000 | 0.000 | 0.000 | 0.00 | 0.000 | 0 | 0 | 0 | 0 | 0 | 4 (0) | 0.21 / 0.29 | 56 / 56 / 56 |
-| duplicate | 2 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 1 | 0 | 2 (0) | 0.51 / 0.81 | 820 / 821 / 821 |
+| overall | 42 | 0.618 | 0.618 | 0.588 | 0.596 | 1.29 | 0.000 | 0 | 0 | 0 | 1 | 0 | 41 (3) | 0.44 / 12.30 | 472 / 5265 / 189320 |
+| exact | 4 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 4 (0) | 0.29 / 0.52 | 472 / 500 / 500 |
+| paraphrase | 7 | 0.000 | 0.000 | 0.000 | 0.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 7 (0) | 0.23 / 0.37 | 56 / 56 / 56 |
+| correction | 5 | 0.400 | 0.400 | 0.400 | 0.400 | 2.00 | — | 0 | 0 | 0 | 0 | 0 | 5 (0) | 0.45 / 10.15 | 467 / 5235 / 5235 |
+| historical | 2 | 0.500 | 0.500 | 0.500 | 0.500 | 5.00 | — | 0 | 0 | 0 | 0 | 0 | 2 (0) | 0.94 / 13.05 | 920 / 5235 / 5235 |
+| lifecycle | 4 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 4 (0) | 0.77 / 1.21 | 480 / 485 / 485 |
+| distractor | 5 | 0.800 | 0.800 | 0.600 | 0.652 | 2.80 | — | 0 | 0 | 0 | 0 | 0 | 5 (0) | 0.87 / 18.18 | 897 / 5295 / 5295 |
+| cross-namespace | 4 | 0.667 | 0.667 | 0.667 | 0.667 | 3.33 | — | 0 | 0 | 0 | 0 | 0 | 3 (0) | 0.68 / 17.43 | 481 / 5265 / 5265 |
+| sparse-filter | 1 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 4 (3) | 0.22 / 0.42 | 282 / 921 / 921 |
+| large-content | 1 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 1 (0) | 0.93 / 1.52 | 189320 / 189320 / 189320 |
+| no-answer | 4 | 0.000 | 0.000 | 0.000 | 0.000 | 0.00 | 0.000 | 0 | 0 | 0 | 0 | 0 | 4 (0) | 0.26 / 0.34 | 56 / 56 / 56 |
+| duplicate | 2 | 1.000 | 1.000 | 1.000 | 1.000 | 0.00 | — | 0 | 0 | 0 | 1 | 0 | 2 (0) | 0.67 / 0.81 | 820 / 821 / 821 |
 | error | 3 | 0.000 | 0.000 | 0.000 | 0.000 | 0.00 | — | 0 | 0 | 0 | 0 | 0 | 0 (0) | 0.00 / 0.00 | 0 / 0 / 0 |
 
 search and retrieve, over the queries with text:
 
 | Operation | Queries | Recall@10 | MRR | Obsolete | Exposure | Errors | Fetches needed | Fetches per answerable query | Pages (partial) | Latency p50 / p95 (ms) | Bytes per response p50 / p95 / max | Large-content bytes max |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| search | 41 | 0.606 | 0.576 | 0 | 0 | 0 | 0 | 0.000 | 37 (0) | 0.40 / 10.00 | 480 / 5295 / 189320 | 189,320 |
-| retrieve | 41 | 0.606 | 0.576 | 0 | 0 | 0 | 1 | 0.030 | 37 (0) | 0.44 / 11.75 | 486 / 5395 / 5395 | 1,157 |
+| search | 41 | 0.606 | 0.576 | 0 | 0 | 0 | 0 | 0.000 | 37 (0) | 0.52 / 12.82 | 480 / 5295 / 189320 | 189,320 |
+| retrieve | 41 | 0.606 | 0.576 | 0 | 0 | 0 | 1 | 0.030 | 37 (0) | 0.98 / 18.59 | 486 / 5395 / 5395 | 1,157 |
 
 | Cost | Value |
 | --- | --- |
 | memories written | 10,072 |
-| create p50 / p95 (ms) | 2.61 / 6.96 |
-| lifecycle step p50 / p95 (ms) | 6.30 / 12.79 |
-| build and check (s) | 34.1 |
+| create p50 / p95 (ms) | 3.49 / 8.52 |
+| lifecycle step p50 / p95 (ms) | 11.32 / 22.80 |
+| build and check (s) | 44.3 |
 | database with WAL | 15.8 MiB |
-| cold start p50 / p95 (ms) | 22.79 / 48.88 |
+| cold start p50 / p95 (ms) | 42.17 / 44.58 |
 | response bytes p95 | 5,265 B (~1,317 tokens) |
 | response bytes max | 189,320 B (~47,330 tokens) |
 
