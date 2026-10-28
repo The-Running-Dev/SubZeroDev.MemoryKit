@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { describe, it } from 'node:test';
 import { EMBEDDED_PRINCIPAL } from '../src/access/index.ts';
 import {
@@ -231,6 +232,86 @@ describe('retrieve', () => {
       assert.equal(new Set(all.flatMap((page) => page.items.map((item) => item.id))).size, 12);
     } finally {
       await service.close();
+    }
+  });
+});
+
+describe('S17 stemmed index', () => {
+  const count = (db: DatabaseSync, sql: string, ...params: string[]) =>
+    (db.prepare(sql).get(...params) as { n: number }).n;
+
+  it('S17.5 a purge leaves no row in either full-text table', async () => {
+    const { store, client } = await newStore();
+    const gone = await client.create({ namespace: 'demo', kind: 'note', content: 'lighthouse' });
+    const kept = await client.create({ namespace: 'demo', kind: 'note', content: 'lighthouse' });
+    await client.purge({ id: gone.memory.id, expectedRevision: 1 });
+    await client.close();
+    const db = new DatabaseSync(join(store, DATABASE_FILE));
+    try {
+      for (const table of ['memories_fts', 'memories_stem']) {
+        const rows = `SELECT count(*) AS n FROM ${table} WHERE id = ?`;
+        assert.equal(count(db, rows, gone.memory.id), 0, table);
+        assert.equal(count(db, rows, kept.memory.id), 1, table);
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+  it('S17.5 the migration fills the stemmed index with every indexed memory', async () => {
+    const { store, client } = await newStore();
+    for (let i = 0; i < 7; i++) {
+      await client.create({ namespace: 'demo', kind: 'note', content: `lighthouse ${i}` });
+    }
+    await client.close();
+    const path = join(store, DATABASE_FILE);
+    const db = new DatabaseSync(path);
+    db.exec('DROP TABLE memories_stem; PRAGMA user_version = 3');
+    db.close();
+
+    const reopened = await openStore({ path: store, history: NO_HISTORY });
+    try {
+      assert.equal((await reopened.retrieve({ text: 'lighthouses', limit: 50 })).items.length, 7);
+    } finally {
+      await reopened.close();
+    }
+    const check = new DatabaseSync(path);
+    try {
+      const indexed = count(check, 'SELECT count(*) AS n FROM memories_fts');
+      assert.equal(indexed, 7);
+      assert.equal(count(check, 'SELECT count(*) AS n FROM memories_stem'), indexed);
+      assert.equal(
+        count(
+          check,
+          'SELECT count(*) AS n FROM memories_fts f JOIN memories_stem s ON s.rowid = f.rowid AND s.id = f.id'
+        ),
+        indexed
+      );
+    } finally {
+      check.close();
+    }
+  });
+
+  it('S17.2 later pages keep the cut of the first page', async () => {
+    const { client } = await newStore();
+    try {
+      for (let i = 0; i < 4; i++) {
+        await client.create({ namespace: 'demo', kind: 'note', content: `lighthouse beacon ${i}` });
+        await client.create({
+          namespace: 'demo',
+          kind: 'note',
+          content: `lighthouse ${'filler '.repeat(300)}${i}`,
+        });
+      }
+      const query = { text: 'lighthouse beacon' };
+      const whole = (await client.retrieve({ ...query, limit: 50 })).items.map((item) => item.id);
+      assert.equal(whole.length, 4, 'the cut drops the weak matches');
+      const paged = (await pages(client, { ...query, limit: 1 })).flatMap((page) =>
+        page.items.map((item) => item.id)
+      );
+      assert.deepEqual(paged, whole);
+    } finally {
+      await client.close();
     }
   });
 });

@@ -129,7 +129,15 @@ export interface SearchResult {
 // the scope, state and kind filters. A page that reaches it is partial / scan_budget, with a cursor after the last row
 // examined. It does not bound time, nor the FTS match itself: SQLite still ranks every match of the text before the first
 // candidate. No time budget is enforced, and time_budget is never produced.
-// S15. Same filters, authorization, order and paging as search; text is required.
+// S15. Same filters, authorization and paging as search; text is required.
+// S17. Matching and order differ from search. retrieve takes the query's distinct words, drops common English stopwords
+// unless nothing else is left, and matches a memory that holds any of them in a second FTS5 index under the Porter
+// stemmer (`porter unicode61 remove_diacritics 2`), so `lighthouses` finds `lighthouse`. Matches are ranked by BM25,
+// then id. The precision rule keeps a memory only when it holds at least half of those words
+// and its score is at least 0.35 times the best score kept by the first page; the cursor carries that best score, so
+// later pages apply the same cut, and the scan ends at the first row below it. The index query drops memories holding
+// fewer than half the words, so they are not candidates and do not count towards the scan budget. A no-answer question
+// that shares half its words with a memory still returns it: the rule is lexical.
 // Fixed bounds, all ValidationFailed: limit default 10, at most min(50, maxPageSize); excerptChars default 280, at most 1000.
 export interface RetrieveQuery extends Omit<SearchQuery, 'text'> { text: string; excerptChars?: number }
 export interface RetrievedItem {
@@ -138,7 +146,7 @@ export interface RetrievedItem {
   excerpt: { text: string; truncated: boolean };         // content only, at most excerptChars code points, around the first term the index matched in it
   evidence: { refs: string[]; omitted: number };         // at most 5 refs of at most 256 chars; longer or later refs are counted
   supersededBy: { ids: MemoryId[]; omitted: number };    // at most 8 readable ids
-  match: { score: number; terms: string[] };             // terms: the query's distinct terms; score is a BM25 rank, higher is better, comparable within one result only
+  match: { score: number; terms: string[] };             // terms: the query words this memory matched, after stopwords; score is a BM25 rank, higher is better, comparable within one result only
 }
 export interface RetrieveResult {                        // as compact JSON, never more than 65,536 bytes; a page ends early with a cursor to the next item
   items: RetrievedItem[]; nextCursor: string | null;
@@ -396,6 +404,7 @@ CREATE TABLE links (
 CREATE INDEX links_target ON links(target, type);
 
 CREATE VIRTUAL TABLE memories_fts USING fts5(id UNINDEXED, kind, content, metadata_text, tokenize = 'unicode61 remove_diacritics 2');
+CREATE VIRTUAL TABLE memories_stem USING fts5(id UNINDEXED, kind, content, metadata_text, tokenize = 'porter unicode61 remove_diacritics 2'); -- schema 4; retrieve's index, same rowid as memories_fts
 
 CREATE TABLE namespaces (name TEXT PRIMARY KEY, history_policy TEXT NOT NULL CHECK (history_policy IN ('full','metadata','none')), created_at TEXT NOT NULL) STRICT;
 
@@ -425,8 +434,9 @@ CREATE TABLE tokens (token_id TEXT PRIMARY KEY, principal_id TEXT NOT NULL, gran
 
 - `secret_hash` is the SHA-256 of a 32-byte random secret, so a constant-time lookup by hash is safe. The secret is shown once.
 - Outbox `seq` uses `AUTOINCREMENT`, so seqs are never reused after a purge.
-- A purge deletes the `memories` row and its `links` and `memories_fts` rows. It nulls the `payload` of that memory's pending and blocked outbox entries and marks them exported with `history_ref = 'discarded'`, which `operation()` and `lastExportedRef` skip. It nulls stored outcomes that are that memory and drops its id from other outcomes' `related`. It then inserts one `purge` outbox entry, unless the store has no history provider or the namespace policy is `none` and nothing of the memory was exported, and a `purges` row whose `report` holds `{ pendingDiscarded, queued }`. A purge entry queued under policy `none` is recorded as `metadata`. The service derives the `PurgeReport` from that and the purge entry's history status on every call.
-- **Existing data:** migration 2 adds `operations.outcome`; operations recorded by schema 1 replay from the current row. Each migration bumps `user_version` and runs forward-only when the store opens, in one transaction.
+- Every write that changes `memories_fts` makes the same change to `memories_stem`, by rowid, in the same transaction.
+- A purge deletes the `memories` row and its `links`, `memories_fts` and `memories_stem` rows. It nulls the `payload` of that memory's pending and blocked outbox entries and marks them exported with `history_ref = 'discarded'`, which `operation()` and `lastExportedRef` skip. It nulls stored outcomes that are that memory and drops its id from other outcomes' `related`. It then inserts one `purge` outbox entry, unless the store has no history provider or the namespace policy is `none` and nothing of the memory was exported, and a `purges` row whose `report` holds `{ pendingDiscarded, queued }`. A purge entry queued under policy `none` is recorded as `metadata`. The service derives the `PurgeReport` from that and the purge entry's history status on every call.
+- **Existing data:** migration 2 adds `operations.outcome`; operations recorded by schema 1 replay from the current row. Migration 4 creates `memories_stem` and fills it from `memories_fts`. Each migration bumps `user_version` and runs forward-only when the store opens, in one transaction.
 
 ### Git history repository (`<store>/history.git`, bare, branch `main`)
 

@@ -1,7 +1,7 @@
 // Schema 1 (20-contract.md, persisted schemas). Each later migration bumps user_version
 // and runs forward-only, in one transaction, when the store opens.
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export const MIGRATIONS: readonly string[] = [
   `
@@ -53,4 +53,10 @@ CREATE TABLE tokens (token_id TEXT PRIMARY KEY, principal_id TEXT NOT NULL, gran
   // Schema 3: newest first across namespaces, so a listing reads rows in order instead of
   // sorting the table (S16).
   `CREATE INDEX memories_updated ON memories(updated_at DESC, id);`,
+  // Schema 4: the same columns under the Porter stemmer, for retrieve's any-word matching
+  // (S17), filled from the current records. search keeps memories_fts.
+  `
+CREATE VIRTUAL TABLE memories_stem USING fts5(id UNINDEXED, kind, content, metadata_text, tokenize = 'porter unicode61 remove_diacritics 2');
+INSERT INTO memories_stem (rowid, id, kind, content, metadata_text) SELECT rowid, id, kind, content, metadata_text FROM memories_fts;
+`,
 ];

@@ -429,7 +429,8 @@ describe('sdk', () => {
 
     const db = new DatabaseSync(join(path, 'memory.db'));
     db.exec(
-      'DROP INDEX memories_updated; ALTER TABLE operations DROP COLUMN outcome; ' +
+      'DROP TABLE memories_stem; DROP INDEX memories_updated; ' +
+        'ALTER TABLE operations DROP COLUMN outcome; ' +
         'PRAGMA user_version = 1'
     );
     db.close();

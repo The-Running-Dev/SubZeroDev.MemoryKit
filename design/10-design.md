@@ -154,10 +154,11 @@ This covers create, update, archive, supersede, tombstone and restore.
    - The budget bounds rows, not time. SQLite still ranks every match of the text before the first candidate, and no time budget is enforced.
 
 **Retrieve.**
-1. It runs as a search with required text, with the same authorization, filters, order, scan budget and completeness.
-2. Each match becomes a bounded item: identity and state, an excerpt of the content around the first matched term, up to 5 evidence refs, up to 8 readable `supersededBy` ids, the matched terms and a BM25 rank score. Metadata, links, provenance origin and reason are never included.
-3. A page ends before the item that would take the serialized result over 64 KiB, with a cursor that resumes at that item. Every item fits on its own, so the bound never drops one.
-4. The caller fetches whole records with `get`.
+1. It runs as a search with required text, with the same authorization, filters, scan budget and completeness, but over a second full-text index under the Porter stemmer, matching any of the query's words rather than all of them. Common English stopwords are dropped unless nothing else is left. Matches are ranked by BM25, then id.
+2. A precision rule keeps a match only when it holds at least half of the query's words and scores at least 0.35 times the best kept score. The index query applies the share, so rows holding too few words never reach the scan or its budget. The cursor carries that score, so every page applies the same cut, and the scan ends at the first row below it. The rule was chosen on the S14 corpus and confirmed on held-out queries; it is lexical, so a question with no answer that shares half its words with a memory still returns it.
+3. Each match becomes a bounded item: identity and state, an excerpt of the content around the first matched term, up to 5 evidence refs, up to 8 readable `supersededBy` ids, the matched terms and a BM25 rank score. Metadata, links, provenance origin and reason are never included.
+4. A page ends before the item that would take the serialized result over 64 KiB, with a cursor that resumes at that item. Every item fits on its own, so the bound never drops one.
+5. The caller fetches whole records with `get`.
 
 **History.**
 1. Authorise `history`.

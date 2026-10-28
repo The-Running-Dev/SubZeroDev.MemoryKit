@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "about": "Held-out queries for S17 over the memories and steps of corpus.json. Written by hand before any S17 code ran against the corpus, and never used to choose a parameter. Expected results are {ref, revision}, never derived from a search.",
+  "queries": [
+    {
+      "id": "held-para-key-renewal",
+      "category": "paraphrase",
+      "search": { "text": "when do Alpha API keys have to be renewed" },
+      "relevant": [{ "ref": "api-token-ttl", "revision": 1 }]
+    },
+    {
+      "id": "held-para-invoice-backlog",
+      "category": "paraphrase",
+      "search": { "text": "what to do when the invoice queue fills up" },
+      "relevant": [{ "ref": "error-e4012", "revision": 1 }]
+    },
+    {
+      "id": "held-para-schema-signoff",
+      "category": "paraphrase",
+      "search": { "text": "who signs off on billing schema changes" },
+      "relevant": [{ "ref": "owner-billing", "revision": 1 }]
+    },
+    {
+      "id": "held-para-backup-retention",
+      "category": "paraphrase",
+      "search": { "text": "how many days are Alpha database backups retained" },
+      "relevant": [{ "ref": "backup-schedule", "revision": 1 }]
+    },
+    {
+      "id": "held-para-oncall-handover",
+      "category": "paraphrase",
+      "search": { "text": "what time does the Alpha on-call rotation hand over" },
+      "relevant": [{ "ref": "on-call", "revision": 1 }]
+    },
+    {
+      "id": "held-para-log-request-id",
+      "category": "paraphrase",
+      "search": { "text": "does every Alpha log line include the request id" },
+      "relevant": [{ "ref": "log-format", "revision": 1 }]
+    },
+    {
+      "id": "held-para-failover-steps",
+      "category": "paraphrase",
+      "search": { "text": "how do we fail Alpha over to the standby" },
+      "relevant": [{ "ref": "failover-current", "revision": 1 }]
+    },
+    {
+      "id": "held-para-reindex-blocker",
+      "category": "paraphrase",
+      "search": { "text": "what is blocking the Alpha search index migration" },
+      "relevant": [{ "ref": "ticket-alp-1182", "revision": 1 }]
+    },
+    {
+      "id": "held-para-stale-totals",
+      "category": "paraphrase",
+      "search": { "text": "why were checkout totals stale" },
+      "relevant": [{ "ref": "price-cache", "revision": 1 }]
+    },
+
+    {
+      "id": "held-correct-session-engine",
+      "category": "correction",
+      "search": { "text": "which database holds Alpha sessions now" },
+      "relevant": [{ "ref": "db-engine-v2", "revision": 1 }]
+    },
+    {
+      "id": "held-correct-release-afternoon",
+      "category": "correction",
+      "search": { "text": "Alpha release on Tuesday afternoon" },
+      "relevant": [{ "ref": "release-day", "revision": 2 }]
+    },
+    {
+      "id": "held-correct-shared-broker",
+      "category": "correction",
+      "search": { "text": "which message queue do Alpha and Beta share" },
+      "relevant": [{ "ref": "queue-v2", "revision": 1 }]
+    },
+    {
+      "id": "held-correct-staging-name",
+      "category": "correction",
+      "search": { "text": "what is the Alpha staging cluster called after the rename" },
+      "relevant": [{ "ref": "staging-current", "revision": 1 }]
+    },
+
+    {
+      "id": "held-noise-token-expiry",
+      "category": "distractor",
+      "search": { "text": "Alpha token expiry" },
+      "relevant": [{ "ref": "api-token-ttl", "revision": 1 }]
+    },
+    {
+      "id": "held-noise-session-storage",
+      "category": "distractor",
+      "search": { "text": "where Alpha session data is stored" },
+      "relevant": [{ "ref": "db-engine-v2", "revision": 1 }]
+    },
+    {
+      "id": "held-noise-nightly-backups",
+      "category": "distractor",
+      "search": { "text": "nightly Alpha backups" },
+      "relevant": [{ "ref": "backup-schedule", "revision": 1 }]
+    },
+    {
+      "id": "held-noise-e4012-restart",
+      "category": "distractor",
+      "search": { "text": "restart the billing worker after E4012" },
+      "relevant": [{ "ref": "error-e4012", "revision": 1 }]
+    },
+    {
+      "id": "held-noise-release-schedule",
+      "category": "distractor",
+      "search": { "text": "Alpha release schedule" },
+      "relevant": [{ "ref": "release-day", "revision": 2 }]
+    },
+
+    {
+      "id": "held-none-cdn",
+      "category": "no-answer",
+      "search": { "text": "which CDN serves Alpha static assets" },
+      "relevant": []
+    },
+    {
+      "id": "held-none-gamma-owner",
+      "category": "no-answer",
+      "search": { "text": "who owns the Gamma payroll service" },
+      "relevant": []
+    },
+    {
+      "id": "held-none-certificate",
+      "category": "no-answer",
+      "search": { "text": "when does the Alpha TLS certificate expire" },
+      "relevant": []
+    },
+    {
+      "id": "held-none-beta-backups",
+      "category": "no-answer",
+      "search": { "text": "how long are Beta database backups kept" },
+      "relevant": []
+    }
+  ]
+}
