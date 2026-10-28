@@ -23,8 +23,8 @@ Contract version `1`. This file is the source of truth for signatures, schemas a
 17. **service:** A purge reports every boundary as `removed`, `retained`, `not_modified`, `outside_control`, `unsupported` or `failed`. It never reports a boundary removed that it did not remove.
 18. **model:** Log records and errors never include content or metadata values.
 19. **contracts:** No contract type carries a language-specific runtime type. Every value crossing a provider boundary is plain JSON data.
-20. **storage-sqlite:** A stored vector is used only while its memory's revision and the embedder's model id and revision equal those it was computed from. It is written after the record's transaction, never inside it, is never exported to history, and a purge deletes it (S19).
-21. **service:** With no embedder, or one that fails or times out, `retrieve` returns the same items, order, cursors and completeness as lexical retrieval, with `ranking` naming the reason (S20).
+20. **storage-sqlite:** A stored vector is used only while its memory's revision and the embedder's model id, revision and dimensions equal those it was computed from. It is written after the record's transaction, never inside it, is never exported to history, and a purge deletes it (S19).
+21. **service:** With no embedder, or one that fails or times out, `retrieve` without a cursor or with a lexical one returns the same items, order, cursors and completeness as lexical retrieval, with `ranking` naming the reason. A hybrid cursor whose query cannot be embedded fails with `ValidationFailed` (S20).
 
 ## Public surface
 
@@ -144,15 +144,19 @@ export interface SearchResult {
 // storage ranks two lists over the same scope, states, kinds and metadata filters: the lexical list above, and the
 // memories whose current vector is closest to the query by cosine, at or above a similarity floor. Each list is cut to a
 // fixed depth, they are fused, and the fused list is ordered by fused score then id; the cursor carries both. The rule,
-// floor and depth are the ones S18 chose (90-decisions). A memory without a current vector is ranked by the lexical list
-// only. The vector side reads every in-scope vector, so the scan budget does not bound it. Without an embedder, or when
-// it fails or times out, the result is the lexical one and ranking says why.
+// floor, depth and whether a lexical match needs its vector to clear the floor are the ones S18 chose (90-decisions);
+// under such a rule a memory without a current vector is left out, otherwise it is ranked by the lexical list only. The
+// vector side reads every in-scope vector, so the scan budget does not bound it. A memory only the vector list found has
+// no terms, and its excerpt starts at the content's start (S15.2). The service waits for the embedder to open outside
+// embedTimeoutMs. Without an embedder, or when it fails or times out, the result is the lexical one and ranking says why.
+// A cursor names its method: a hybrid cursor whose query cannot be embedded fails with ValidationFailed,
+// details.reason 'cursor_needs_embedder', and the caller restarts without it.
 // Fixed bounds, all ValidationFailed: limit default 10, at most min(50, maxPageSize); excerptChars default 280, at most 1000.
 export interface RetrieveQuery extends Omit<SearchQuery, 'text'> { text: string; excerptChars?: number }
 export interface RetrievedItem {
   id: MemoryId; revision: number; namespace: Namespace; key: string | null; kind: string; state: MemoryState; updatedAt: string;
   contentBytes: number;                                  // UTF-8 length of the whole content
-  excerpt: { text: string; truncated: boolean };         // content only, at most excerptChars code points, around the first term the index matched in it
+  excerpt: { text: string; truncated: boolean };         // content only, at most excerptChars code points, around the first term the index matched in it, else from the start
   evidence: { refs: string[]; omitted: number };         // at most 5 refs of at most 256 chars; longer or later refs are counted
   supersededBy: { ids: MemoryId[]; omitted: number };    // at most 8 readable ids
   match: { score: number; terms: string[]; similarity?: number };   // terms: the query words this memory matched, after stopwords; score is a BM25 rank (the fused rank score when hybrid), higher is better, comparable within one result only; similarity: cosine to the query, hybrid only (S20)
@@ -176,7 +180,7 @@ export interface OperationStatus { operationId: string; memoryId: MemoryId; revi
 export interface StoreStatus {
   contractVersion: 1; storage: ProviderDescriptor; history: ProviderDescriptor | null;
   historyQueue: { pending: number; blocked: { seq: number; operationId: string; error: string } | null; lastError: string | null };
-  vectors: { embedder: EmbedderDescriptor | null; indexed: number; stale: number; lastError: string | null } | null;   // S19; null without an embedder; embedder null until it opens
+  vectors: { embedder: EmbedderDescriptor | null; indexed: number | null; stale: number | null; lastError: string | null } | null;   // S19; null without an embedder; embedder and counts null until it opens
 }
 export interface NamespaceInfo { name: Namespace; historyPolicy: HistoryPolicy }
 export type HistoryPolicy = 'full' | 'metadata' | 'none';
@@ -206,11 +210,13 @@ export interface ServiceConfig {
   limits?: Partial<Limits>; historyWaitMs?: number; operationRetentionDays?: number; drainBudgetMs?: number; maxExportAttempts?: number; defaultHistoryPolicy?: HistoryPolicy;
   embedTimeoutMs?: number;     // S20: query embedding, default 1,000
   indexBatchSize?: number;     // S19: memories per embed call, default 32
+  indexTimeoutMs?: number;     // S19: one document embed call, default 30,000; an abandoned batch writes nothing
+  indexOnWrite?: boolean;      // S19: index after each write, default true; one-shot CLI commands set false
 }
 export class MemoryService {
   constructor(storage: StorageProvider, history: HistoryProvider | null, config?: ServiceConfig, embedder?: Embedder | null);
-  open(): Promise<void>;                          // verifies providers, prunes expired operations, starts a drain and, with an embedder, an index run
-  close(): Promise<void>;                         // waits for a drain or index batch in flight, then closes the providers
+  open(): Promise<void>;                          // verifies providers, prunes expired operations, starts a drain and, with an embedder, opens it and starts an index run; an embedder that fails to open does not fail open (status shows it, the indexer retries); with an embedder and storage without retrieve.hybrid, throws Unsupported
+  close(): Promise<void>;                         // waits for a drain in flight, and for an index batch at most indexTimeoutMs, then closes the providers
   as(principal: Principal): MemoryClient;
 }
 ```
@@ -252,8 +258,8 @@ export interface StorageProvider {
   write<T>(fn: (tx: StorageTransaction) => Promise<T>): Promise<T>;
   get(id: MemoryId, scope: RowScope): Promise<StoredRow | null>;
   supersededBy(ids: MemoryId[]): Promise<Record<MemoryId, MemoryId[]>>;
-  search(query: Required<Pick<SearchQuery, 'states' | 'limit'>> & Omit<SearchQuery, 'namespaces'> & RowScope): Promise<SearchResult>;
-  retrieve(query: Required<Pick<SearchQuery, 'states' | 'limit'>> & Omit<SearchQuery, 'namespaces' | 'text'> & RowScope & { text: string; excerptChars: number; vector?: { model: EmbeddingModel; query: number[] } }): Promise<RetrieveResult>;   // ranking.method 'hybrid' only with vector (S20); the service sets the lexical reason
+  search(query: Required<Pick<SearchQuery, 'states' | 'limit'>> & Omit<SearchQuery, 'namespaces'> & RowScope & { readable: NamespacePattern[] }): Promise<SearchResult>;   // readable bounds supersededBy
+  retrieve(query: Required<Pick<SearchQuery, 'states' | 'limit'>> & Omit<SearchQuery, 'namespaces' | 'text'> & RowScope & { readable: NamespacePattern[]; text: string; excerptChars: number; vector?: { model: EmbeddingModel; query: number[] } }): Promise<Omit<RetrieveResult, 'ranking'> & { hybrid?: true }>;   // hybrid only with vector (S20); the service sets ranking
   operation(principalId: string, operationId: string): Promise<OperationStatus | null>;
   pruneOperations(before: string): Promise<number>;   // removes operations created before the time
   setNamespacePolicy(ns: Namespace, policy: HistoryPolicy): Promise<NamespaceInfo>;
@@ -269,10 +275,10 @@ export interface StorageProvider {
   queue(): Promise<StoreStatus['historyQueue']>;
   // purge
   purge(id: MemoryId, scope: RowScope, request: PurgeRequest): Promise<PurgeOutcome>;   // throws NotFound / RevisionConflict / IdempotencyMismatch
-  // vectors (S19), capability "retrieve.hybrid"; unscoped, for the service's indexer only
-  staleVectors(model: EmbeddingModel, limit: number): Promise<{ id: MemoryId; revision: number; content: string }[]>;   // no vector, or one from another revision or model; least recently updated first
-  putVectors(model: EmbeddingModel, vectors: { id: MemoryId; revision: number; vector: number[] }[]): Promise<number>;   // skips a memory whose revision has moved on or that is purged; returns how many were written
-  vectorCounts(model: EmbeddingModel): Promise<{ indexed: number; stale: number }>;
+  // vectors (S19): required only of a provider declaring "retrieve.hybrid", so existing providers are unchanged; unscoped, for the service's indexer only
+  staleVectors?(model: EmbeddingModel, limit: number): Promise<{ id: MemoryId; revision: number; content: string }[]>;   // no vector, or one from another revision, model id, model revision or dimensions; least recently updated first
+  putVectors?(model: EmbeddingModel, vectors: { id: MemoryId; revision: number; vector: number[] }[]): Promise<number>;   // skips a memory whose revision has moved on or that is purged; returns how many were written
+  vectorCounts?(model: EmbeddingModel): Promise<{ indexed: number; stale: number }>;
 }
 
 export interface HistoryEntry extends OutboxEntry { after: string | null }   // historyRef of the previously exported entry
@@ -293,7 +299,7 @@ export class HistoryProviderError extends MemoryKitError {   // code 'HistoryUna
 export interface EmbeddingModel { id: string; revision: string; dimensions: number }   // revision pins the weights, e.g. a hash of the model file
 export interface EmbedderDescriptor { id: string; version: string; contractVersions: number[]; model: EmbeddingModel; limitations: string[] }   // e.g. "input truncated to 512 tokens"
 export interface Embedder {
-  descriptor(): EmbedderDescriptor;               // valid after open
+  descriptor(): EmbedderDescriptor;               // valid after open; a method, unlike the providers' field, since the model revision is known only once loaded
   open(): Promise<void>; close(): Promise<void>;  // open throws when the model cannot be loaded
   embed(texts: string[], purpose: 'query' | 'document'): Promise<number[][]>;   // one unit-length vector of model.dimensions per text, in order
 }
@@ -409,7 +415,7 @@ Domain errors return `isError: true` with `structuredContent: { code, retryable,
 
 The commands are `init`, `create`, `get`, `update`, `archive`, `restore`, `tombstone`, `supersede`, `purge`, `search`, `retrieve`, `history`, `revision`, `operation`, `status`, `namespace get|set`, `history-sync`, `vectors-sync`, `token create|list|revoke`, `serve` and `mcp` (stdio).
 
-Commands that open a store take `--embedder <none|hash|transformers>`, with `--model <id>`, `--model-dir <dir>` and `--allow-download` for `transformers`, mapping to `StoreConfig.embedder` (S19). `vectors-sync` takes `--budget-ms <n>`.
+Commands that open a store take `--embedder <none|hash|transformers>`, with `--model <id>`, `--model-dir <dir>` and `--allow-download` for `transformers`, mapping to `StoreConfig.embedder` (S19). Only `serve` and `mcp` index after writes; other commands set `indexOnWrite` false and leave indexing to `vectors-sync`, which takes `--budget-ms <n>`.
 
 `create`, `update`, `supersede`, `archive`, `restore` and `tombstone` take `--provenance <json>`, the service's `Provenance` object; the service validates it like any other input. `purge`, `search` and `retrieve` refuse it as a usage error.
 
@@ -486,7 +492,7 @@ CREATE TABLE memory_vectors (                                                   
 - `secret_hash` is the SHA-256 of a 32-byte random secret, so a constant-time lookup by hash is safe. The secret is shown once.
 - Outbox `seq` uses `AUTOINCREMENT`, so seqs are never reused after a purge.
 - Every write that changes `memories_fts` makes the same change to `memories_stem`, by rowid, in the same transaction.
-- One vector row per memory. It counts only while `revision`, `model` and `model_revision` match the memory and the configured embedder; the indexer replaces it otherwise. It is written in its own transaction, after the record's.
+- One vector row per memory. It counts only while `revision`, `model`, `model_revision` and `dimensions` match the memory and the configured embedder; the indexer replaces it otherwise. It is written in its own transaction, after the record's.
 - A purge deletes the `memories` row and its `links`, `memories_fts`, `memories_stem` and `memory_vectors` rows. It nulls the `payload` of that memory's pending and blocked outbox entries and marks them exported with `history_ref = 'discarded'`, which `operation()` and `lastExportedRef` skip. It nulls stored outcomes that are that memory and drops its id from other outcomes' `related`. It then inserts one `purge` outbox entry, unless the store has no history provider or the namespace policy is `none` and nothing of the memory was exported, and a `purges` row whose `report` holds `{ pendingDiscarded, queued }`. A purge entry queued under policy `none` is recorded as `metadata`. The service derives the `PurgeReport` from that and the purge entry's history status on every call.
 - **Existing data:** migration 2 adds `operations.outcome`; operations recorded by schema 1 replay from the current row. Migration 3 adds the `memories_updated` index. Migration 4 creates `memories_stem` and fills it from `memories_fts`. Migration 5 creates `memory_vectors` empty; the indexer fills it when an embedder is configured. Each migration bumps `user_version` and runs forward-only when the store opens, in one transaction.
 

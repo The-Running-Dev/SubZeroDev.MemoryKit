@@ -161,7 +161,7 @@ This covers create, update, archive, supersede, tombstone and restore.
 3. Each match becomes a bounded item: identity and state, an excerpt of the content around the first matched term, up to 5 evidence refs, up to 8 readable `supersededBy` ids, the matched terms and a BM25 rank score. Metadata, links, provenance origin and reason are never included.
 4. A page ends before the item that would take the serialized result over 64 KiB, with a cursor that resumes at that item. Every item fits on its own, so the bound never drops one.
 5. The caller fetches whole records with `get`.
-6. **Hybrid, with an embedder (S20).** The service embeds the text as a query, within `embedTimeoutMs`. Storage ranks a second list over the same scope and filters: memories whose current vector is closest to the query by cosine, at or above a similarity floor, computed exactly in-process. Both lists are cut to a fixed depth and fused, and the fused list is paged by fused score then id. The fusion rule, floor and depth are those S18 measured. A memory without a current vector is ranked lexically only. The vector side reads every in-scope vector, outside the scan budget. With no embedder, an unavailable one or a timeout, steps 1 to 5 run alone and `ranking` says why.
+6. **Hybrid, with an embedder (S20).** The service embeds the text as a query, within `embedTimeoutMs`. Storage ranks a second list over the same scope and filters: memories whose current vector is closest to the query by cosine, at or above a similarity floor, computed exactly in-process. Both lists are cut to a fixed depth and fused, and the fused list is paged by fused score then id. The fusion rule, floor and depth, and whether a lexical match needs its vector to clear the floor, are those S18 measured; plain fusion keeps every lexical match, so only a vector-gated rule can return nothing for a question with no answer. A memory without a current vector is then left out, or ranked lexically under plain fusion. The vector side reads every in-scope vector, outside the scan budget. With no embedder, an unavailable one or a timeout, steps 1 to 5 run alone and `ranking` says why. A cursor names its method; a hybrid cursor that can no longer be embedded fails with `ValidationFailed`, and the caller restarts.
 
 **History.**
 1. Authorise `history`.
@@ -217,7 +217,7 @@ A missing, torn, damaged or foreign index therefore costs one rebuild, never a w
 Only with an embedder configured. Vectors are derived from records and never block or fail a write.
 
 The indexer runs:
-- after each write commits, in the process that wrote;
+- after each write commits, in the process that wrote, when `indexOnWrite` is set (one-shot CLI commands clear it);
 - when the store opens;
 - periodically, with backoff after an error, in the service;
 - on `vectors-sync`.
@@ -226,7 +226,9 @@ The indexer runs:
 2. **Embed.** Call `embed(contents, 'document')`.
 3. **Store.** `putVectors` writes each vector with the revision it was computed from, in one transaction, skipping memories that changed or were purged meanwhile; they stay stale and are picked again.
 4. **On failure.** Back off, keep the memories stale and put the message in status. Retrieval falls back to lexical while the embedder is unavailable.
-5. **Repeat** until nothing is stale or the time budget is spent. `close` waits for the batch in flight only.
+5. **Repeat** until nothing is stale or the time budget is spent. `close` waits for the batch in flight, at most `indexTimeoutMs`; an abandoned batch writes nothing.
+
+An embedder that fails to open does not fail the store's open: status shows the error and the indexer retries it with backoff. With an embedder configured and a storage provider without `retrieve.hybrid`, open fails with `Unsupported`.
 
 Two processes may embed the same memory; the second write is the same vector, so the duplicate costs only time. Changing the model makes every vector stale.
 
