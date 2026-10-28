@@ -127,7 +127,9 @@ export async function gather(dir: string, corpus: Corpus): Promise<Gathered[]> {
         gathered.set(query.id, entry);
         if (base.error !== null) continue;
         const deep = { ...query, search: { ...query.search, limit: DEPTH } };
-        entry.strict = (await execute(client, deep, [], 'retrieve')).items;
+        const strict = await execute(client, deep, [], 'retrieve');
+        if (strict.error !== null) throw new Error(`${query.id} failed at depth: ${strict.error}`);
+        entry.strict = strict.items;
         const filters: SearchQuery = { ...query.search, limit: SEARCH_PAGE };
         delete filters.text;
         let cursor: string | null = null;
@@ -556,7 +558,7 @@ export async function embedReport(
     '',
     '- Fused and vector rules are ranked here, outside retrieve, so their response bytes and latency are not measured; S19 and S20 measure them for the rule they build.',
     `- A vector-only result's excerpt is the first ${DEFAULT_EXCERPT_CHARS} characters of its content, as retrieve shows a memory with no matching word.`,
-    "- Each model's tokenizer truncates text at its maximum length (512 tokens); a longer memory is embedded from its start.",
+    "- Each model's tokenizer truncates text at 512 tokens, and a longer memory is embedded from its start; MiniLM was trained on at most 256.",
     "- A query's vector candidates are every memory its filters, states and grants admit, read through search without text as the query's principal.",
     ''
   );

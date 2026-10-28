@@ -193,6 +193,8 @@ describe('embedding evaluation', () => {
       candidate(0.3, measured(summary(0.95, 0.9, 0)), measured(summary(0.85, 0.9, 0, 0.5))),
     ]);
     assert.equal(heldShort.qualified, true);
+    const lexical = { ...candidate(0.3, measured(summary(0.95, 0.9, 0))), model: null };
+    assert.deepEqual(choose([lexical]).gate.reasons, ['the chosen rule uses no model']);
     assert.deepEqual(heldShort.gate.reasons, [
       'held-out set 1 recall@10 0.850 < 0.90',
       'held-out set 1 no-answer 0.500 > 0.20',

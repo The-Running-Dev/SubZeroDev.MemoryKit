@@ -159,6 +159,8 @@ export function choose(candidates: Candidate[]): Choice {
   if (chosen === undefined) throw new Error('No candidates to choose from');
   const reasons: string[] = [];
   if (qualifying.length === 0) reasons.push('no rule meets every corpus condition');
+  // Lexical alone is the S17 result, not a reason to build anything that embeds.
+  if (chosen.model === null) reasons.push('the chosen rule uses no model');
   chosen.heldout.forEach((set, i) => {
     if (!HELD_RECALL.met(set.overall.recall10)) {
       reasons.push(`held-out set ${i + 1} recall@10 ${set.overall.recall10.toFixed(3)} < 0.90`);

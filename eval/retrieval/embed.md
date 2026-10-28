@@ -527,5 +527,5 @@ Cold start is a new process loading the model and embedding one query, 5 times. 
 
 - Fused and vector rules are ranked here, outside retrieve, so their response bytes and latency are not measured; S19 and S20 measure them for the rule they build.
 - A vector-only result's excerpt is the first 280 characters of its content, as retrieve shows a memory with no matching word.
-- Each model's tokenizer truncates text at its maximum length (512 tokens); a longer memory is embedded from its start.
+- Each model's tokenizer truncates text at 512 tokens, and a longer memory is embedded from its start; MiniLM was trained on at most 256.
 - A query's vector candidates are every memory its filters, states and grants admit, read through search without text as the query's principal.
