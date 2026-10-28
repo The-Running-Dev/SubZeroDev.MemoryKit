@@ -518,7 +518,8 @@
       "id": "reject-limit",
       "category": "error",
       "search": { "text": "Alpha", "limit": 101 },
-      "error": "LimitExceeded"
+      "error": "LimitExceeded",
+      "retrieveError": "ValidationFailed"
     },
     {
       "id": "reject-state",

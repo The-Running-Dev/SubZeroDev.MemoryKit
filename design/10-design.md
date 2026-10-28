@@ -151,6 +151,12 @@ This covers create, update, archive, supersede, tombstone and restore.
    - `complete`: every match is in this page or reachable through `nextCursor`.
    - `partial`: the budget stopped the search, so matches may be missing. A reason is given.
 
+**Retrieve.**
+1. It runs as a search with required text, with the same authorization, filters, order, scan budget and completeness.
+2. Each match becomes a bounded item: identity and state, an excerpt of the content around the first matched term, up to 5 evidence refs, up to 8 readable `supersededBy` ids, the matched terms and a BM25 rank score. Metadata, links, provenance origin and reason are never included.
+3. A page ends before the item that would take the serialized result over 64 KiB, with a cursor that resumes at that item. Every item fits on its own, so the bound never drops one.
+4. The caller fetches whole records with `get`.
+
 **History.**
 1. Authorise `history`.
 2. Storage confirms the memory is visible to the caller, including when it is tombstoned.

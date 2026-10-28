@@ -20,6 +20,8 @@ import {
   type MemoryState,
   type Permission,
   type Provenance,
+  type RetrieveQuery,
+  type RetrieveResult,
   type SearchQuery,
   type SearchResult,
 } from '../model/index.ts';
@@ -85,6 +87,10 @@ Commands:
   search --store <dir> [--text <words>] [--namespace <pattern>]... [--kind <kind>]...
          [--state <state>]... [--metadata <json>] [--limit <n>] [--cursor <cursor>]
                                    Find memories; every filter given must match
+  retrieve --store <dir> --text <words> [--namespace <pattern>]... [--kind <kind>]...
+         [--state <state>]... [--metadata <json>] [--limit <n>] [--excerpt-chars <n>]
+         [--cursor <cursor>]
+                                   Find memories as compact items with excerpts
   history <id> --store <dir>        List the revisions history holds
   revision <id> <n> --store <dir>   Show one revision from history
   operation <operation-id> --store <dir>
@@ -133,6 +139,7 @@ const OPTIONS = {
   state: { type: 'string', multiple: true },
   limit: { type: 'string' },
   cursor: { type: 'string' },
+  'excerpt-chars': { type: 'string' },
   url: { type: 'string' },
   'token-env': { type: 'string' },
   listen: { type: 'string' },
@@ -238,6 +245,15 @@ function searchQuery(values: Values): SearchQuery {
   return query;
 }
 
+// text stays optional here so the service reports a missing one as ValidationFailed.
+function retrieveQuery(values: Values): RetrieveQuery {
+  const query = searchQuery(values) as RetrieveQuery;
+  if (values['excerpt-chars'] !== undefined) {
+    query.excerptChars = parseLimit(values['excerpt-chars']);
+  }
+  return query;
+}
+
 // The fields of a new memory, for create and for a supersede's replacement.
 function newMemory(values: Values): Omit<CreateInput, 'namespace'> {
   const input: Omit<CreateInput, 'namespace'> = {
@@ -287,6 +303,30 @@ function formatSearch(result: SearchResult): string {
       first.length > SUMMARY_LENGTH ? `${first.slice(0, SUMMARY_LENGTH - 3)}...` : first;
     return `${item.id}  ${item.namespace}  ${item.kind}  ${item.state}  ${summary}\n`;
   });
+  if (lines.length === 0) lines.push('No memories found\n');
+  if (result.completeness === 'partial') {
+    lines.push(`results may be incomplete (${result.partialReason})\n`);
+  }
+  if (result.nextCursor !== null) lines.push(`next cursor: ${result.nextCursor}\n`);
+  return lines.join('');
+}
+
+function formatRetrieve(result: RetrieveResult): string {
+  const lines: string[] = [];
+  for (const item of result.items) {
+    const score = item.match.score.toFixed(3);
+    lines.push(`${item.id}  ${item.namespace}  ${item.kind}  ${item.state}  score ${score}\n`);
+    const excerpt = item.excerpt.text.replace(/\s+/gu, ' ').trim();
+    lines.push(`  ${excerpt}${item.excerpt.truncated ? ' ...' : ''}\n`);
+    if (item.evidence.refs.length > 0 || item.evidence.omitted > 0) {
+      const more = item.evidence.omitted > 0 ? ` (+${item.evidence.omitted} more)` : '';
+      lines.push(`  evidence: ${item.evidence.refs.join(', ')}${more}\n`);
+    }
+    if (item.supersededBy.ids.length > 0 || item.supersededBy.omitted > 0) {
+      const more = item.supersededBy.omitted > 0 ? ` (+${item.supersededBy.omitted} more)` : '';
+      lines.push(`  superseded by: ${item.supersededBy.ids.join(', ')}${more}\n`);
+    }
+  }
   if (lines.length === 0) lines.push('No memories found\n');
   if (result.completeness === 'partial') {
     lines.push(`results may be incomplete (${result.partialReason})\n`);
@@ -640,9 +680,30 @@ export async function run(
           'budget-ms',
         ].find((name) => values[name as keyof Values] !== undefined);
         if (flag !== undefined) throw new UsageError(`search does not take --${flag}`);
+        if (values['excerpt-chars'] !== undefined) {
+          throw new UsageError('search does not take --excerpt-chars');
+        }
         const query = searchQuery(values);
         const result = await withStore(values, deps, (client) => client.search(query));
         print(result, formatSearch(result));
+        return EXIT_OK;
+      }
+      case 'retrieve': {
+        only(rest, 0, 'no positional arguments for retrieve');
+        const flag = [
+          'key',
+          'content',
+          'content-type',
+          'link',
+          'provenance',
+          'operation-id',
+          'expected-revision',
+          'budget-ms',
+        ].find((name) => values[name as keyof Values] !== undefined);
+        if (flag !== undefined) throw new UsageError(`retrieve does not take --${flag}`);
+        const query = retrieveQuery(values);
+        const result = await withStore(values, deps, (client) => client.retrieve(query));
+        print(result, formatRetrieve(result));
         return EXIT_OK;
       }
       case 'history': {

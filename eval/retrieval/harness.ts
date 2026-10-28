@@ -1,5 +1,6 @@
 // Retrieval evaluation (S14). Builds a store from the synthetic corpus, runs its queries through
-// the SDK and scores the results against the corpus's hand-written expectations.
+// the SDK and scores the results against the corpus's hand-written expectations. Each query with
+// text also runs through retrieve (S15), scored the same way.
 //
 // Ideas taken from QMD at 86d2365d17fc682e491c2c53d1e4a884aee8682a (test/eval-harness.ts):
 // expected results are exact ids, a failed query is never scored as an empty result, and hit
@@ -10,6 +11,7 @@ import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import {
   EMBEDDED_PRINCIPAL,
+  MAX_RETRIEVE_BYTES,
   MemoryService,
   SqliteStorage,
   type Grant,
@@ -17,8 +19,8 @@ import {
   type MemoryClient,
   type MemoryId,
   type MemoryKitError,
-  type MemoryRecord,
   type MemoryState,
+  type RetrieveResult,
   type SearchQuery,
   type SearchResult,
 } from '../../src/index.ts';
@@ -60,6 +62,7 @@ export interface QuerySpec {
   search: SearchQuery;
   relevant?: Expected[];
   error?: string; // the code the query must fail with
+  retrieveError?: string; // the code retrieve fails with, where it differs from error
   paginate?: boolean; // follow every cursor and score the pages as one list
   scanBudget?: number; // run against storage opened with this scan budget
 }
@@ -357,8 +360,39 @@ export interface QueryScore {
   latencies: number[]; // ms per successful search call
 }
 
+export type Operation = 'search' | 'retrieve';
+
+// A result as scoring sees it. search returns the whole content; retrieve returns an excerpt.
+interface Row {
+  id: MemoryId;
+  revision: number;
+  content: string;
+  complete: boolean; // content is the whole stored content
+  supersededBy: MemoryId[];
+}
+
+function searchRows(page: SearchResult): Row[] {
+  return page.items.map((record) => ({
+    id: record.id,
+    revision: record.revision,
+    content: record.content,
+    complete: true,
+    supersededBy: record.supersededBy ?? [],
+  }));
+}
+
+function retrieveRows(page: RetrieveResult): Row[] {
+  return page.items.map((item) => ({
+    id: item.id,
+    revision: item.revision,
+    content: item.excerpt.text,
+    complete: !item.excerpt.truncated,
+    supersededBy: item.supersededBy.ids,
+  }));
+}
+
 interface Execution {
-  items: MemoryRecord[];
+  items: Row[];
   pages: number;
   partialPages: number;
   bytes: number[];
@@ -366,17 +400,31 @@ interface Execution {
 }
 
 // A query without its own limit runs at the top 10, the page size the thresholds are judged at.
-async function execute(client: MemoryClient, query: QuerySpec, samples: number[]) {
+async function execute(
+  client: MemoryClient,
+  query: QuerySpec,
+  samples: number[],
+  operation: Operation
+) {
   const run: Execution = { items: [], pages: 0, partialPages: 0, bytes: [], error: null };
   const base: SearchQuery = { limit: TOP, ...query.search };
   try {
     let cursor: string | null = null;
     do {
       if (run.pages === MAX_PAGES) throw new Error(`More than ${MAX_PAGES} pages`);
+      const next = cursor === null ? base : { ...base, cursor };
       const start = performance.now();
-      const page: SearchResult = await client.search(cursor === null ? base : { ...base, cursor });
+      let page: SearchResult | RetrieveResult;
+      if (operation === 'search') {
+        const found = await client.search(next);
+        page = found;
+        run.items.push(...searchRows(found));
+      } else {
+        const found = await client.retrieve({ ...next, text: next.text ?? '' });
+        page = found;
+        run.items.push(...retrieveRows(found));
+      }
       samples.push(performance.now() - start);
-      run.items.push(...page.items);
       run.pages++;
       if (page.completeness === 'partial') run.partialPages++;
       run.bytes.push(Buffer.byteLength(JSON.stringify(page), 'utf8'));
@@ -410,6 +458,7 @@ export function rankMetrics(hits: boolean[], relevant: number) {
 
 function score(
   query: QuerySpec,
+  expectedError: string | undefined,
   run: Execution,
   latencies: number[],
   built: Built,
@@ -418,7 +467,7 @@ function score(
   const expected = query.relevant ?? [];
   // Each expected result counts once, so a repeated item cannot lift recall.
   const unmatched = [...expected];
-  const isHit = (item: MemoryRecord) => {
+  const isHit = (item: Row) => {
     const i = unmatched.findIndex(
       ({ ref, revision }) => built.ids.get(ref) === item.id && item.revision === revision
     );
@@ -428,13 +477,13 @@ function score(
   let outcome: Outcome;
   if (run.error !== null) {
     outcome =
-      query.error === undefined
+      expectedError === undefined
         ? 'unexpected-error'
-        : run.error === query.error
+        : run.error === expectedError
           ? 'expected-error'
           : 'wrong-error';
   } else {
-    outcome = query.error === undefined ? 'ok' : 'no-error';
+    outcome = expectedError === undefined ? 'ok' : 'no-error';
   }
 
   const items = run.items;
@@ -456,12 +505,12 @@ function score(
     }
     if (item.revision !== entry.revision || (current && entry.state !== 'active')) obsolete++;
     if (!readable(grants, entry.namespace)) exposure++;
-    for (const other of item.supersededBy ?? []) {
+    for (const other of item.supersededBy) {
       const otherRef = built.refs.get(other);
       const otherEntry = otherRef === undefined ? undefined : built.model.get(otherRef);
       if (otherEntry === undefined || !readable(grants, otherEntry.namespace)) exposure++;
     }
-    if (hits[i] && item.content !== entry.content) fetches++;
+    if (hits[i] && (!item.complete || item.content !== entry.content)) fetches++;
     if (i < TOP) {
       if (seen.has(item.content)) duplicates++;
       seen.add(item.content);
@@ -519,31 +568,40 @@ async function withClient<T>(
   }
 }
 
+// The queries an operation runs: retrieve requires text, so it skips a query without any.
+export function queriesFor(corpus: Corpus, operation: Operation): QuerySpec[] {
+  return corpus.queries.filter((q) => operation === 'search' || q.search.text !== undefined);
+}
+
 // Runs every query `repeat` times; the first run is scored and every run adds latency samples.
 export async function runQueries(
   dir: string,
   corpus: Corpus,
   built: Built,
-  repeat = 1
+  repeat = 1,
+  operation: Operation = 'search'
 ): Promise<QueryScore[]> {
-  const budgets = [...new Set(corpus.queries.map((query) => query.scanBudget))];
+  const queries = queriesFor(corpus, operation);
+  const budgets = [...new Set(queries.map((query) => query.scanBudget))];
   const scores = new Map<string, QueryScore>();
   for (const budget of budgets) {
     await withClient(dir, corpus, budget, async (clientFor) => {
-      for (const query of corpus.queries.filter((q) => q.scanBudget === budget)) {
+      for (const query of queries.filter((q) => q.scanBudget === budget)) {
         const client = clientFor(query.principal);
         const latencies: number[] = [];
-        const first = await execute(client, query, latencies);
+        const first = await execute(client, query, latencies, operation);
         for (let i = 1; i < repeat && first.error === null; i++) {
-          await execute(client, query, latencies);
+          await execute(client, query, latencies, operation);
         }
         const grants =
           query.principal === undefined ? null : (corpus.principals[query.principal] ?? []);
-        scores.set(query.id, score(query, first, latencies, built, grants));
+        const expectedError =
+          operation === 'retrieve' ? (query.retrieveError ?? query.error) : query.error;
+        scores.set(query.id, score(query, expectedError, first, latencies, built, grants));
       }
     });
   }
-  return corpus.queries.map((query) => scores.get(query.id)!);
+  return queries.map((query) => scores.get(query.id)!);
 }
 
 // Open plus the first search, in this process, repeated on a closed store.
@@ -654,10 +712,12 @@ export function quality(scores: QueryScore[]) {
 
 export type Quality = ReturnType<typeof quality>;
 
-// Recorded in 90-decisions.md (2026-10-27) before the first run; never adjusted after one.
+// Recorded in 90-decisions.md (2026-10-27) before the first run; never adjusted after one. The
+// retrieve thresholds are S15.7's: the S14 size target, and the S15.4 bound on every response.
 export interface Threshold {
   name: string;
   kind: 'hard' | 'target';
+  operation?: Operation; // the operation whose results are judged; search when absent
   filler: number; // the filler count the threshold is judged at
   limit: string;
   value: (overall: Summary, categories: Map<string, Summary>, cold: Timing) => number;
@@ -683,4 +743,6 @@ export const THRESHOLDS: Threshold[] = [
   { name: 'search p95 (ms)', kind: 'target', filler: 10_000, limit: '≤ 50', value: (o) => o.latency.p95, met: (v) => v <= 50 },
   { name: 'response bytes p95', kind: 'target', filler: 10_000, limit: '≤ 32 KiB', value: (o) => o.bytes.p95, met: (v) => v <= 32 * 1024 },
   { name: 'cold start p95 (ms)', kind: 'target', filler: 10_000, limit: '≤ 500', value: (_o, _c, cold) => cold.p95, met: (v) => v <= 500 },
+  { name: 'retrieve response bytes p95', kind: 'target', operation: 'retrieve', filler: 10_000, limit: '≤ 32 KiB', value: (o) => o.bytes.p95, met: (v) => v <= 32 * 1024 },
+  { name: 'retrieve large-content response bytes', kind: 'hard', operation: 'retrieve', filler: 10_000, limit: '≤ 64 KiB', value: (_o, c) => category(c, 'large-content').bytes.max, met: (v) => v <= MAX_RETRIEVE_BYTES },
 ]; // prettier-ignore

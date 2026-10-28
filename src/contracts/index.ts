@@ -10,6 +10,7 @@ import {
   type Namespace,
   type NamespacePattern,
   type Operation,
+  type RetrieveResult,
   type SearchQuery,
   type SearchResult,
 } from '../model/index.ts';
@@ -90,6 +91,8 @@ export interface RowScope {
 export type StorageSearch = Required<Pick<SearchQuery, 'states' | 'limit'>> &
   Omit<SearchQuery, 'namespaces'> &
   RowScope & { readable: NamespacePattern[] };
+// A retrieve as storage runs it, with the same scope and defaults as a search.
+export type StorageRetrieve = StorageSearch & { text: string; excerptChars: number };
 export interface StoredRow {
   record: Omit<MemoryRecord, 'supersededBy'>;
 }
@@ -166,6 +169,9 @@ export interface StorageProvider {
   // Only replacements in the scope, so a read never names a memory the caller cannot read.
   supersededBy(ids: MemoryId[], scope: RowScope): Promise<Record<MemoryId, MemoryId[]>>;
   search(query: StorageSearch): Promise<SearchResult>;
+  // Search's rows in search's order, as compact items, in a result of at most
+  // MAX_RETRIEVE_BYTES serialized.
+  retrieve(query: StorageRetrieve): Promise<RetrieveResult>;
   operation(principalId: string, operationId: string): Promise<OperationStatus | null>;
   pruneOperations(before: string): Promise<number>; // removes operations created before the time
   setNamespacePolicy(ns: Namespace, policy: HistoryPolicy): Promise<NamespaceInfo>;

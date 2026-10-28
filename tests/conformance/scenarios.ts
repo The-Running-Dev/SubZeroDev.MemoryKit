@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { newMemoryId } from '../../src/model/index.ts';
+import { newMemoryId, type RetrievedItem } from '../../src/model/index.ts';
 import { tempDir } from '../helpers.ts';
 import type { Driver, Result } from './driver.ts';
 
@@ -310,6 +310,160 @@ export const SCENARIOS: Scenario[] = [
       problem(
         await driver.search(store, { text: 'fog', cursor: first.nextCursor }),
         'ValidationFailed'
+      );
+    },
+  },
+  {
+    name: 'S15 retrieve returns compact bounded items in search order',
+    async run(driver) {
+      const store = tempDir();
+      value(await driver.init(store));
+      const long = 'r'.repeat(257);
+      const created = value(
+        await driver.create(store, {
+          namespace: 'demo',
+          key: 'keeper',
+          kind: 'note',
+          content: `${'calm sea. '.repeat(40)}the lighthouse keeper rows ashore`,
+          metadata: { secret: 'harbour' },
+          provenance: {
+            reason: 'never returned',
+            evidence: ['e1', long, 'e2', 'e3', 'e4', 'e5', 'e6'].map((ref) => ({ ref })),
+          },
+        })
+      );
+      const keeper = created.memory as Record<string, unknown>;
+      const other = value(
+        await driver.create(store, { namespace: 'demo', kind: 'lesson', content: 'a lighthouse' })
+      ).memory as Record<string, unknown>;
+      const replaced = value(
+        await driver.supersede(store, {
+          id: other.id,
+          expectedRevision: 1,
+          replacement: { kind: 'lesson', content: 'the lighthouse, rebuilt' },
+        })
+      ).memory as Record<string, unknown>;
+
+      const query = { text: 'lighthouse', states: ['active', 'superseded'] };
+      const searched = value(await driver.search(store, query));
+      const result = value(await driver.retrieve(store, { ...query, excerptChars: 60 }));
+      assert.deepEqual(Object.keys(result).sort(), ['completeness', 'items', 'nextCursor']);
+      const items = result.items as RetrievedItem[];
+      assert.equal(items.length, 3);
+      assert.deepEqual(
+        items.map((item) => item.id),
+        (searched.items as Record<string, unknown>[]).map((item) => item.id)
+      );
+      const item = items.find((candidate) => candidate.id === keeper.id)!;
+      assert.deepEqual(Object.keys(item).sort(), [
+        'contentBytes',
+        'evidence',
+        'excerpt',
+        'id',
+        'key',
+        'kind',
+        'match',
+        'namespace',
+        'revision',
+        'state',
+        'supersededBy',
+        'updatedAt',
+      ]);
+      assert.equal(item.key, 'keeper');
+      assert.equal(item.contentBytes, (keeper.content as string).length);
+      assert.equal(item.excerpt.truncated, true);
+      assert.ok(Array.from(item.excerpt.text as string).length <= 60);
+      assert.match(item.excerpt.text, /lighthouse keeper/u);
+      assert.doesNotMatch(item.excerpt.text, /harbour/u, 'metadata never reaches the excerpt');
+      assert.deepEqual(item.evidence, { refs: ['e1', 'e2', 'e3', 'e4', 'e5'], omitted: 2 });
+      assert.deepEqual(item.match.terms, ['lighthouse']);
+      assert.equal(typeof item.match.score, 'number');
+      // A term matched only in metadata is listed, but the excerpt still comes from the content.
+      const both = value(await driver.retrieve(store, { text: 'lighthouse harbour' }));
+      const [matched] = both.items as RetrievedItem[];
+      assert.equal(matched!.id, keeper.id);
+      assert.deepEqual(matched!.match.terms, ['lighthouse', 'harbour']);
+      const superseded = items.find((candidate) => candidate.id === other.id)!;
+      assert.deepEqual(superseded.supersededBy, { ids: [replaced.id], omitted: 0 });
+      assert.deepEqual(superseded.match.terms, ['lighthouse']);
+
+      // S15.6: every returned id resolves to the full record at the returned revision.
+      for (const found of items) {
+        const record = value(await driver.get(store, found.id));
+        assert.equal(record.revision, found.revision);
+      }
+
+      const first = value(await driver.retrieve(store, { ...query, limit: 1 }));
+      const second = value(
+        await driver.retrieve(store, { ...query, limit: 2, cursor: first.nextCursor })
+      );
+      assert.deepEqual(
+        [...(first.items as RetrievedItem[]), ...(second.items as RetrievedItem[])].map(
+          (found) => found.id
+        ),
+        items.map((found) => found.id)
+      );
+      assert.equal(second.nextCursor, null);
+
+      problem(await driver.retrieve(store, { states: ['active'] }), 'ValidationFailed');
+      problem(await driver.retrieve(store, { text: 'x', limit: 51 }), 'ValidationFailed');
+      problem(await driver.retrieve(store, { text: 'x', excerptChars: 1001 }), 'ValidationFailed');
+      const page = value(await driver.search(store, { text: 'lighthouse', limit: 1 }));
+      problem(
+        await driver.retrieve(store, { text: 'lighthouse', limit: 1, cursor: page.nextCursor }),
+        'ValidationFailed'
+      );
+      problem(
+        await driver.search(store, { text: 'lighthouse', limit: 1, cursor: first.nextCursor }),
+        'ValidationFailed'
+      );
+    },
+  },
+  {
+    name: 'S15.5 retrieve shows a reader of one namespace nothing from the other',
+    async run(driver) {
+      if (driver.retrieveAs === undefined) return;
+      const store = tempDir();
+      value(await driver.init(store));
+      const open = value(
+        await driver.create(store, {
+          namespace: 'team/open',
+          kind: 'note',
+          content: 'lighthouse log',
+          provenance: { evidence: [{ ref: 'open-ref' }] },
+        })
+      ).memory as Record<string, unknown>;
+      value(
+        await driver.supersede(store, {
+          id: open.id,
+          expectedRevision: 1,
+          replacement: { namespace: 'team/closed', kind: 'note', content: 'lighthouse moved' },
+        })
+      );
+      value(
+        await driver.create(store, {
+          namespace: 'team/closed',
+          kind: 'note',
+          content: 'lighthouse beacon secret',
+          provenance: { evidence: [{ ref: 'closed-ref' }] },
+        })
+      );
+      const query = { text: 'lighthouse', states: ['active', 'superseded'] };
+      const all = value(await driver.retrieve(store, query));
+      assert.equal((all.items as unknown[]).length, 3);
+
+      const reader = [{ pattern: 'team/open', permissions: ['read' as const] }];
+      const seen = value(await driver.retrieveAs(store, reader, query));
+      assert.deepEqual(seen.items, [
+        {
+          ...(all.items as Record<string, unknown>[]).find((item) => item.id === open.id),
+          supersededBy: { ids: [], omitted: 0 },
+        },
+      ]);
+      assert.doesNotMatch(JSON.stringify(seen), /closed|secret|moved/u);
+      problem(
+        await driver.retrieveAs(store, reader, { ...query, namespaces: ['team/closed'] }),
+        'Forbidden'
       );
     },
   },

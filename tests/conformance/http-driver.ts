@@ -1,9 +1,9 @@
-import { PERMISSIONS } from '../../src/access/index.ts';
+import { PERMISSIONS, type Grant } from '../../src/access/index.ts';
 import { toProblem } from '../../src/model/index.ts';
 import { connect, initStore, openTokenStore } from '../../src/sdk/index.ts';
 import { serve } from '../../src/server/index.ts';
 import type { HistoryPolicy } from '../../src/contracts/index.ts';
-import type { SearchQuery } from '../../src/model/index.ts';
+import type { RetrieveQuery, SearchQuery } from '../../src/model/index.ts';
 import type {
   CreateInput,
   MemoryClient,
@@ -30,26 +30,41 @@ function plain(value: unknown): Record<string, unknown> {
 
 interface Running {
   client: MemoryClient;
+  // A client for a caller holding only the grants.
+  reader(grants: Grant[]): Promise<MemoryClient>;
   close(): Promise<void>;
+}
+
+// Issues a local token with the grants.
+export async function localToken(
+  store: string,
+  principalId: string,
+  grants: Grant[]
+): Promise<string> {
+  const tokens = await openTokenStore({ path: store });
+  try {
+    return (await tokens.issue(principalId, grants)).secret;
+  } finally {
+    await tokens.close();
+  }
 }
 
 // A loopback service with a local token for every permission.
 async function startLocal(store: string): Promise<Running> {
-  const tokens = await openTokenStore({ path: store });
-  let secret: string;
-  try {
-    ({ secret } = await tokens.issue('conformance', [
-      { pattern: '*', permissions: [...PERMISSIONS] },
-    ]));
-  } finally {
-    await tokens.close();
-  }
+  const secret = await localToken(store, 'conformance', [
+    { pattern: '*', permissions: [...PERMISSIONS] },
+  ]);
   const server = await serve({
     store: { path: store },
     listen: { host: '127.0.0.1', port: 0 },
     auth: { profile: 'local' },
   });
-  return { client: connect(server.url, { token: secret }), close: server.close };
+  return {
+    client: connect(server.url, { token: secret }),
+    reader: async (grants) =>
+      connect(server.url, { token: await localToken(store, 'reader', grants) }),
+    close: server.close,
+  };
 }
 
 // The remote profile over TLS, with an issuer token whose scope and ceiling allow everything.
@@ -75,7 +90,15 @@ async function startRemote(store: string): Promise<Running> {
     token: token({ sub: 'conformance', scope: ALL_SCOPES }),
     fetch: trustingFetch,
   });
-  return { client, close: server.close };
+  const reader = async (grants: Grant[]) => {
+    const scope = grants
+      .flatMap((grant) =>
+        grant.permissions.map((permission) => `mk:${permission}:${grant.pattern}`)
+      )
+      .join(' ');
+    return connect(server.url, { token: token({ sub: 'reader', scope }), fetch: trustingFetch });
+  };
+  return { client, reader, close: server.close };
 }
 
 export const httpDriver = driverOver('http', startLocal);
@@ -94,14 +117,15 @@ function driverOver(
   shutdown?: () => Promise<void>
 ): Driver {
   const running = new Map<string, Promise<Running>>();
-  async function client(store: string): Promise<MemoryClient> {
+  async function service(store: string): Promise<Running> {
     let entry = running.get(store);
     if (entry === undefined) {
       entry = start(store);
       running.set(store, entry);
     }
-    return (await entry).client;
+    return entry;
   }
+  const client = async (store: string) => (await service(store)).client;
   return {
     name,
     init: (store) => capture(async () => (await initStore({ path: store }), null)),
@@ -142,6 +166,15 @@ function driverOver(
       capture(async () =>
         plain(await (await client(store)).search(query as unknown as SearchQuery))
       ),
+    retrieve: (store, query) =>
+      capture(async () =>
+        plain(await (await client(store)).retrieve(query as unknown as RetrieveQuery))
+      ),
+    retrieveAs: (store, grants, query) =>
+      capture(async () => {
+        const reader = await (await service(store)).reader(grants);
+        return plain(await reader.retrieve(query as unknown as RetrieveQuery));
+      }),
     history: (store, id) => capture(async () => plain(await (await client(store)).history(id))),
     operation: (store, operationId) =>
       capture(async () => plain(await (await client(store)).operation(operationId))),

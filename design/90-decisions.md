@@ -9,6 +9,21 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-28 — S15 excerpts are located with `highlight`, not `snippet`
+
+- Context: implementing S15. The entry below says `snippet` only locates the match. `snippet` can choose the kind or metadata column, and it returns a token-bounded fragment, not a position, so the content offset of the match is not recoverable from it.
+- Chosen:
+  - FTS5's `highlight` on the content column, for each item on the page, marks the matched tokens in the original content. The first mark is the anchor. The index's own tokenizer decides what matched, so the excerpt follows it in every script and case. When only the kind or metadata matched, the excerpt starts at the beginning.
+  - The excerpt starts min(40, a quarter of `excerptChars`) code points before the anchor and shifts left near the end of the content, so short excerpts still show the match and a match near the end still fills the excerpt.
+  - `match.terms` are the query's distinct terms. The words are ANDed, so every match contains all of them.
+  - The item type is named `RetrievedItem`; the slice's Touches line says `RetrieveItem`.
+- Rejected:
+  - Tokenizing and folding in code to mimic `unicode61 remove_diacritics 2`. A sweep of code points 0x80–0x2FFFF against SQLite differed on about 60,000: SQLite's diacritic table is narrower than NFD stripping, its Unicode tables are older, and marks outside the table split tokens. Thai, Greek final sigma and many Latin letters anchored wrongly.
+  - `snippet` and then a code-point cut: no position to cut from, as above.
+- Revisit: an item costs one `highlight` query on its own row; if S16's cost bounds show it matters, fold it into the scan.
+
+---
+
 ## 2026-10-28 — Stage 4: compact retrieval is a separate `retrieve` operation (S15)
 
 - Context: Stage 4A. `search` returns whole records, so a page of 100 records at the 256 KiB content limit is about 25 MiB. An agent needs candidates it can judge before fetching any record whole. The contract must be chosen before implementing.

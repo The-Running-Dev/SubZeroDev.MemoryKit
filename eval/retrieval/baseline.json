@@ -1,5 +1,5 @@
 {
-  "commit": "254bf73e4bbb349d7b240db154734b96b6210c7e",
+  "commit": "abfad3a8d020ff94f51b80804bc0c1e75954caf5",
   "dirty": false,
   "runs": [
     {
@@ -401,6 +401,385 @@
             "recall10": 0
           }
         }
+      },
+      "retrieve": {
+        "overall": {
+          "recall5": 0.7273,
+          "recall10": 0.7273,
+          "mrr": 0.6818,
+          "ndcg10": 0.6937,
+          "nonRelevant10": 0.1515,
+          "noAnswerReturned": 0,
+          "obsolete": 0,
+          "exposure": 0,
+          "errors": 0,
+          "fetches": 1,
+          "pages": 37,
+          "partialPages": 0
+        },
+        "categories": {
+          "exact": {
+            "recall5": 1,
+            "recall10": 1,
+            "mrr": 1,
+            "ndcg10": 1,
+            "nonRelevant10": 0,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 4,
+            "partialPages": 0
+          },
+          "paraphrase": {
+            "recall5": 0,
+            "recall10": 0,
+            "mrr": 0,
+            "ndcg10": 0,
+            "nonRelevant10": 0,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 7,
+            "partialPages": 0
+          },
+          "correction": {
+            "recall5": 0.6,
+            "recall10": 0.6,
+            "mrr": 0.6,
+            "ndcg10": 0.6,
+            "nonRelevant10": 0,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 5,
+            "partialPages": 0
+          },
+          "historical": {
+            "recall5": 1,
+            "recall10": 1,
+            "mrr": 1,
+            "ndcg10": 1,
+            "nonRelevant10": 0,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 2,
+            "partialPages": 0
+          },
+          "lifecycle": {
+            "recall5": 1,
+            "recall10": 1,
+            "mrr": 1,
+            "ndcg10": 1,
+            "nonRelevant10": 0,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 4,
+            "partialPages": 0
+          },
+          "distractor": {
+            "recall5": 1,
+            "recall10": 1,
+            "mrr": 0.7,
+            "ndcg10": 0.7786,
+            "nonRelevant10": 1,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 5,
+            "partialPages": 0
+          },
+          "cross-namespace": {
+            "recall5": 1,
+            "recall10": 1,
+            "mrr": 1,
+            "ndcg10": 1,
+            "nonRelevant10": 0,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 3,
+            "partialPages": 0
+          },
+          "large-content": {
+            "recall5": 1,
+            "recall10": 1,
+            "mrr": 1,
+            "ndcg10": 1,
+            "nonRelevant10": 0,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 1,
+            "pages": 1,
+            "partialPages": 0
+          },
+          "no-answer": {
+            "recall5": 0,
+            "recall10": 0,
+            "mrr": 0,
+            "ndcg10": 0,
+            "nonRelevant10": 0,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 4,
+            "partialPages": 0
+          },
+          "duplicate": {
+            "recall5": 1,
+            "recall10": 1,
+            "mrr": 1,
+            "ndcg10": 1,
+            "nonRelevant10": 0,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 2,
+            "partialPages": 0
+          },
+          "error": {
+            "recall5": 0,
+            "recall10": 0,
+            "mrr": 0,
+            "ndcg10": 0,
+            "nonRelevant10": 0,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 0,
+            "partialPages": 0
+          }
+        },
+        "queries": {
+          "exact-error-code": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "exact-ticket": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "exact-person": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "exact-cluster": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "para-token-lifetime": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "para-price-cache": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "para-billing-owner": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "para-snapshots": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "para-rotation-day": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "para-toggles": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "para-log-shape": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "correct-release-new": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "correct-release-stale": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "correct-session-store": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "correct-postgres": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "correct-rabbitmq": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "history-session-store": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "history-queue": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "state-failover-default": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "state-failover-archived": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "state-staging-default": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "state-staging-tombstoned": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "noise-tokens": {
+            "outcome": "ok",
+            "rank": 2,
+            "recall10": 1
+          },
+          "noise-release": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "noise-backup": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "noise-stale-cache": {
+            "outcome": "ok",
+            "rank": 2,
+            "recall10": 1
+          },
+          "noise-session": {
+            "outcome": "ok",
+            "rank": 2,
+            "recall10": 1
+          },
+          "scope-tokens": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "scope-session": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "scope-queue-history": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "scope-named-foreign": {
+            "outcome": "expected-error",
+            "rank": null,
+            "recall10": 0
+          },
+          "large-architecture": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "none-autoscaling": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "none-budget": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "none-queue-current": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "none-scattered-words": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "dup-timeout": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "contra-audit": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "reject-no-terms": {
+            "outcome": "expected-error",
+            "rank": null,
+            "recall10": 0
+          },
+          "reject-limit": {
+            "outcome": "expected-error",
+            "rank": null,
+            "recall10": 0
+          },
+          "reject-state": {
+            "outcome": "expected-error",
+            "rank": null,
+            "recall10": 0
+          }
+        }
       }
     },
     {
@@ -750,6 +1129,385 @@
             "outcome": "ok",
             "rank": 1,
             "recall10": 1
+          },
+          "large-architecture": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "none-autoscaling": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "none-budget": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "none-queue-current": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "none-scattered-words": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "dup-timeout": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "contra-audit": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "reject-no-terms": {
+            "outcome": "expected-error",
+            "rank": null,
+            "recall10": 0
+          },
+          "reject-limit": {
+            "outcome": "expected-error",
+            "rank": null,
+            "recall10": 0
+          },
+          "reject-state": {
+            "outcome": "expected-error",
+            "rank": null,
+            "recall10": 0
+          }
+        }
+      },
+      "retrieve": {
+        "overall": {
+          "recall5": 0.6061,
+          "recall10": 0.6061,
+          "mrr": 0.5758,
+          "ndcg10": 0.5837,
+          "nonRelevant10": 1.3333,
+          "noAnswerReturned": 0,
+          "obsolete": 0,
+          "exposure": 0,
+          "errors": 0,
+          "fetches": 1,
+          "pages": 37,
+          "partialPages": 0
+        },
+        "categories": {
+          "exact": {
+            "recall5": 1,
+            "recall10": 1,
+            "mrr": 1,
+            "ndcg10": 1,
+            "nonRelevant10": 0,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 4,
+            "partialPages": 0
+          },
+          "paraphrase": {
+            "recall5": 0,
+            "recall10": 0,
+            "mrr": 0,
+            "ndcg10": 0,
+            "nonRelevant10": 0,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 7,
+            "partialPages": 0
+          },
+          "correction": {
+            "recall5": 0.4,
+            "recall10": 0.4,
+            "mrr": 0.4,
+            "ndcg10": 0.4,
+            "nonRelevant10": 2,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 5,
+            "partialPages": 0
+          },
+          "historical": {
+            "recall5": 0.5,
+            "recall10": 0.5,
+            "mrr": 0.5,
+            "ndcg10": 0.5,
+            "nonRelevant10": 5,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 2,
+            "partialPages": 0
+          },
+          "lifecycle": {
+            "recall5": 1,
+            "recall10": 1,
+            "mrr": 1,
+            "ndcg10": 1,
+            "nonRelevant10": 0,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 4,
+            "partialPages": 0
+          },
+          "distractor": {
+            "recall5": 0.8,
+            "recall10": 0.8,
+            "mrr": 0.6,
+            "ndcg10": 0.6524,
+            "nonRelevant10": 2.8,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 5,
+            "partialPages": 0
+          },
+          "cross-namespace": {
+            "recall5": 0.6667,
+            "recall10": 0.6667,
+            "mrr": 0.6667,
+            "ndcg10": 0.6667,
+            "nonRelevant10": 3.3333,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 3,
+            "partialPages": 0
+          },
+          "large-content": {
+            "recall5": 1,
+            "recall10": 1,
+            "mrr": 1,
+            "ndcg10": 1,
+            "nonRelevant10": 0,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 1,
+            "pages": 1,
+            "partialPages": 0
+          },
+          "no-answer": {
+            "recall5": 0,
+            "recall10": 0,
+            "mrr": 0,
+            "ndcg10": 0,
+            "nonRelevant10": 0,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 4,
+            "partialPages": 0
+          },
+          "duplicate": {
+            "recall5": 1,
+            "recall10": 1,
+            "mrr": 1,
+            "ndcg10": 1,
+            "nonRelevant10": 0,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 2,
+            "partialPages": 0
+          },
+          "error": {
+            "recall5": 0,
+            "recall10": 0,
+            "mrr": 0,
+            "ndcg10": 0,
+            "nonRelevant10": 0,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 0,
+            "partialPages": 0
+          }
+        },
+        "queries": {
+          "exact-error-code": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "exact-ticket": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "exact-person": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "exact-cluster": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "para-token-lifetime": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "para-price-cache": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "para-billing-owner": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "para-snapshots": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "para-rotation-day": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "para-toggles": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "para-log-shape": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "correct-release-new": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "correct-release-stale": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "correct-session-store": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "correct-postgres": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "correct-rabbitmq": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "history-session-store": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "history-queue": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "state-failover-default": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "state-failover-archived": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "state-staging-default": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "state-staging-tombstoned": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "noise-tokens": {
+            "outcome": "ok",
+            "rank": 2,
+            "recall10": 1
+          },
+          "noise-release": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "noise-backup": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "noise-stale-cache": {
+            "outcome": "ok",
+            "rank": 2,
+            "recall10": 1
+          },
+          "noise-session": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "scope-tokens": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "scope-session": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "scope-queue-history": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "scope-named-foreign": {
+            "outcome": "expected-error",
+            "rank": null,
+            "recall10": 0
           },
           "large-architecture": {
             "outcome": "ok",

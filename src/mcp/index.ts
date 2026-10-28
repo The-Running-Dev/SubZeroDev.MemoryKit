@@ -145,6 +145,25 @@ const TOOLS: Record<string, ToolSpec> = {
     ),
     call: (client, args) => client.search(args as any),
   },
+  memory_retrieve: {
+    description:
+      'Find memories as compact items: an excerpt, evidence refs and replacements, without ' +
+      'whole records. Fetch a full record with memory_get.',
+    inputSchema: object(
+      {
+        namespaces: strings,
+        text: string,
+        kinds: strings,
+        states: { type: 'array', items: { type: 'string', enum: [...MEMORY_STATES] }, minItems: 1 },
+        metadata: { type: 'object', description: 'Top-level equality on scalar values' },
+        limit: { type: 'integer', minimum: 1 },
+        excerptChars: { type: 'integer', minimum: 1 },
+        cursor: string,
+      },
+      ['text']
+    ),
+    call: (client, args) => client.retrieve(args as any),
+  },
   memory_history: {
     description: 'List the revisions history holds for a memory.',
     inputSchema: object({ id: string }, ['id']),

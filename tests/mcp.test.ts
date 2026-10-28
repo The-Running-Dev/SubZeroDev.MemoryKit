@@ -237,7 +237,7 @@ describe('S10 MCP', () => {
     const { tools } = await client.listTools();
     const names = tools.map((tool) => tool.name).sort();
     assert.deepEqual(names, [...MCP_TOOLS].sort());
-    assert.equal(names.length, 11);
+    assert.equal(names.length, 12);
     for (const name of names) assert.doesNotMatch(name, /purge|namespace|sync/);
     for (const tool of tools) assert.equal(tool.inputSchema.type, 'object');
   });
@@ -276,6 +276,8 @@ describe('S10 MCP', () => {
     assert.equal(props(schemas.memory_revision!).revision!.minimum, 1);
     assert.equal(props(schemas.memory_update!).expectedRevision!.minimum, 1);
     assert.equal(props(schemas.memory_search!).limit!.minimum, 1);
+    assert.deepEqual(schemas.memory_retrieve!.required, ['text']);
+    assert.equal(props(schemas.memory_retrieve!).excerptChars!.minimum, 1);
     assert.equal(props(schemas.memory_create!).waitForHistoryMs!.minimum, 0);
 
     const created = await client.callTool({
