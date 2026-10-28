@@ -34,9 +34,13 @@ export function runNode(script: string, args: string[]): Exec {
 }
 
 // Like runNode, but returns at once so several processes can run side by side.
-export function runNodeAsync(script: string, args: string[]): Promise<Exec> {
+export function runNodeAsync(
+  script: string,
+  args: string[],
+  env: NodeJS.ProcessEnv = process.env
+): Promise<Exec> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--no-warnings', script, ...args]);
+    const child = spawn(process.execPath, ['--no-warnings', script, ...args], { env });
     let stdout = '';
     let stderr = '';
     child.stdout.setEncoding('utf8').on('data', (chunk: string) => (stdout += chunk));

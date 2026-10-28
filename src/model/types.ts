@@ -69,6 +69,32 @@ export interface SearchResult {
   partialReason?: 'scan_budget' | 'time_budget';
 }
 
+// A search that returns compact items instead of whole records (S15). text is required.
+export interface RetrieveQuery extends Omit<SearchQuery, 'text'> {
+  text: string;
+  excerptChars?: number;
+}
+export interface RetrievedItem {
+  id: MemoryId;
+  revision: number;
+  namespace: Namespace;
+  key: string | null;
+  kind: string;
+  state: MemoryState;
+  updatedAt: string;
+  contentBytes: number;
+  excerpt: { text: string; truncated: boolean };
+  evidence: { refs: string[]; omitted: number };
+  supersededBy: { ids: MemoryId[]; omitted: number };
+  match: { score: number; terms: string[] }; // score ranks within one result only
+}
+export interface RetrieveResult {
+  items: RetrievedItem[];
+  nextCursor: string | null;
+  completeness: 'complete' | 'partial';
+  partialReason?: 'scan_budget' | 'time_budget';
+}
+
 export interface Limits {
   maxContentBytes: number;
   maxMetadataBytes: number;

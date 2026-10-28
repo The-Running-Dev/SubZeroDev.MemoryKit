@@ -1,16 +1,18 @@
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
-import { PERMISSIONS } from '../../src/access/index.ts';
+import { PERMISSIONS, type Grant } from '../../src/access/index.ts';
 import { MCP_PROTOCOL_VERSION } from '../../src/mcp/index.ts';
 import { fromProblem, toProblem } from '../../src/model/index.ts';
-import { openTokenStore } from '../../src/sdk/index.ts';
 import { serve } from '../../src/server/index.ts';
 import { CLI } from '../helpers.ts';
 import type { Driver, Result } from './driver.ts';
+import { localToken } from './http-driver.ts';
 import { sdkDriver } from './sdk-driver.ts';
 
 interface Running {
   client: Client;
+  // A connection for a caller holding only the grants; stdio has none.
+  reader?(grants: Grant[]): Promise<Running>;
   close(): Promise<void>;
 }
 
@@ -30,30 +32,34 @@ async function startStdio(store: string): Promise<Running> {
   return { client, close: () => client.close() };
 }
 
+async function connectHttp(url: string, secret: string): Promise<Client> {
+  const client = pinned();
+  await client.connect(
+    new StreamableHTTPClientTransport(new URL('/mcp', url), {
+      requestInit: { headers: { authorization: `Bearer ${secret}` } },
+    })
+  );
+  return client;
+}
+
 // The loopback service with a local token for every permission, reached at /mcp.
 async function startHttp(store: string): Promise<Running> {
-  const tokens = await openTokenStore({ path: store });
-  let secret: string;
-  try {
-    ({ secret } = await tokens.issue('conformance', [
-      { pattern: '*', permissions: [...PERMISSIONS] },
-    ]));
-  } finally {
-    await tokens.close();
-  }
+  const secret = await localToken(store, 'conformance', [
+    { pattern: '*', permissions: [...PERMISSIONS] },
+  ]);
   const server = await serve({
     store: { path: store },
     listen: { host: '127.0.0.1', port: 0 },
     auth: { profile: 'local' },
   });
-  const client = pinned();
-  await client.connect(
-    new StreamableHTTPClientTransport(new URL('/mcp', server.url), {
-      requestInit: { headers: { authorization: `Bearer ${secret}` } },
-    })
-  );
+  const client = await connectHttp(server.url, secret);
+  const reader = async (grants: Grant[]): Promise<Running> => {
+    const restricted = await connectHttp(server.url, await localToken(store, 'reader', grants));
+    return { client: restricted, close: () => restricted.close() };
+  };
   return {
     client,
+    reader,
     close: async () => {
       await client.close();
       await server.close();
@@ -62,26 +68,35 @@ async function startHttp(store: string): Promise<Running> {
 }
 
 export const mcpStdioDriver = driverOver('mcp-stdio', startStdio);
-export const mcpHttpDriver = driverOver('mcp-http', startHttp);
+export const mcpHttpDriver = driverOver('mcp-http', startHttp, true);
 
 const opts = (operationId?: string) => (operationId ? { operationId } : {});
 
 // One MCP connection per store. MCP has no init, status or namespace tools, so those go
 // through the SDK.
-function driverOver(name: string, start: (store: string) => Promise<Running>): Driver {
+function driverOver(
+  name: string,
+  start: (store: string) => Promise<Running>,
+  readers = false
+): Driver {
   const running = new Map<string, Promise<Running>>();
-  async function call(
-    store: string,
-    tool: string,
-    args: Record<string, unknown>
-  ): Promise<Result<Record<string, unknown>>> {
+  function service(store: string): Promise<Running> {
     let entry = running.get(store);
     if (entry === undefined) {
       entry = start(store);
       running.set(store, entry);
     }
+    return entry;
+  }
+  async function call(
+    store: string,
+    tool: string,
+    args: Record<string, unknown>,
+    connection?: Running
+  ): Promise<Result<Record<string, unknown>>> {
     try {
-      const result = await (await entry).client.callTool({ name: tool, arguments: args });
+      const client = (connection ?? (await service(store))).client;
+      const result = await client.callTool({ name: tool, arguments: args });
       const structured = (result.structuredContent ?? {}) as Record<string, unknown>;
       if (result.isError !== true) return { ok: true, value: structured };
       const [text] = result.content as { text?: string }[];
@@ -103,6 +118,17 @@ function driverOver(name: string, start: (store: string) => Promise<Running>): D
       call(store, 'memory_supersede', { ...input, ...opts(operationId) }),
     get: (store, id) => call(store, 'memory_get', { id }),
     search: (store, query) => call(store, 'memory_search', query),
+    retrieve: (store, query) => call(store, 'memory_retrieve', query),
+    ...(readers && {
+      retrieveAs: async (store: string, grants: Grant[], query: Record<string, unknown>) => {
+        const reader = await (await service(store)).reader!(grants);
+        try {
+          return await call(store, 'memory_retrieve', query, reader);
+        } finally {
+          await reader.close();
+        }
+      },
+    }),
     history: async (store, id) => {
       const result = await call(store, 'memory_history', { id });
       return result.ok ? { ok: true, value: result.value.revisions } : result;

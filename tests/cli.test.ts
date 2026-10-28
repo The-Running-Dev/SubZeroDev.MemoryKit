@@ -424,8 +424,38 @@ describe('cli', () => {
     assert.equal(runCli(['create', '--namespace', 'demo', ...twice]).status, 2);
   });
 
-  it('search rejects unused write flags before opening a store or connecting', async () => {
-    for (const flag of ['operation-id', 'expected-revision', 'budget-ms']) {
+  it('retrieve prints each item with its excerpt and evidence, then the cursor', () => {
+    const store = tempDir();
+    assert.equal(runCli(['init', store]).status, 0);
+    const evidence = JSON.stringify({
+      evidence: ['a', 'b', 'c', 'd', 'e', 'f'].map((ref) => ({ ref: `doc:${ref}` })),
+    });
+    for (const content of ['the lighthouse\nkeeper', 'lighthouse two']) {
+      const args = ['create', '--store', store, '--namespace', 'demo', '--kind', 'note'];
+      assert.equal(runCli([...args, '--content', content, '--provenance', evidence]).status, 0);
+    }
+    const page = runCli(['retrieve', '--store', store, '--text', 'keeper', '--excerpt-chars', '8']);
+    assert.equal(page.status, 0, page.stderr);
+    const lines = page.stdout.trimEnd().split('\n');
+    assert.equal(lines.length, 3);
+    assert.match(lines[0]!, /^\S+ {2}demo {2}note {2}active {2}score \d+\.\d{3}$/);
+    assert.equal(lines[1], '  e keeper ...');
+    assert.equal(lines[2], '  evidence: doc:a, doc:b, doc:c, doc:d, doc:e (+1 more)');
+    const paged = runCli(['retrieve', '--store', store, '--text', 'lighthouse', '--limit', '1']);
+    assert.match(paged.stdout.trimEnd().split('\n').at(-1)!, /^next cursor: \S+$/);
+    const json = runCli(['retrieve', '--store', store, '--text', 'lighthouse', '--json']);
+    assert.equal(JSON.parse(json.stdout).items.length, 2);
+    const none = runCli(['retrieve', '--store', store, '--text', 'fog']);
+    assert.equal(none.stdout, 'No memories found\n');
+    const wide = runCli(['retrieve', '--store', store, '--text', 'x', '--excerpt-chars', '1001']);
+    assert.equal(JSON.parse(wide.stderr).code, 'ValidationFailed');
+    assert.equal(runCli(['search', '--store', store, '--excerpt-chars', '10']).status, 2);
+  });
+
+  it('search and retrieve reject unused write flags before opening a store or connecting', async () => {
+    for (const [command, flag] of ['search', 'retrieve'].flatMap((command) =>
+      ['operation-id', 'expected-revision', 'budget-ms'].map((flag) => [command, flag])
+    )) {
       for (const target of [
         ['--store', 'unused'],
         ['--url', 'http://localhost:1'],
@@ -433,7 +463,7 @@ describe('cli', () => {
         let stdout = '';
         let stderr = '';
         const status = await run(
-          ['search', ...target, `--${flag}`, '1'],
+          [command!, ...target, `--${flag}`, '1'],
           { stdout: (text) => (stdout += text), stderr: (text) => (stderr += text) },
           {
             openStore: async () => assert.fail('must not open a store'),
@@ -442,7 +472,7 @@ describe('cli', () => {
         );
         assert.equal(status, 2, stderr);
         assert.equal(stdout, '');
-        assert.ok(stderr.startsWith(`search does not take --${flag}\n\nUsage:`), stderr);
+        assert.ok(stderr.startsWith(`${command} does not take --${flag}\n\nUsage:`), stderr);
       }
     }
   });

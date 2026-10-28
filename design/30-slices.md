@@ -190,7 +190,7 @@ Acceptance:
 Out of scope: compact responses, embeddings, rank fusion and any retrieval change (Stage 4); an LLM judge; real or personal data in fixtures; QMD or any researched project as a dependency.
 
 ## S15 — Agents retrieve compact, bounded results and fetch full records only when needed
-Status: planned
+Status: done
 Delivers: Stage 4A. A caller that wants candidates rather than whole records, typically an agent with a context budget, runs `retrieve`. For each match it receives the identity, state, a bounded excerpt, evidence refs and why it matched, and the response has a fixed upper size whatever the stored content. It then calls `get` for the records it needs. `search` is unchanged.
 Touches: contracts (`RetrieveQuery`, `RetrieveItem`, `RetrieveResult`, `StorageProvider.retrieve`, capability `retrieve.lexical`); model (retrieve validation and bounds); storage-sqlite (retrieve over the existing FTS index, excerpts through FTS5 `snippet`); service (`retrieve`, with the same authorization as `search`); sdk; cli (`retrieve`); http (`POST /v1/retrieve`); mcp (`memory_retrieve`); conformance; eval (the harness also measures `retrieve`); design (10-design, 20-contract)
 Depends on: S14

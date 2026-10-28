@@ -6,6 +6,7 @@ import {
   expectedModel,
   loadCorpus,
   percentiles,
+  queriesFor,
   quality,
   rankMetrics,
   readable,
@@ -14,6 +15,7 @@ import {
   type QueryScore,
   type Quality,
 } from '../eval/retrieval/harness.ts';
+import { MAX_RETRIEVE_BYTES } from '../src/index.ts';
 import { tempDir } from './helpers.ts';
 
 const BASELINE = new URL('../eval/retrieval/baseline.json', import.meta.url);
@@ -36,10 +38,13 @@ describe('retrieval evaluation', () => {
   const corpus = loadCorpus();
   let scores: QueryScore[];
 
+  let retrieved: QueryScore[];
+
   before(async () => {
     const dir = tempDir();
     const built = await buildStore(dir, corpus);
     scores = await runQueries(dir, corpus, built);
+    retrieved = await runQueries(dir, corpus, built, 1, 'retrieve');
   });
 
   it('S14.1 the corpus covers every case, and its expectations agree with its own steps', () => {
@@ -106,10 +111,39 @@ describe('retrieval evaluation', () => {
 
   it('S14.4 quality matches the committed baseline', () => {
     const baseline = JSON.parse(readFileSync(BASELINE, 'utf8')) as {
-      runs: Array<{ filler: number; quality: Quality }>;
+      runs: Array<{ filler: number; quality: Quality; retrieve: Quality }>;
     };
     const recorded = baseline.runs.find((run) => run.filler === 0);
     assert.ok(recorded, 'the baseline has no run without filler');
     assert.deepEqual(quality(scores), recorded.quality);
+    assert.deepEqual(quality(retrieved), recorded.retrieve);
+  });
+
+  it('S15.6 retrieve runs every query with text, finds what search finds and exposes nothing', () => {
+    assert.deepEqual(
+      retrieved.map((s) => s.id),
+      queriesFor(corpus, 'retrieve').map((q) => q.id)
+    );
+    assert.ok(!retrieved.some((s) => s.id === 'sparse-sev1'), 'a query without text is skipped');
+    for (const s of retrieved) {
+      const query = corpus.queries.find((q) => q.id === s.id)!;
+      const error = query.retrieveError ?? query.error;
+      assert.equal(s.outcome, error === undefined ? 'ok' : 'expected-error', s.id);
+      const searched = scores.find((other) => other.id === s.id)!;
+      if (s.outcome === 'ok') assert.deepEqual(s.returned, searched.returned, s.id);
+    }
+    const overall = summarize(retrieved);
+    assert.equal(overall.exposure, 0);
+    assert.equal(overall.obsolete, 0);
+    assert.equal(overall.errors, 0);
+  });
+
+  it('S15.7 the large-content answer stays within the retrieve bound and needs a fetch', () => {
+    const large = retrieved.find((s) => s.category === 'large-content')!;
+    assert.ok(large.bytes.length > 0);
+    for (const bytes of large.bytes) assert.ok(bytes <= MAX_RETRIEVE_BYTES, String(bytes));
+    assert.ok(large.fetches > 0);
+    const searched = scores.find((s) => s.id === large.id)!;
+    assert.ok(Math.max(...large.bytes) < Math.max(...searched.bytes));
   });
 });

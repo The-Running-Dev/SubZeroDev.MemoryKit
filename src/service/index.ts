@@ -50,6 +50,7 @@ import {
   validateOperationId,
   validatePurge,
   validateRevision,
+  validateRetrieve,
   validateSearch,
   validateSupersede,
   validateTransition,
@@ -64,6 +65,8 @@ import {
   type NormalizedCreate,
   type Operation,
   type Provenance,
+  type RetrieveQuery,
+  type RetrieveResult,
   type SearchQuery,
   type SearchResult,
 } from '../model/index.ts';
@@ -139,6 +142,7 @@ export interface MemoryClient {
   purge(input: PurgeInput, opts?: PurgeOptions): Promise<PurgeReport>;
   get(id: MemoryId): Promise<MemoryRecord>;
   search(query: SearchQuery): Promise<SearchResult>;
+  retrieve(query: RetrieveQuery): Promise<RetrieveResult>;
   history(id: MemoryId): Promise<RevisionSummary[]>;
   revision(id: MemoryId, revision: number): Promise<RevisionSnapshot>;
   operation(operationId: string): Promise<OperationStatus>;
@@ -751,6 +755,14 @@ class ServiceClient implements MemoryClient {
     for (const pattern of namespaces ?? []) authorizePattern(this.principal, 'read', pattern);
     const readable = permittedPatterns(this.principal, 'read');
     return this.service.storage.search({ ...rest, patterns: namespaces ?? readable, readable });
+  }
+
+  // Authorized like search; storage returns compact items instead of records.
+  async retrieve(query: RetrieveQuery): Promise<RetrieveResult> {
+    const { namespaces, ...rest } = validateRetrieve(query, this.service.limits);
+    for (const pattern of namespaces ?? []) authorizePattern(this.principal, 'read', pattern);
+    const readable = permittedPatterns(this.principal, 'read');
+    return this.service.storage.retrieve({ ...rest, patterns: namespaces ?? readable, readable });
   }
 
   async history(id: MemoryId): Promise<RevisionSummary[]> {

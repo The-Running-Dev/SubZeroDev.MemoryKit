@@ -124,6 +124,21 @@ export interface SearchResult {
   items: MemoryRecord[]; nextCursor: string | null;
   completeness: 'complete' | 'partial'; partialReason?: 'scan_budget' | 'time_budget';   // v1 produces scan_budget only
 }
+// S15. Same filters, authorization, order and paging as search; text is required.
+// Fixed bounds, all ValidationFailed: limit default 10, at most min(50, maxPageSize); excerptChars default 280, at most 1000.
+export interface RetrieveQuery extends Omit<SearchQuery, 'text'> { text: string; excerptChars?: number }
+export interface RetrievedItem {
+  id: MemoryId; revision: number; namespace: Namespace; key: string | null; kind: string; state: MemoryState; updatedAt: string;
+  contentBytes: number;                                  // UTF-8 length of the whole content
+  excerpt: { text: string; truncated: boolean };         // content only, at most excerptChars code points, around the first matched term
+  evidence: { refs: string[]; omitted: number };         // at most 5 refs of at most 256 chars; longer or later refs are counted
+  supersededBy: { ids: MemoryId[]; omitted: number };    // at most 8 readable ids
+  match: { score: number; terms: string[] };             // score is a BM25 rank, higher is better, comparable within one result only
+}
+export interface RetrieveResult {                        // serialized, never more than 65,536 bytes; a page ends early with a cursor to the next item
+  items: RetrievedItem[]; nextCursor: string | null;
+  completeness: 'complete' | 'partial'; partialReason?: 'scan_budget' | 'time_budget';
+}
 
 export interface RevisionSummary { revision: number; operation: Operation; operationId: string; actor: string; at: string; historyRef: string }
 export interface RevisionSnapshot extends RevisionSummary { record: MemoryRecord | RedactedRecord }
@@ -152,6 +167,7 @@ export interface MemoryClient {
   supersede(input: SupersedeInput, opts?: WriteOptions): Promise<WriteOutcome>;
   purge(input: { id: MemoryId; expectedRevision: number }, opts?: { operationId?: string }): Promise<PurgeReport>;
   search(query: SearchQuery): Promise<SearchResult>;
+  retrieve(query: RetrieveQuery): Promise<RetrieveResult>;
   history(id: MemoryId): Promise<RevisionSummary[]>;
   revision(id: MemoryId, revision: number): Promise<RevisionSnapshot>;
   operation(operationId: string): Promise<OperationStatus>;
@@ -175,7 +191,7 @@ export class MemoryService {
 ```ts
 export interface ProviderDescriptor {
   id: string; version: string; contractVersions: number[];
-  capabilities: string[];          // e.g. "search.lexical", "history.record", "purge.current", "purge.history"
+  capabilities: string[];          // e.g. "search.lexical", "retrieve.lexical", "history.record", "purge.current", "purge.history"
   limitations: string[];
 }
 
@@ -208,6 +224,7 @@ export interface StorageProvider {
   get(id: MemoryId, scope: RowScope): Promise<StoredRow | null>;
   supersededBy(ids: MemoryId[]): Promise<Record<MemoryId, MemoryId[]>>;
   search(query: Required<Pick<SearchQuery, 'states' | 'limit'>> & Omit<SearchQuery, 'namespaces'> & RowScope): Promise<SearchResult>;
+  retrieve(query: Required<Pick<SearchQuery, 'states' | 'limit'>> & Omit<SearchQuery, 'namespaces' | 'text'> & RowScope & { text: string; excerptChars: number }): Promise<RetrieveResult>;
   operation(principalId: string, operationId: string): Promise<OperationStatus | null>;
   pruneOperations(before: string): Promise<number>;   // removes operations created before the time
   setNamespacePolicy(ns: Namespace, policy: HistoryPolicy): Promise<NamespaceInfo>;
@@ -309,6 +326,7 @@ Bearer token in `Authorization`. `Idempotency-Key` sets `operationId`. Bodies ar
 | `POST /v1/memories/{id}/archive`, `POST /v1/memories/{id}/restore`, `POST /v1/memories/{id}/tombstone`, `POST /v1/memories/{id}/supersede` | transitions | 200, 201 for supersede, or 202 |
 | `POST /v1/memories/{id}/purge` | purge | 200 `PurgeReport` |
 | `POST /v1/search` | search | 200 `SearchResult` |
+| `POST /v1/retrieve` | retrieve | 200 `RetrieveResult` |
 | `GET /v1/memories/{id}/history` | history | 200 `RevisionSummary[]` |
 | `GET /v1/memories/{id}/history/{revision}` | revision | 200 `RevisionSnapshot` |
 | `GET /v1/operations/{operationId}` | operation | 200 `OperationStatus` |
@@ -327,7 +345,7 @@ Errors use `application/problem+json` (RFC 9457): `{ type, title, status, code, 
 
 Specification 2026-07-28 only, stateless, through the TypeScript SDK v2. A request in any other revision gets error `-32022` with `data.supported: ["2026-07-28"]`. It runs over stdio (embedded, principal `EMBEDDED_PRINCIPAL` or the one configured) and over Streamable HTTP at `/mcp` on the service listener, using the same authenticator.
 
-The tools are `memory_create`, `memory_get`, `memory_update`, `memory_archive`, `memory_restore`, `memory_tombstone`, `memory_supersede`, `memory_search`, `memory_history`, `memory_revision` and `memory_operation`. Each takes the matching service input as its `inputSchema` and returns `structuredContent` shaped as the service result. Write tools also take optional `operationId` and `waitForHistoryMs`, and `memory_history` returns `{ revisions }`, since `structuredContent` is an object.
+The tools are `memory_create`, `memory_get`, `memory_update`, `memory_archive`, `memory_restore`, `memory_tombstone`, `memory_supersede`, `memory_search`, `memory_retrieve`, `memory_history`, `memory_revision` and `memory_operation`. Each takes the matching service input as its `inputSchema` and returns `structuredContent` shaped as the service result. Write tools also take optional `operationId` and `waitForHistoryMs`, and `memory_history` returns `{ revisions }`, since `structuredContent` is an object.
 
 Domain errors return `isError: true` with `structuredContent: { code, retryable, details }`. Authentication failures on HTTP are HTTP 401 or 403, before MCP dispatch. Purge, namespace policy and history sync are not MCP tools in v1. Over HTTP, `subscriptions/listen` is answered `-32601`, and a client disconnect aborts the request.
 
@@ -335,12 +353,14 @@ Domain errors return `isError: true` with `structuredContent: { code, retryable,
 
 `memorykit <command> [--store <dir> | --url <url> --token-env <VAR>] [--json]`.
 
-The commands are `init`, `create`, `get`, `update`, `archive`, `restore`, `tombstone`, `supersede`, `purge`, `search`, `history`, `revision`, `operation`, `status`, `namespace get|set`, `history-sync`, `token create|list|revoke`, `serve` and `mcp` (stdio).
+The commands are `init`, `create`, `get`, `update`, `archive`, `restore`, `tombstone`, `supersede`, `purge`, `search`, `retrieve`, `history`, `revision`, `operation`, `status`, `namespace get|set`, `history-sync`, `token create|list|revoke`, `serve` and `mcp` (stdio).
 
-`create`, `update`, `supersede`, `archive`, `restore` and `tombstone` take `--provenance <json>`, the service's `Provenance` object; the service validates it like any other input. `purge` and `search` refuse it as a usage error.
+`create`, `update`, `supersede`, `archive`, `restore` and `tombstone` take `--provenance <json>`, the service's `Provenance` object; the service validates it like any other input. `purge`, `search` and `retrieve` refuse it as a usage error.
 
-`search` rejects `--operation-id`, `--expected-revision` and `--budget-ms` as usage errors
-(exit 2), before opening a store or connecting to a service. These flags do not affect search.
+`search` and `retrieve` reject `--operation-id`, `--expected-revision` and `--budget-ms` as usage errors
+(exit 2), before opening a store or connecting to a service. These flags do not affect them.
+Only `retrieve` takes `--excerpt-chars <n>`. Without `--json`, `retrieve` prints each item's
+identity, state and score, then its excerpt and evidence refs indented beneath it.
 
 With `--json`, the output is exactly the service result as JSON; `init` prints nothing, `serve` prints `{ url }` and `token revoke` prints `{ tokenId, revoked }`. Exit codes:
 - 0: success.

@@ -1,7 +1,8 @@
 import { toProblem } from '../../src/model/index.ts';
 import { initStore, openStore } from '../../src/sdk/index.ts';
 import type { HistoryPolicy } from '../../src/contracts/index.ts';
-import type { SearchQuery } from '../../src/model/index.ts';
+import type { Principal } from '../../src/access/index.ts';
+import type { RetrieveQuery, SearchQuery } from '../../src/model/index.ts';
 import type {
   CreateInput,
   PurgeInput,
@@ -26,9 +27,10 @@ function plain(value: unknown): Record<string, unknown> {
 
 async function withClient<T>(
   store: string,
-  fn: (client: Awaited<ReturnType<typeof openStore>>) => Promise<T>
+  fn: (client: Awaited<ReturnType<typeof openStore>>) => Promise<T>,
+  principal?: Principal
 ): Promise<T> {
-  const client = await openStore({ path: store });
+  const client = await openStore({ path: store }, principal);
   try {
     return await fn(client);
   } finally {
@@ -83,6 +85,20 @@ export const sdkDriver: Driver = {
   search: (store, query) =>
     capture(async () =>
       plain(await withClient(store, (c) => c.search(query as unknown as SearchQuery)))
+    ),
+  retrieve: (store, query) =>
+    capture(async () =>
+      plain(await withClient(store, (c) => c.retrieve(query as unknown as RetrieveQuery)))
+    ),
+  retrieveAs: (store, grants, query) =>
+    capture(async () =>
+      plain(
+        await withClient(store, (c) => c.retrieve(query as unknown as RetrieveQuery), {
+          id: 'reader',
+          profile: 'local',
+          grants,
+        })
+      )
     ),
   history: (store, id) => capture(async () => plain(await withClient(store, (c) => c.history(id)))),
   operation: (store, operationId) =>

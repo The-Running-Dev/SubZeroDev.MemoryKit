@@ -21,6 +21,8 @@ import {
   type MemoryId,
   type MemoryRecord,
   type Namespace,
+  type RetrieveQuery,
+  type RetrieveResult,
   type SearchQuery,
   type SearchResult,
 } from '../model/index.ts';
@@ -152,6 +154,9 @@ class HttpClient implements MemoryClient {
   }
   search(query: SearchQuery): Promise<SearchResult> {
     return this.call('POST', '/v1/search', query ?? {});
+  }
+  retrieve(query: RetrieveQuery): Promise<RetrieveResult> {
+    return this.call('POST', '/v1/retrieve', query ?? {});
   }
   history(id: MemoryId): Promise<RevisionSummary[]> {
     return this.call('GET', `${idPath(id)}/history`);

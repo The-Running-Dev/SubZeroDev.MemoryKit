@@ -1,11 +1,12 @@
 // Retrieval evaluation report (S14). For each filler count it builds a fresh store from the
 // synthetic corpus plus that many generated notes, runs every corpus query and reports quality,
-// safety, cost and the thresholds recorded in 90-decisions.md (2026-10-27).
+// safety, cost and the thresholds recorded in 90-decisions.md (2026-10-27). Each query with text
+// also runs through retrieve (S15), reported beside search.
 //
 //   node eval/retrieval/run.ts [--filler 0,10000] [--repeat 5] [--out report.md] [--json baseline.json]
 //
-// Latency is per search call in this process. Bytes are the UTF-8 length of each result as JSON;
-// the token figure is an estimate, ceil(bytes / 4), not a tokenizer count.
+// Latency is per call in this process. Bytes are the UTF-8 length of each result as JSON; the
+// token figure is an estimate, ceil(bytes / 4), not a tokenizer count.
 
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -28,14 +29,24 @@ import {
   type Timing,
 } from './harness.ts';
 
-interface Run {
-  filler: number;
+interface Results {
   scores: QueryScore[];
   overall: Summary;
   categories: Map<string, Summary>;
+}
+
+interface Run extends Results {
+  filler: number;
+  retrieve: Results;
   indexing: Built['indexing'];
   cold: Timing;
 }
+
+const results = (scores: QueryScore[]): Results => ({
+  scores,
+  overall: summarize(scores),
+  categories: byCategory(scores),
+});
 
 async function measure(filler: number, repeat: number): Promise<Run> {
   const dir = mkdtempSync(join(tmpdir(), 'memorykit-eval-'));
@@ -43,12 +54,12 @@ async function measure(filler: number, repeat: number): Promise<Run> {
     const corpus = loadCorpus();
     const built = await buildStore(dir, corpus, filler);
     const scores = await runQueries(dir, corpus, built, repeat);
+    const retrieved = await runQueries(dir, corpus, built, repeat, 'retrieve');
     const cold = await coldStart(dir);
     return {
       filler,
-      scores,
-      overall: summarize(scores),
-      categories: byCategory(scores),
+      ...results(scores),
+      retrieve: results(retrieved),
       indexing: built.indexing,
       cold,
     };
@@ -81,7 +92,8 @@ function thresholds(runs: Run[]): string[] {
       );
       continue;
     }
-    const value = threshold.value(run.overall, run.categories, run.cold);
+    const judged = threshold.operation === 'retrieve' ? run.retrieve : run;
+    const value = threshold.value(judged.overall, judged.categories, run.cold);
     const shown = Number.isInteger(value) ? String(value) : value.toFixed(3);
     lines.push(
       `| ${threshold.name} | ${threshold.kind} | ${threshold.filler.toLocaleString('en')} | ${threshold.limit} | ${shown} | ${threshold.met(value) ? 'yes' : '**no**'} |`
@@ -101,17 +113,37 @@ function summaryTable(rows: Array<[string, Summary]>): string[] {
   ];
 }
 
+// search and retrieve over the queries both run: retrieve skips a query without text.
+function comparison(run: Run): string[] {
+  const ids = new Set(run.retrieve.scores.map((s) => s.id));
+  const rows: Array<[string, Summary]> = [
+    ['search', summarize(run.scores.filter((s) => ids.has(s.id)))],
+    ['retrieve', run.retrieve.overall],
+  ];
+  const large = (results: Results) => results.categories.get('large-content')?.bytes.max ?? 0;
+  return [
+    '| Operation | Queries | Recall@10 | MRR | Obsolete | Exposure | Errors | Fetches needed | Fetches per answerable query | Pages (partial) | Latency p50 / p95 (ms) | Bytes per response p50 / p95 / max | Large-content bytes max |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    ...rows.map(
+      ([name, s]) =>
+        `| ${name} | ${s.queries} | ${ratio(s.recall10)} | ${ratio(s.mrr)} | ${s.obsolete} | ${s.exposure} | ${s.errors} | ${s.fetches} | ${ratio(s.answerable === 0 ? 0 : s.fetches / s.answerable)} | ${s.pages} (${s.partialPages}) | ${ms(s.latency.p50)} / ${ms(s.latency.p95)} | ${s.bytes.p50} / ${s.bytes.p95} / ${s.bytes.max} | ${large(name === 'search' ? run : run.retrieve).toLocaleString('en')} |`
+    ),
+  ];
+}
+
 function report(runs: Run[], commit: string, dirty: boolean, repeat: number): string {
   const lines = [
     '# Retrieval evaluation',
     '',
     `Commit \`${commit || 'unknown'}\`${dirty ? ' (with uncommitted changes)' : ''}. Node ${process.version} on ${process.platform} ${process.arch}, ${cpus()[0]?.model ?? 'unknown CPU'}. Each query ran ${repeat} time(s); the first run is scored.`,
     '',
-    'Queries without their own limit run at limit 10. Bytes are the UTF-8 length of each search response as JSON. Tokens are estimated as ceil(bytes / 4), not counted by a tokenizer. Latency is per successful search call, in process. Cold start is open plus one search, in process, on a closed store. Duplicates are reported, not scored or gated; each expected result counts once.',
+    'Queries without their own limit run at limit 10. Bytes are the UTF-8 length of each response as JSON. Tokens are estimated as ceil(bytes / 4), not counted by a tokenizer. Latency is per successful call, in process. Cold start is open plus one search, in process, on a closed store. Duplicates are reported, not scored or gated; each expected result counts once. A fetch is needed for a relevant result that came back without its whole content: a truncated retrieve excerpt, or content that differs from the expected revision.',
+    '',
+    'retrieve runs every query with text, at the default excerpt of 280 code points; `reject-limit` expects `ValidationFailed` from it, since retrieve bounds its limit itself.',
     '',
     '## Thresholds',
     '',
-    'Recorded in `design/90-decisions.md` (2026-10-27) before the first run. Hard thresholds gate CI; targets are reported, not gated.',
+    'Recorded in `design/90-decisions.md` (2026-10-27) before the first run; the retrieve thresholds are S15.7. Hard thresholds gate CI; targets are reported, not gated.',
     '',
     ...thresholds(runs),
     '',
@@ -121,6 +153,10 @@ function report(runs: Run[], commit: string, dirty: boolean, repeat: number): st
       `## ${run.filler.toLocaleString('en')} filler notes`,
       '',
       ...summaryTable([['overall', run.overall], ...run.categories]),
+      '',
+      'search and retrieve, over the queries with text:',
+      '',
+      ...comparison(run),
       '',
       '| Cost | Value |',
       '| --- | --- |',
@@ -136,21 +172,24 @@ function report(runs: Run[], commit: string, dirty: boolean, repeat: number): st
     );
   }
   const base = runs[0]!;
+  const retrieved = new Map(base.retrieve.scores.map((s) => [s.id, s]));
+  const fetches = (s: QueryScore | undefined) =>
+    s === undefined ? '—' : s.outcome === 'ok' ? String(s.fetches) : s.outcome;
   lines.push(
     `## Queries at ${base.filler.toLocaleString('en')} filler notes`,
     '',
-    '| Query | Category | Outcome | First relevant rank | Recall@10 | Returned (top 5) |',
-    '| --- | --- | --- | --- | --- | --- |',
+    '| Query | Category | Outcome | First relevant rank | Recall@10 | Fetches needed, search / retrieve | Returned (top 5) |',
+    '| --- | --- | --- | --- | --- | --- | --- |',
     ...base.scores.map(
       (s) =>
-        `| ${s.id} | ${s.category} | ${s.outcome}${s.errorCode === null ? '' : ` (${s.errorCode})`} | ${s.rank ?? '—'} | ${s.relevant === 0 ? '—' : ratio(s.recall10)} | ${s.returned.slice(0, 5).join(', ') || '—'} |`
+        `| ${s.id} | ${s.category} | ${s.outcome}${s.errorCode === null ? '' : ` (${s.errorCode})`} | ${s.rank ?? '—'} | ${s.relevant === 0 ? '—' : ratio(s.recall10)} | ${fetches(s)} / ${fetches(retrieved.get(s.id))} | ${s.returned.slice(0, 5).join(', ') || '—'} |`
     ),
     '',
     '## Known gaps',
     '',
     '- Search has no stemming or synonyms, so paraphrases that share no word with the memory are not found.',
     '- An earlier revision of a memory updated in place is reachable through `revision()`, not search; historical queries cover superseded memories only.',
-    '- The large-content query returns one memory larger than the 32 KiB response target; the target is judged at p95, and the max is shown beside it.',
+    '- The large-content search returns one memory larger than the 32 KiB response target; the target is judged at p95, and the max is shown beside it. retrieve returns an excerpt of it, within the 64 KiB bound, and the full record takes a `get`.',
     '- Sparse metadata filters are measured as pages and partial pages at a scan budget of 10; storage does not report rows scanned.',
     ''
   );
@@ -180,11 +219,15 @@ if (values.json !== undefined) {
   const baseline: {
     commit: string;
     dirty: boolean;
-    runs: Array<{ filler: number; quality: Quality }>;
+    runs: Array<{ filler: number; quality: Quality; retrieve: Quality }>;
   } = {
     commit,
     dirty,
-    runs: runs.map((run) => ({ filler: run.filler, quality: quality(run.scores) })),
+    runs: runs.map((run) => ({
+      filler: run.filler,
+      quality: quality(run.scores),
+      retrieve: quality(run.retrieve.scores),
+    })),
   };
   writeFileSync(values.json, JSON.stringify(baseline, null, 2) + '\n');
 }

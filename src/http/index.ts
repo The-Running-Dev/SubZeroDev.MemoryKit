@@ -7,6 +7,7 @@ import {
   ValidationFailedError,
   isPlainObject,
   toProblem,
+  type RetrieveQuery,
   type SearchQuery,
 } from '../model/index.ts';
 import type {
@@ -141,6 +142,9 @@ async function route(client: MemoryClient, request: HttpRequest): Promise<HttpRe
   }
   if (resource === 'search' && rest.length === 0 && method === 'POST') {
     return json(200, await client.search(object(body) as SearchQuery));
+  }
+  if (resource === 'retrieve' && rest.length === 0 && method === 'POST') {
+    return json(200, await client.retrieve(object(body) as unknown as RetrieveQuery));
   }
   if (resource === 'operations' && rest.length === 1 && method === 'GET') {
     return json(200, await client.operation(rest[0]!));

@@ -28,6 +28,10 @@ export const MAX_OPERATION_ID_LENGTH = 128;
 export const MAX_SEARCH_TEXT_LENGTH = 1024;
 export const MAX_CURSOR_LENGTH = 4096;
 export const DEFAULT_PAGE_SIZE = 20;
+export const DEFAULT_RETRIEVE_LIMIT = 10;
+export const MAX_RETRIEVE_LIMIT = 50;
+export const DEFAULT_EXCERPT_CHARS = 280;
+export const MAX_EXCERPT_CHARS = 1000;
 
 const CONTROL = /\p{Cc}/u;
 // A lone surrogate cannot be encoded as UTF-8, so it would not round-trip through storage.
@@ -51,6 +55,11 @@ export interface NormalizedSearch {
   metadata?: Record<string, string | number | boolean | null>;
   limit: number;
   cursor?: string;
+}
+
+export interface NormalizedRetrieve extends NormalizedSearch {
+  text: string;
+  excerptChars: number;
 }
 
 export interface NormalizedUpdate {
@@ -300,6 +309,39 @@ export function validateSearch(input: unknown, limits: Limits): NormalizedSearch
       invalid('cursor', 'required');
     if (query.cursor.length > MAX_CURSOR_LENGTH) invalid('cursor', 'invalid_cursor');
     result.cursor = query.cursor;
+  }
+  return result;
+}
+
+// The search fields as validateSearch checks them, with retrieve's own bounds. The limit and
+// excerpt bounds are fixed, so exceeding them is ValidationFailed rather than LimitExceeded.
+export function validateRetrieve(input: unknown, limits: Limits): NormalizedRetrieve {
+  if (!isPlainObject(input)) invalid('query', 'not_an_object');
+  const { excerptChars, ...rest } = input;
+  if (rest.text === undefined) invalid('text', 'required');
+  const limit = rest.limit;
+  const maxLimit = Math.min(MAX_RETRIEVE_LIMIT, limits.maxPageSize);
+  if (typeof limit === 'number' && Number.isSafeInteger(limit) && limit > maxLimit) {
+    invalid('limit', 'too_large');
+  }
+  const search = validateSearch(rest, limits);
+  const result: NormalizedRetrieve = {
+    ...search,
+    text: search.text!,
+    limit:
+      limit === undefined ? Math.min(DEFAULT_RETRIEVE_LIMIT, limits.maxPageSize) : search.limit,
+    excerptChars: DEFAULT_EXCERPT_CHARS,
+  };
+  if (excerptChars !== undefined) {
+    if (
+      typeof excerptChars !== 'number' ||
+      !Number.isSafeInteger(excerptChars) ||
+      excerptChars < 1
+    ) {
+      invalid('excerptChars', 'not_a_limit');
+    }
+    if (excerptChars > MAX_EXCERPT_CHARS) invalid('excerptChars', 'too_large');
+    result.excerptChars = excerptChars;
   }
   return result;
 }

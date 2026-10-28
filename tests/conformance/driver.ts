@@ -1,3 +1,4 @@
+import type { Grant } from '../../src/access/index.ts';
 import type { Problem } from '../../src/model/index.ts';
 
 // A result from one surface: the value it returned, or the problem document it failed with.
@@ -36,6 +37,14 @@ export interface Driver {
   ): Promise<Result<Record<string, unknown>>>;
   get(store: string, id: string): Promise<Result<Record<string, unknown>>>;
   search(store: string, query: Record<string, unknown>): Promise<Result<Record<string, unknown>>>;
+  retrieve(store: string, query: Record<string, unknown>): Promise<Result<Record<string, unknown>>>;
+  // Retrieves as a caller holding only the grants. MCP over stdio always acts as the embedded
+  // principal, so its driver leaves this out and the scenario skips it.
+  retrieveAs?(
+    store: string,
+    grants: Grant[],
+    query: Record<string, unknown>
+  ): Promise<Result<Record<string, unknown>>>;
   history(store: string, id: string): Promise<Result<unknown>>;
   operation(store: string, operationId: string): Promise<Result<Record<string, unknown>>>;
   status(store: string): Promise<Result<Record<string, unknown>>>;

@@ -9,6 +9,20 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-28 — S15 excerpts are located in code, not with `snippet`
+
+- Context: implementing S15. The entry below says `snippet` only locates the match. `snippet` can still choose the metadata or kind column, and its offsets are in tokens of whichever column it chose, so mapping them back to a content position needs the tokenizer's rules anyway.
+- Chosen:
+  - The excerpt is located in code. Content is split into tokens and folded the way the index's `unicode61` tokenizer with `remove_diacritics 2` folds them (Unicode letters and digits, lowercase, diacritics removed), and the first token that equals a query term anchors the excerpt. No match in the content starts the excerpt at the beginning.
+  - The excerpt starts min(40, a quarter of `excerptChars`) code points before the anchor and shifts left near the end of the content, so short excerpts still show the match and a match near the end still fills the excerpt.
+  - `match.terms` are the query terms found in the item's kind, metadata or content, the same columns the index searches.
+  - The item type is named `RetrievedItem`; the slice's Touches line says `RetrieveItem`.
+- Rejected:
+  - `snippet` to locate the match, then a code-point cut: two passes over the same text, and the metadata-column case still needs the in-code search as a fallback.
+- Revisit: if the tokenizer changes (S17), the folding here must change with it; the S15 tests on accented and mixed-case content catch a drift.
+
+---
+
 ## 2026-10-28 — Stage 4: compact retrieval is a separate `retrieve` operation (S15)
 
 - Context: Stage 4A. `search` returns whole records, so a page of 100 records at the 256 KiB content limit is about 25 MiB. An agent needs candidates it can judge before fetching any record whole. The contract must be chosen before implementing.

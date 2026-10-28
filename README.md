@@ -36,6 +36,13 @@ npx memorykit create --store ./store --namespace team/notes --kind note --conten
 npx memorykit search --store ./store --namespace "team/*" --text deploys
 ```
 
+`retrieve` takes the same filters and returns compact items with a bounded excerpt instead of
+whole records, for a caller with a context budget; `get` fetches a record whole.
+
+```bash
+npx memorykit retrieve --store ./store --namespace "team/*" --text deploys
+```
+
 `npx memorykit --help` lists every command: update, archive, restore, tombstone, supersede,
 purge, history and revision, operation status, namespace history policy, history sync, tokens,
 `serve` (HTTP) and `mcp` (MCP over stdio). Exit code 3 means the write succeeded and its
