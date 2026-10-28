@@ -32,7 +32,7 @@ const MODELS: Record<string, ModelSpec> = {
   },
 };
 
-function sizeOf(path: string): number {
+export function sizeOf(path: string): number {
   const stat = statSync(path);
   if (!stat.isDirectory()) return stat.size;
   return readdirSync(path).reduce((total, name) => total + sizeOf(join(path, name)), 0);

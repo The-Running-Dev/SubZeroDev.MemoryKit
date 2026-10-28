@@ -160,40 +160,65 @@ export async function gather(dir: string, corpus: Corpus): Promise<Gathered[]> {
   return queries.map((query) => gathered.get(query.id)!);
 }
 
-// Scores every query under one rule. A query retrieve rejects is rejected under every rule.
+// One gathered query's lists as corpus refs, and the row each ref was first read as.
+export function listsOf(
+  entry: Gathered,
+  built: Built,
+  similarity: (entry: Gathered) => Map<string, number>
+): { lists: QueryLists; rows: Map<string, Row> } {
+  const rows = new Map<string, Row>();
+  const refsOf = (list: Row[]) =>
+    list.map((row) => {
+      const ref = built.refs.get(row.id) ?? `?${row.id}`;
+      if (!rows.has(ref)) rows.set(ref, row);
+      return ref;
+    });
+  const lists: QueryLists = {
+    lexical: refsOf(entry.base.items),
+    strict: refsOf(entry.strict),
+    relaxed: refsOf(entry.relaxed),
+    eligible: refsOf(entry.eligible),
+    similarity: similarity(entry),
+  };
+  return { lists, rows };
+}
+
+// Scores every query by the refs a ranking returns from its lists. A query retrieve rejects is
+// rejected under every ranking.
+export function scoreRanked(
+  gathered: Gathered[],
+  built: Built,
+  similarity: (entry: Gathered) => Map<string, number>,
+  rank: (lists: QueryLists, limit: number, entry: Gathered) => string[]
+): QueryScore[] {
+  return gathered.map((entry) => {
+    const { query, base } = entry;
+    if (base.error !== null)
+      return score(query, entry.expectedError, base, [], built, entry.grants);
+    const { lists, rows } = listsOf(entry, built, similarity);
+    const limit = query.search.limit ?? TOP;
+    const items = rank(lists, limit, entry).map((ref) => rows.get(ref)!);
+    const run: Execution = { ...base, items, bytes: [] };
+    return score(query, entry.expectedError, run, [], built, entry.grants);
+  });
+}
+
+// Scores every query under one rule. The lexical rule is retrieve's own run, bytes and all.
 export function scoreRule(
   rule: HybridRule,
   gathered: Gathered[],
   built: Built,
   similarity: (entry: Gathered) => Map<string, number>
 ): QueryScore[] {
-  return gathered.map((entry) => {
-    const { query, base } = entry;
-    if (rule.kind === 'lexical' || base.error !== null) {
-      return score(query, entry.expectedError, base, [], built, entry.grants);
-    }
-    const rows = new Map<string, Row>();
-    const refsOf = (list: Row[]) =>
-      list.map((row) => {
-        const ref = built.refs.get(row.id) ?? `?${row.id}`;
-        if (!rows.has(ref)) rows.set(ref, row);
-        return ref;
-      });
-    const lists: QueryLists = {
-      lexical: refsOf(base.items),
-      strict: refsOf(entry.strict),
-      relaxed: refsOf(entry.relaxed),
-      eligible: refsOf(entry.eligible),
-      similarity: similarity(entry),
-    };
-    const limit = query.search.limit ?? TOP;
-    const items = applyRule(rule, lists, limit).map((ref) => rows.get(ref)!);
-    const run: Execution = { ...base, items, bytes: [] };
-    return score(query, entry.expectedError, run, [], built, entry.grants);
-  });
+  if (rule.kind === 'lexical') {
+    return gathered.map((entry) =>
+      score(entry.query, entry.expectedError, entry.base, [], built, entry.grants)
+    );
+  }
+  return scoreRanked(gathered, built, similarity, (lists, limit) => applyRule(rule, lists, limit));
 }
 
-const measured = (scores: QueryScore[]): Measured => ({
+export const measured = (scores: QueryScore[]): Measured => ({
   overall: summarize(scores),
   categories: byCategory(scores),
 });
@@ -327,6 +352,46 @@ async function costs(
   };
 }
 
+// The corpus stored in dir, and its queries and both held-out sets gathered against it.
+export async function loadSets(dir: string): Promise<{ built: Built; sets: QuerySet[] }> {
+  const corpus = loadCorpus();
+  const built = await buildStore(dir, corpus);
+  const sets: QuerySet[] = [
+    { name: 'corpus', gathered: await gather(dir, corpus) },
+    { name: 'heldout.json', gathered: await gather(dir, loadHeldout(corpus)) },
+    { name: 'heldout-2.json', gathered: await gather(dir, loadHeldout(corpus, HELDOUT_2_FILE)) },
+  ];
+  return { built, sets };
+}
+
+const queryTexts = (sets: QuerySet[]) => [
+  ...new Set(sets.flatMap((set) => set.gathered.map((g) => g.query.search.text ?? ''))),
+];
+
+// Embeds every corpus memory and query text once; each query's similarity to every memory it
+// may see.
+export async function similarityFor(
+  embedder: Embedder,
+  built: Built,
+  sets: QuerySet[]
+): Promise<(entry: Gathered) => Map<string, number>> {
+  const documents = new Map<string, Float32Array>();
+  for (const ref of built.model.keys()) {
+    documents.set(ref, await embedder.embed(built.model.get(ref)!.content, 'document'));
+  }
+  const queries = new Map<string, Float32Array>();
+  for (const text of queryTexts(sets)) queries.set(text, await embedder.embed(text, 'query'));
+  return (entry: Gathered) => {
+    const query = queries.get(entry.query.search.text ?? '')!;
+    return new Map(
+      entry.eligible.map((row) => {
+        const ref = built.refs.get(row.id)!;
+        return [ref, cosine(documents.get(ref)!, query)];
+      })
+    );
+  };
+}
+
 export interface Evaluation {
   sets: QuerySet[];
   embedders: Embedder[];
@@ -345,39 +410,17 @@ export async function evaluate(
     create ?? ((await import(EMBEDDER.href)) as { createEmbedder: CreateEmbedder }).createEmbedder;
   const dir = mkdtempSync(join(tmpdir(), 'memorykit-embed-'));
   try {
-    const corpus = loadCorpus();
-    const built = await buildStore(dir, corpus);
-    const sets: QuerySet[] = [
-      { name: 'corpus', gathered: await gather(dir, corpus) },
-      { name: 'heldout.json', gathered: await gather(dir, loadHeldout(corpus)) },
-      { name: 'heldout-2.json', gathered: await gather(dir, loadHeldout(corpus, HELDOUT_2_FILE)) },
-    ];
+    const { built, sets } = await loadSets(dir);
     const ranked = rankAll(sets, built, null, () => new Map());
     const embedders: Embedder[] = [];
     const costed = new Map<string, Costs>();
     const refs = [...built.model.keys()];
-    const texts = [
-      ...new Set(sets.flatMap((set) => set.gathered.map((g) => g.query.search.text ?? ''))),
-    ];
+    const texts = queryTexts(sets);
     for (const model of models) {
       console.error(`Embedding with ${model}...`);
       const embedder = await createEmbedder(model, allowDownload);
       embedders.push(embedder);
-      const documents = new Map<string, Float32Array>();
-      for (const ref of refs) {
-        documents.set(ref, await embedder.embed(built.model.get(ref)!.content, 'document'));
-      }
-      const queries = new Map<string, Float32Array>();
-      for (const text of texts) queries.set(text, await embedder.embed(text, 'query'));
-      const similarity = (entry: Gathered) => {
-        const query = queries.get(entry.query.search.text ?? '')!;
-        return new Map(
-          entry.eligible.map((row) => {
-            const ref = built.refs.get(row.id)!;
-            return [ref, cosine(documents.get(ref)!, query)];
-          })
-        );
-      };
+      const similarity = await similarityFor(embedder, built, sets);
       ranked.push(...rankAll(sets, built, model, similarity));
       if (measureCosts) {
         const contents = refs.map((ref) => built.model.get(ref)!.content);
@@ -390,9 +433,9 @@ export async function evaluate(
   }
 }
 
-const ratio = (value: number) => value.toFixed(3);
-const ms = (value: number) => value.toFixed(value < 10 ? 2 : 1);
-const megabytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
+export const ratio = (value: number) => value.toFixed(3);
+export const ms = (value: number) => value.toFixed(value < 10 ? 2 : 1);
+export const megabytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 const name = (c: Candidate) => `${c.model ?? '—'} | ${ruleLabel(c.rule)}`;
 
 function categoryValue(m: Measured, category: string, pick: (s: Measured['overall']) => number) {
@@ -400,7 +443,7 @@ function categoryValue(m: Measured, category: string, pick: (s: Measured['overal
   return found === undefined ? '—' : ratio(pick(found));
 }
 
-function metrics(m: Measured): string {
+export function metrics(m: Measured): string {
   const o = m.overall;
   return [
     ratio(o.recall5),
@@ -419,9 +462,9 @@ function metrics(m: Measured): string {
   ].join(' | ');
 }
 
-const METRICS_HEADER =
+export const METRICS_HEADER =
   'Recall@5 | Recall@10 | Exact recall@5 | Paraphrase recall@10 | MRR | nDCG@10 | Non-relevant in top 10 | No-answer returning anything | Obsolete | Exposure | Errors | Duplicates | Fetches';
-const METRICS_RULE = Array.from({ length: 13 }, () => '---').join(' | ');
+export const METRICS_RULE = Array.from({ length: 13 }, () => '---').join(' | ');
 
 function candidateTable(ranked: Ranked[], set: number, conditions: boolean): string[] {
   return [
