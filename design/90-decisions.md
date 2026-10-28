@@ -27,9 +27,9 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
     - It leaves `heldout.json` no-answer at 0.500.
     - It cannot add what S17 misses: `heldout-2.json` recall@10 0.333.
   - Costs:
-    - Reranking S17's own list costs model time p95 18–69 ms with MiniLM, depending on depth, and ≤ 3.3 ms with TinyBERT.
+    - Reranking S17's own list costs model time p95 18–33 ms with MiniLM at depths 20 and 50, and ≤ 3.3 ms with TinyBERT.
     - The any-word and fused sources cost 0.96–2.6 s with MiniLM and 91–275 ms with TinyBERT.
-    - Tail timings vary between runs: an earlier uncommitted run measured 17.6 ms for MiniLM on S17's list at depth 10, against 68.9 ms here.
+    - The depth-10 figure on S17's list, 68.9 ms with MiniLM, is the first cell timed. It runs on a cold model because the runner does no warm-up; an earlier uncommitted run measured 17.6 ms for it. Tail timings also vary between runs.
     - TinyBERT never reaches paraphrase recall@10 0.70 on the corpus.
   - The S17.4 hard thresholds hold for every configuration on every set.
 - Consequence (S21.7):
