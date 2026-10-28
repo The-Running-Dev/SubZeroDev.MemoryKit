@@ -1,0 +1,219 @@
+{
+  "version": 1,
+  "about": "Second held-out queries for S18 over the memories and steps of corpus.json. Written by hand before any embedding run, and never used to choose a model, rule, floor or depth. Expected results are {ref, revision}, never derived from a search.",
+  "queries": [
+    {
+      "id": "held2-para-credential-swap",
+      "category": "paraphrase",
+      "search": { "text": "how often must Alpha access credentials be swapped out" },
+      "relevant": [{ "ref": "api-token-ttl", "revision": 1 }]
+    },
+    {
+      "id": "held2-para-invoicing-backlog",
+      "category": "paraphrase",
+      "search": {
+        "text": "what to do before bouncing the invoicing process when its backlog is full"
+      },
+      "relevant": [{ "ref": "error-e4012", "revision": 1 }]
+    },
+    {
+      "id": "held2-para-payments-owner",
+      "category": "paraphrase",
+      "search": { "text": "which person is responsible for the payments job" },
+      "relevant": [{ "ref": "owner-billing", "revision": 1 }]
+    },
+    {
+      "id": "held2-para-restore-window",
+      "category": "paraphrase",
+      "search": { "text": "how far back can we restore the Alpha data store" },
+      "relevant": [{ "ref": "backup-schedule", "revision": 1 }]
+    },
+    {
+      "id": "held2-para-pager-handoff",
+      "category": "paraphrase",
+      "search": { "text": "when does the Alpha pager pass to the next engineer" },
+      "relevant": [{ "ref": "on-call", "revision": 1 }]
+    },
+    {
+      "id": "held2-para-switch-capabilities",
+      "category": "paraphrase",
+      "search": {
+        "text": "how do we switch Alpha capabilities on and off without a dedicated toggle system"
+      },
+      "relevant": [{ "ref": "feature-flags", "revision": 1 }]
+    },
+    {
+      "id": "held2-para-machine-readable",
+      "category": "paraphrase",
+      "search": { "text": "are Alpha log entries machine readable and traceable per call" },
+      "relevant": [{ "ref": "log-format", "revision": 1 }]
+    },
+    {
+      "id": "held2-para-zone-outage",
+      "category": "paraphrase",
+      "search": { "text": "what do we do if the main Alpha zone goes down" },
+      "relevant": [{ "ref": "failover-current", "revision": 1 }]
+    },
+    {
+      "id": "held2-para-rebuild-waiting",
+      "category": "paraphrase",
+      "search": { "text": "what is the Alpha search rebuild waiting on" },
+      "relevant": [{ "ref": "ticket-alp-1182", "revision": 1 }]
+    },
+    {
+      "id": "held2-para-cost-memory",
+      "category": "paraphrase",
+      "search": { "text": "how long are Alpha product costs held in memory before refreshing" },
+      "relevant": [{ "ref": "price-cache", "revision": 1 }]
+    },
+    {
+      "id": "held2-para-login-state",
+      "category": "paraphrase",
+      "search": { "text": "which store keeps logged-in user state for Alpha today" },
+      "relevant": [{ "ref": "db-engine-v2", "revision": 1 }]
+    },
+    {
+      "id": "held2-para-version-weekday",
+      "category": "paraphrase",
+      "search": { "text": "what day of the week do new Alpha versions go out" },
+      "relevant": [{ "ref": "release-day", "revision": 2 }]
+    },
+    {
+      "id": "held2-para-request-give-up",
+      "category": "paraphrase",
+      "search": { "text": "how long before an outbound Alpha web request gives up" },
+      "relevant": [
+        { "ref": "timeout-a", "revision": 1 },
+        { "ref": "timeout-b", "revision": 1 }
+      ]
+    },
+    {
+      "id": "held2-para-event-streaming",
+      "category": "paraphrase",
+      "search": { "text": "what event streaming system do Alpha and Beta use together" },
+      "relevant": [{ "ref": "queue-v2", "revision": 1 }]
+    },
+
+    {
+      "id": "held2-noise-rotating-tokens",
+      "category": "distractor",
+      "search": { "text": "rotating Alpha tokens" },
+      "relevant": [{ "ref": "api-token-ttl", "revision": 1 }]
+    },
+    {
+      "id": "held2-noise-backup-retention",
+      "category": "distractor",
+      "search": { "text": "Alpha backup retention" },
+      "relevant": [{ "ref": "backup-schedule", "revision": 1 }]
+    },
+    {
+      "id": "held2-noise-release-day",
+      "category": "distractor",
+      "search": { "text": "Alpha release day" },
+      "relevant": [{ "ref": "release-day", "revision": 2 }]
+    },
+    {
+      "id": "held2-noise-checkout-cache",
+      "category": "distractor",
+      "search": { "text": "Alpha stale checkout cache" },
+      "relevant": [{ "ref": "price-cache", "revision": 1 }]
+    },
+    {
+      "id": "held2-noise-billing-queue",
+      "category": "distractor",
+      "search": { "text": "billing worker error when the queue is full" },
+      "relevant": [{ "ref": "error-e4012", "revision": 1 }]
+    },
+    {
+      "id": "held2-noise-session-engine",
+      "category": "distractor",
+      "search": { "text": "Alpha session storage engine" },
+      "relevant": [{ "ref": "db-engine-v2", "revision": 1 }]
+    },
+    {
+      "id": "held2-noise-beta-tokens",
+      "category": "distractor",
+      "search": { "text": "Beta token lifetime" },
+      "relevant": [{ "ref": "beta-token-ttl", "revision": 1 }]
+    },
+
+    {
+      "id": "held2-none-refunds",
+      "category": "no-answer",
+      "search": { "text": "which payment provider does Alpha use for refunds" },
+      "relevant": []
+    },
+    {
+      "id": "held2-none-password-reset",
+      "category": "no-answer",
+      "search": { "text": "Alpha password reset email template" },
+      "relevant": []
+    },
+    {
+      "id": "held2-none-beta-replicas",
+      "category": "no-answer",
+      "search": { "text": "how many replicas does the Beta search service run" },
+      "relevant": []
+    },
+    {
+      "id": "held2-none-gamma-oncall",
+      "category": "no-answer",
+      "search": { "text": "what is the Gamma on-call schedule" },
+      "relevant": []
+    },
+    {
+      "id": "held2-none-beta-schema",
+      "category": "no-answer",
+      "search": { "text": "who approves Beta schema changes" },
+      "relevant": []
+    },
+    {
+      "id": "held2-none-beta-releases",
+      "category": "no-answer",
+      "search": { "text": "when do Beta releases ship" },
+      "relevant": []
+    },
+    {
+      "id": "held2-none-rate-limit",
+      "category": "no-answer",
+      "search": { "text": "what is the Alpha rate limit for the public API" },
+      "relevant": []
+    },
+    {
+      "id": "held2-none-delta-warehouse",
+      "category": "no-answer",
+      "search": { "text": "which region hosts the Delta analytics warehouse" },
+      "relevant": []
+    },
+    {
+      "id": "held2-none-push",
+      "category": "no-answer",
+      "search": { "text": "how are Alpha mobile push notifications sent" },
+      "relevant": []
+    },
+    {
+      "id": "held2-none-encryption",
+      "category": "no-answer",
+      "search": { "text": "what encryption does Alpha use for data at rest" },
+      "relevant": []
+    },
+    {
+      "id": "held2-none-beta-audit",
+      "category": "no-answer",
+      "search": { "text": "how long does Beta keep audit logs" },
+      "relevant": []
+    },
+    {
+      "id": "held2-none-graphql",
+      "category": "no-answer",
+      "search": { "text": "Alpha GraphQL schema versioning policy" },
+      "relevant": []
+    },
+    {
+      "id": "held2-none-search-pm",
+      "category": "no-answer",
+      "search": { "text": "who is the product manager for Alpha search" },
+      "relevant": []
+    }
+  ]
+}
