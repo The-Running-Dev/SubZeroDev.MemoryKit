@@ -130,12 +130,12 @@ export interface RetrieveQuery extends Omit<SearchQuery, 'text'> { text: string;
 export interface RetrievedItem {
   id: MemoryId; revision: number; namespace: Namespace; key: string | null; kind: string; state: MemoryState; updatedAt: string;
   contentBytes: number;                                  // UTF-8 length of the whole content
-  excerpt: { text: string; truncated: boolean };         // content only, at most excerptChars code points, around the first matched term
+  excerpt: { text: string; truncated: boolean };         // content only, at most excerptChars code points, around the first term the index matched in it
   evidence: { refs: string[]; omitted: number };         // at most 5 refs of at most 256 chars; longer or later refs are counted
   supersededBy: { ids: MemoryId[]; omitted: number };    // at most 8 readable ids
-  match: { score: number; terms: string[] };             // score is a BM25 rank, higher is better, comparable within one result only
+  match: { score: number; terms: string[] };             // terms: the query's distinct terms; score is a BM25 rank, higher is better, comparable within one result only
 }
-export interface RetrieveResult {                        // serialized, never more than 65,536 bytes; a page ends early with a cursor to the next item
+export interface RetrieveResult {                        // as compact JSON, never more than 65,536 bytes; a page ends early with a cursor to the next item
   items: RetrievedItem[]; nextCursor: string | null;
   completeness: 'complete' | 'partial'; partialReason?: 'scan_budget' | 'time_budget';
 }

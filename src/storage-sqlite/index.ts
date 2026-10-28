@@ -244,6 +244,16 @@ function matchesMetadata(row: Row, wanted: StorageSearch['metadata']): boolean {
   );
 }
 
+// highlight() only inserts marks, so the first place the marked content departs from the
+// content is where the first match starts; -1 when nothing in the content matched.
+const MATCH_MARK = '\u0001';
+function firstMark(content: string, marked: string): number {
+  if (marked === content) return -1;
+  let at = 0;
+  while (content[at] === marked[at]) at++;
+  return at;
+}
+
 // The rows a search examines, in its order, from the row after the cursor. Without text they
 // are newest first, keyed by updatedAt; with text they are by BM25 rank, keyed by rank.
 function scanSql(
@@ -276,7 +286,8 @@ function scanSql(
     }
     params.unshift(text);
     sql =
-      'SELECT * FROM (SELECT m.*, bm25(memories_fts) AS rank FROM memories_fts ' +
+      'SELECT * FROM (SELECT m.*, bm25(memories_fts) AS rank, memories_fts.rowid AS fts_rowid ' +
+      'FROM memories_fts ' +
       'JOIN memories m ON m.id = memories_fts.id WHERE memories_fts MATCH ?) ' +
       `WHERE ${where.join(' AND ')} ORDER BY rank, id`;
   }
@@ -553,11 +564,17 @@ export class SqliteStorage implements StorageProvider, TokenStore {
   // Search's scan, with each matching row projected to a compact item. A page also stops
   // before an item that would take the serialized result past MAX_RETRIEVE_BYTES, and its
   // cursor resumes at that item. The largest possible item is about 25 KiB, so a page always
-  // holds at least one.
+  // holds at least one. The index's own highlight() locates the first matched term in the
+  // content, so the excerpt follows the tokenizer exactly.
   retrieve(query: StorageRetrieve): Promise<RetrieveResult> {
     return this.read((db) => {
       const fingerprint = retrieveFingerprint(query);
       const { sql, params, text } = scanSql(query, fingerprint);
+      const terms = [...new Set(searchTerms(query.text))];
+      const locate = db.prepare(
+        "SELECT highlight(memories_fts, 2, ?, '') AS marked FROM memories_fts " +
+          'WHERE memories_fts MATCH ? AND rowid = ?'
+      );
       const items: RetrievedItem[] = [];
       let used = ENVELOPE_BYTES;
       let last: Row | null = null;
@@ -578,15 +595,18 @@ export class SqliteStorage implements StorageProvider, TokenStore {
         if (matches) {
           const id = String(row.id);
           const replacements = supersededBy(db, [id], { patterns: query.readable })[id]!;
+          const marked = locate.get(MATCH_MARK, text, Number(row.fts_rowid)) as Row;
           const item = retrievedItem(
             toSource(row),
             replacements,
             Number(row.rank),
-            query.text,
+            terms,
+            firstMark(String(row.content), String(marked.marked)),
             query.excerptChars
           );
           const size = Buffer.byteLength(JSON.stringify(item), 'utf8') + 1;
           if (used + size > MAX_RETRIEVE_BYTES) {
+            if (items.length === 0) throw new Error('a retrieved item exceeds the page bound');
             more = true;
             break;
           }

@@ -106,7 +106,14 @@ describe('retrieve validation', () => {
 describe('retrieved item', () => {
   it('S15.2 cuts the excerpt at code points around the first matched term', () => {
     const content = `${'🌊'.repeat(100)} the lighthouse ${'🌊'.repeat(100)}`;
-    const item = retrievedItem(source(content), [], -1.5, 'lighthouse', 60);
+    const item = retrievedItem(
+      source(content),
+      [],
+      -1.5,
+      ['lighthouse'],
+      content.indexOf('lighthouse'),
+      60
+    );
     assert.equal(Array.from(item.excerpt.text).length, 60);
     assert.ok(item.excerpt.text.includes('lighthouse'));
     assert.ok(!item.excerpt.text.includes('�'));
@@ -116,22 +123,39 @@ describe('retrieved item', () => {
     assert.deepEqual(item.match.terms, ['lighthouse']);
 
     // Near the end the window keeps its full width; without a content match it starts at 0.
-    const tail = retrievedItem(source(`${'a '.repeat(50)}beacon`), [], -1, 'beacon', 10);
+    const tail = retrievedItem(source(`${'a '.repeat(50)}beacon`), [], -1, ['beacon'], 100, 10);
     assert.equal(tail.excerpt.text, 'a a beacon');
-    const head = retrievedItem(
-      source('plain words here', { metadata: { tag: 'beacon' } }),
-      [],
-      -1,
-      'beacon',
-      5
-    );
+    const head = retrievedItem(source('plain words here'), [], -1, ['beacon'], -1, 5);
     assert.equal(head.excerpt.text, 'plain');
     assert.deepEqual(head.match.terms, ['beacon']);
 
-    const whole = retrievedItem(source('Café crème'), [], 0, 'cafe', 280);
+    const whole = retrievedItem(source('Café crème'), [], 0, ['cafe'], 0, 280);
     assert.deepEqual(whole.excerpt, { text: 'Café crème', truncated: false });
-    assert.deepEqual(whole.match.terms, ['cafe']);
     assert.ok(Object.is(whole.match.score, 0), 'a zero rank is not -0');
+  });
+
+  it('S15.2 the index locates the match, whatever the script or case', async () => {
+    const { client } = await newStore();
+    const pad = 'filler '.repeat(60);
+    const create = (content: string, metadata = {}): Promise<unknown> =>
+      client.create({ namespace: 'scripts', kind: 'note', content, metadata });
+    await create(`${pad}ΣΑΣ greek`);
+    await create(`${pad}สวัสดีครับ thai`);
+    await create(`${pad}Crème brûlée`);
+    await create('plain words here', { tag: 'beacon' });
+    const excerpt = async (text: string): Promise<{ text: string; terms: string[] }> => {
+      const { items } = await client.retrieve({ text, excerptChars: 40 });
+      assert.equal(items.length, 1, text);
+      return { text: items[0]!.excerpt.text, terms: items[0]!.match.terms };
+    };
+    assert.match((await excerpt('σασ')).text, /ΣΑΣ greek$/u);
+    assert.match((await excerpt('สวัสดี')).text, /สวัสดีครับ thai$/u);
+    assert.match((await excerpt('CREME brulee')).text, /Crème brûlée$/u);
+    assert.deepEqual(await excerpt('beacon beacon'), {
+      text: 'plain words here',
+      terms: ['beacon'],
+    });
+    await client.close();
   });
 
   it('S15.2 lists at most 5 short refs and 8 replacements, counting the rest', () => {
@@ -143,7 +167,8 @@ describe('retrieved item', () => {
       }),
       replacements,
       -1,
-      'text',
+      ['text'],
+      0,
       280
     );
     assert.deepEqual(item.evidence, { refs: ['a', 'b', 'c', 'd', 'e'], omitted: 2 });

@@ -9,17 +9,18 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
-## 2026-10-28 — S15 excerpts are located in code, not with `snippet`
+## 2026-10-28 — S15 excerpts are located with `highlight`, not `snippet`
 
-- Context: implementing S15. The entry below says `snippet` only locates the match. `snippet` can still choose the metadata or kind column, and its offsets are in tokens of whichever column it chose, so mapping them back to a content position needs the tokenizer's rules anyway.
+- Context: implementing S15. The entry below says `snippet` only locates the match. `snippet` can choose the kind or metadata column, and it returns a token-bounded fragment, not a position, so the content offset of the match is not recoverable from it.
 - Chosen:
-  - The excerpt is located in code. Content is split into tokens and folded the way the index's `unicode61` tokenizer with `remove_diacritics 2` folds them (Unicode letters and digits, lowercase, diacritics removed), and the first token that equals a query term anchors the excerpt. No match in the content starts the excerpt at the beginning.
+  - FTS5's `highlight` on the content column, for each item on the page, marks the matched tokens in the original content. The first mark is the anchor. The index's own tokenizer decides what matched, so the excerpt follows it in every script and case. When only the kind or metadata matched, the excerpt starts at the beginning.
   - The excerpt starts min(40, a quarter of `excerptChars`) code points before the anchor and shifts left near the end of the content, so short excerpts still show the match and a match near the end still fills the excerpt.
-  - `match.terms` are the query terms found in the item's kind, metadata or content, the same columns the index searches.
+  - `match.terms` are the query's distinct terms. The words are ANDed, so every match contains all of them.
   - The item type is named `RetrievedItem`; the slice's Touches line says `RetrieveItem`.
 - Rejected:
-  - `snippet` to locate the match, then a code-point cut: two passes over the same text, and the metadata-column case still needs the in-code search as a fallback.
-- Revisit: if the tokenizer changes (S17), the folding here must change with it; the S15 tests on accented and mixed-case content catch a drift.
+  - Tokenizing and folding in code to mimic `unicode61 remove_diacritics 2`. A sweep of code points 0x80–0x2FFFF against SQLite differed on about 60,000: SQLite's diacritic table is narrower than NFD stripping, its Unicode tables are older, and marks outside the table split tokens. Thai, Greek final sigma and many Latin letters anchored wrongly.
+  - `snippet` and then a code-point cut: no position to cut from, as above.
+- Revisit: an item costs one `highlight` query on its own row; if S16's cost bounds show it matters, fold it into the scan.
 
 ---
 
