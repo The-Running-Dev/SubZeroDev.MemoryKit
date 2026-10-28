@@ -253,7 +253,7 @@ Acceptance:
 Out of scope: embeddings, vector indexes, rerankers, query expansion and LLM ranking (deferred with a trigger in 90-decisions); synonyms (`toggles` for `flags`); changing `search`.
 
 ## S18 — Measure whether a local embedding model answers what lexical retrieval cannot
-Status: todo
+Status: done
 Delivers: Stage 5, measurement first. Before any product code, the eval shows whether vector or hybrid ranking with a small local model finds paraphrased answers and leaves no-answer questions empty, on the S14 corpus and on held-out questions. The result decides whether S19 and S20 are built (90-decisions, Stage 5).
 Touches: eval (a second held-out set, embedding runs, ranking comparison, model cost; `eval/embed/` with its own package.json and lockfile pinning `@huggingface/transformers`, outside the root install); design (90-decisions)
 Depends on: S17
