@@ -2,6 +2,8 @@
 
 Ordered riskiest assumption first. Each slice is one reviewable PR and leaves the system runnable. Each slice adds its scenarios to the shared conformance suite, and that suite runs against every adapter that exists at the time. Criterion ids are stable.
 
+> S19 and S20 were retired unbuilt on 2026-10-28, when Stage 5 closed with S17's `retrieve` after S21's gate failed (90-decisions). Their text is in `git show 7366e48:design/30-slices.md`. Their ids are not reused.
+
 ## S1 — Persist and retrieve a memory without a server
 Status: done
 Delivers: A conventional application, or a person at a terminal, creates a memory in a new store, exits, starts again and gets back the same memory with the same identity. No server runs and no model is involved.
@@ -273,38 +275,6 @@ Acceptance:
   - S18.6 For each model the report gives: size on disk, cold start (load plus the first query embedding), query-embedding p50 and p95, document-embedding throughput, and exact-cosine time over 10,000 and 100,000 random unit vectors of the model's dimensions, with Node, OS and CPU.
   - S18.7 A 90-decisions entry records the chosen model, rule, floor and depth, or the failed gate. With a failed gate, S19 and S20 are not started and this plan is re-run.
 Out of scope: product code; rerankers; query expansion; fine-tuning; hosted embedding APIs.
-
-## S19 — Memories carry vectors that stay in step with their records, through an optional local embedder
-Status: todo
-Delivers: Stage 5. An application or service that opts into an embedder gets a vector for every memory, kept current after every write and removed by purge, and no write waits on the model. A store without an embedder behaves as before and loads no model code. Retrieval does not use the vectors until S20.
-Touches: contracts (`Embedder`, `EmbeddingModel`, `EmbedderDescriptor`, `StorageProvider.staleVectors`, `putVectors`, `vectorCounts`, `StoreStatus.vectors`, `syncVectors`, `ServiceConfig.indexBatchSize`); storage-sqlite (schema 5, `memory_vectors`, purge); service (the indexer, `syncVectors`, status); embedder-hash (`HashEmbedder`); embedder-transformers (`TransformersEmbedder` on `<package>/embedder-transformers`); sdk (`StoreConfig.embedder`, lazy loading); cli (`--embedder`, `--model`, `--model-dir`, `--allow-download`, `vectors-sync`, status); http (`POST /v1/vectors/sync`); conformance; package (exports, optional peer dependency, `check:package`)
-Depends on: S21, only if its gate (S21.5) passed with a candidate source that fuses vectors and the plan re-run after S21 keeps this slice
-Acceptance:
-  - S19.1 With no embedder configured, `@huggingface/transformers` is never imported (a test runs a child process whose resolve hook records every specifier), status reports `vectors: null`, `syncVectors` fails with `Unsupported`, and every existing test and conformance scenario passes unchanged.
-  - S19.2 Migration 5 creates `memory_vectors` empty; opening a schema-4 store migrates it, and a test checks it. `staleVectors` returns exactly the memories whose vector is missing or from another revision, model id or model revision. `putVectors` skips a memory whose revision has moved on or that was purged, and a test races a write against it.
-  - S19.3 With `HashEmbedder`, after create, update, supersede, archive, restore, tombstone and purge, a `syncVectors` leaves every remaining memory with one vector at its current revision and the purged memory with none, through every adapter that exposes `syncVectors` (conformance; the MCP driver skips it, as for purge). The purge deletes the vector row in the purge transaction.
-  - S19.4 A write returns without waiting for embedding. With an embedder that throws or never resolves, writes succeed with unchanged outcomes, status shows the stale count and a `lastError` without content, and indexing resumes with backoff once the embedder recovers. With an embed call that never resolves, `close` returns within `indexTimeoutMs` and the abandoned batch writes nothing. An embedder that fails to open leaves the store open, with `vectors.embedder` and the counts null and the error in `lastError`.
-  - S19.5 `TransformersEmbedder` loads its model from `cacheDir` without network access. With `allowDownload` false and the model absent, `open` fails naming the model and the cache directory, and no request is made (a test stubs `fetch`). Its vectors are unit length with the declared dimensions. The model test runs only when `MEMORYKIT_MODEL_DIR` is set; CI never downloads a model.
-  - S19.6 The root entry does not import `@huggingface/transformers`, and `<package>/embedder-transformers` does; `check:package` verifies both. The package is an optional peer dependency.
-  - S19.7 Changing the configured model, its revision or its dimensions makes every vector stale, and `syncVectors` re-embeds them until status shows 0 stale.
-  - S19.9 With an embedder and a storage provider that lacks `retrieve.hybrid`, open fails with `Unsupported` naming the capability. The vector methods are optional on `StorageProvider`, so an existing provider compiles and passes conformance unchanged. CLI commands other than `serve` and `mcp` do not index after a write.
-  - S19.8 With the S18 model on the corpus plus 10,000 filler memories, the report gives the time to index from empty, the database size before and after, and create p95 while indexing, next to the S17 figures.
-Out of scope: using vectors in `retrieve` or `search` (S20); approximate indexes; GPUs; an MCP tool for syncing.
-
-## S20 — Retrieve ranks by meaning as well as words when an embedder is configured
-Status: todo
-Delivers: Stage 5. With an embedder configured, `retrieve` fuses its lexical ranking with vector similarity by the rule S18 chose, so paraphrased questions find their memories and questions with no answer come back empty more often. Without one, or when the model fails, `retrieve` returns the S17 result and says it fell back. `search` is unchanged.
-Touches: contracts (`retrieve` vector input, capability `retrieve.hybrid`, `RetrieveResult.ranking`, `match.similarity`, `ServiceConfig.embedTimeoutMs`); storage-sqlite (vector ranking within scope and filters, fusion, cursor); service (query embedding with a timeout, fallback); sdk; cli (`retrieve` prints the ranking; `serve` and `mcp` take `--embedder`); http; mcp; conformance; eval (`--embedder` through the SDK; latency at 10,000 and 100,000); design (10-design, 20-contract)
-Depends on: S19
-Acceptance:
-  - S20.1 `ranking` is `{ method: 'hybrid' }` when the query was embedded, otherwise `{ method: 'lexical', reason }` with `no_embedder`, `embedder_unavailable` or `query_timeout`. With `no_embedder`, items, order, cursors and completeness equal S17's on the S14 corpus and in every existing conformance scenario.
-  - S20.2 Hybrid ranking applies S18's rule inside storage. The lexical and vector lists are each computed over the caller's scope, states, kinds and metadata filters, cut to the fixed depth and fused, and the fused list is paged by fused score then id. Paging an unchanged store neither repeats nor skips an item, through every adapter (conformance). Completeness is partial when the lexical side stops at the scan budget.
-  - S20.3 A record outside the caller's grants never contributes an item, a similarity or a rank to either list, including for a caller who can read one of two namespaces (conformance). A memory without a current vector is ranked as S18's rule says (lexically, or left out under a vector-gated rule); a stale vector is never used.
-  - S20.4 When query embedding throws, `retrieve` returns the lexical result with `embedder_unavailable`; when it exceeds `embedTimeoutMs` (default 1,000), with `query_timeout`, returning within the timeout plus the lexical time. Status shows the error. The service waits for the embedder to open outside the timeout; an open that fails gives `embedder_unavailable`. A hybrid cursor whose query cannot be embedded fails with `ValidationFailed`, `details.reason: 'cursor_needs_embedder'`; a lexical cursor is unaffected.
-  - S20.5 Through the SDK with the S18 model, on the corpus and both held-out sets, `retrieve` reproduces S18's numbers for the chosen rule within 0.01, and the hard thresholds hold. The report is committed with S17 lexical alongside.
-  - S20.6 At 10,000 filler memories, hybrid `retrieve` p95 including query embedding, and response bytes p95, are reported against the S14 targets (50 ms, 32 KiB), with query embedding also shown alone. At 100,000 the vector-side time is reported. A missed target is reported as missed, and the Stage 5 revisit trigger applies.
-  - S20.7 `search` results, codes and order are unchanged on the S14 corpus and in every existing conformance scenario. `match.similarity` appears only on hybrid results, and the contract documents `match.score` there as the fused rank score.
-Out of scope: sqlite-vec or approximate search; rerankers; changing `search`; making hybrid the default.
 
 ## S21 — Measure whether a reranker separates questions with no answer from paraphrased ones
 Status: done

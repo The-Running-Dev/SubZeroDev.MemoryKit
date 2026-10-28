@@ -9,6 +9,23 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-28 — Stage 5 closed with S17's `retrieve`; S19 and S20 retired unbuilt
+
+- Context: S21's gate failed (entry below), and S21.7 asks for this re-run to close Stage 5 with S17's `retrieve` and retire S19 and S20. No embedder, vector or hybrid code was built; the store is at schema 4.
+- Chosen:
+  - Retire S19 and S20 by removing their unbuilt sections from `30-slices.md`, with a note at its top. Their text is in `git show 7366e48:design/30-slices.md`, and their ids are not reused.
+  - Revert the Stage 5 additions PR #34 made to `10-design.md` and `20-contract.md`: invariants 20 and 21, the embedder, vector and hybrid signatures, `RetrieveResult.ranking`, `match.similarity`, `StoreStatus.vectors`, `syncVectors`, the `ServiceConfig` and `MemoryService` additions, `retrieve.hybrid`, `StoreConfig.embedder`, `HashEmbedder`, `TransformersEmbedder`, `POST /v1/vectors/sync`, `vectors-sync` and `--embedder`, `memory_vectors` and migration 5, the vector indexing control flow, the hybrid read step, the embedder modules and requirement, and the embedder failure modes.
+  - Keep what PR #34 reconciled with code already built: `readable` on the storage `search` and `retrieve` signatures, schema version 4, the `memories_updated` index and migration 3, and "retrieval" in the storage-sqlite module row.
+  - Add no slices. Stage 5 ends with S17's lexical `retrieve`, measured by S14, S17, S18 and S21.
+- Rejected:
+  - Leaving S19 and S20 as `todo`. `/next` reads S19's dependency line as S21 and S5, both done, and would start S19.
+  - Marking them `done` or listing them under a landed index. They were never built, and the plan would then claim they were.
+  - Building a reranker on S17's list, which halves corpus no-answer. It still fails the gate on every set (entry below).
+  - Leaving the contract describing signatures nothing implements. The contract is the source of truth, and a later slice would build against it.
+- Revisit: a ranking method that, measured on the unchanged corpus and held-out sets, gets no-answer questions under 20% while keeping S18.4's recall conditions (the S18 and S21 triggers). Re-planning then starts from the retired text and the PR #34 contract diff (`git show a210371 -- design`).
+
+---
+
 ## 2026-10-28 — S21 gate failed: no reranker configuration gets no-answer questions under 20%; Stage 5 closes with S17 after a plan re-run
 
 - Context:

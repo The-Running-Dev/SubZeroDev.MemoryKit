@@ -99,11 +99,9 @@ A store is a directory holding the database, the default history repository and 
 |---|---|---|---|
 | model | Record types, validation, the lifecycle transition table, namespace and pattern syntax, ULIDs, typed errors | nothing | Types, validators, transition rules, error classes |
 | access | Principals, grants, the authorisation decision | model | `authorize`, `permittedPatterns` |
-| contracts | Provider interfaces (storage, search, history, token store, embedder), capability descriptors, contract versions | model | Interfaces, plus the versioned external data representation of records and revisions |
-| service | The application service: operation orchestration, idempotency, outcomes, the history drainer, the vector indexer | model, access, contracts | `MemoryService` and the `MemoryClient` interface |
-| storage-sqlite | Storage, search, retrieval and the token store on SQLite (`node:sqlite`), including the outbox, operations, vectors and migrations | model, contracts | `SqliteStorage` |
-| embedder-hash | A deterministic, dependency-free embedder for tests; consumers can use it too (S19) | model, contracts | `HashEmbedder` |
-| embedder-transformers | Local sentence embeddings through the optional `@huggingface/transformers` peer dependency, loaded only when configured (S19) | model, contracts | `TransformersEmbedder` |
+| contracts | Provider interfaces (storage, search, history, token store), capability descriptors, contract versions | model | Interfaces, plus the versioned external data representation of records and revisions |
+| service | The application service: operation orchestration, idempotency, outcomes, the history drainer | model, access, contracts | `MemoryService` and the `MemoryClient` interface |
+| storage-sqlite | Storage, search, retrieval and the token store on SQLite (`node:sqlite`), including the outbox, operations and migrations | model, contracts | `SqliteStorage` |
 | history-git | Revision export and inspection through the installed `git` executable | model, contracts | `GitHistory` |
 | history-memory | An in-memory history provider for tests; consumers can use it too | model, contracts | `MemoryHistory` |
 | sdk | The composition root: builds a store from configuration for embedded use, plus an HTTP client that implements the same `MemoryClient` | service, providers, model | `openStore`, `connect` |
@@ -161,7 +159,6 @@ This covers create, update, archive, supersede, tombstone and restore.
 3. Each match becomes a bounded item: identity and state, an excerpt of the content around the first matched term, up to 5 evidence refs, up to 8 readable `supersededBy` ids, the matched terms and a BM25 rank score. Metadata, links, provenance origin and reason are never included.
 4. A page ends before the item that would take the serialized result over 64 KiB, with a cursor that resumes at that item. Every item fits on its own, so the bound never drops one.
 5. The caller fetches whole records with `get`.
-6. **Hybrid, with an embedder (S20).** The service embeds the text as a query, within `embedTimeoutMs`. Storage ranks a second list over the same scope and filters: memories whose current vector is closest to the query by cosine, at or above a similarity floor, computed exactly in-process. Both lists are cut to a fixed depth and fused, and the fused list is paged by fused score then id. The fusion rule, floor and depth, and whether a lexical match needs its vector to clear the floor, are those S18 measured; plain fusion keeps every lexical match, so only a vector-gated rule can return nothing for a question with no answer. A memory without a current vector is then left out, or ranked lexically under plain fusion. The vector side reads every in-scope vector, outside the scan budget. With no embedder, an unavailable one or a timeout, steps 1 to 5 run alone and `ranking` says why. A cursor names its method; a hybrid cursor that can no longer be embedded fails with `ValidationFailed`, and the caller restarts.
 
 **History.**
 1. Authorise `history`.
@@ -212,26 +209,6 @@ A missing, torn, damaged or foreign index therefore costs one rebuild, never a w
 - **After the Git compare-and-swap, before the mark:** the next drain finds the trailer and marks the entry without committing again.
 - **While Git is writing objects:** unreferenced objects are left behind. They are harmless and are removed by Git's own garbage collection.
 
-### 4. Vector indexing (S19)
-
-Only with an embedder configured. Vectors are derived from records and never block or fail a write.
-
-The indexer runs:
-- after each write commits, in the process that wrote, when `indexOnWrite` is set (one-shot CLI commands clear it);
-- when the store opens;
-- periodically, with backoff after an error, in the service;
-- on `vectors-sync`.
-
-1. **Pick.** Ask storage for up to `indexBatchSize` memories whose vector is missing, from an older revision, or from another model.
-2. **Embed.** Call `embed(contents, 'document')`.
-3. **Store.** `putVectors` writes each vector with the revision it was computed from, in one transaction, skipping memories that changed or were purged meanwhile; they stay stale and are picked again.
-4. **On failure.** Back off, keep the memories stale and put the message in status. Retrieval falls back to lexical while the embedder is unavailable.
-5. **Repeat** until nothing is stale or the time budget is spent. `close` waits for the batch in flight, at most `indexTimeoutMs`; an abandoned batch writes nothing.
-
-An embedder that fails to open does not fail the store's open: status shows the error and the indexer retries it with backoff. With an embedder configured and a storage provider without `retrieve.hybrid`, open fails with `Unsupported`.
-
-Two processes may embed the same memory; the second write is the same vector, so the duplicate costs only time. Changing the model makes every vector stale.
-
 ## Distribution
 
 - **Channel.** The npm registry. There is one package containing the library entry points (`openStore`, `connect`, the provider classes and the contracts) and a `memorykit` executable. The package name is open.
@@ -240,7 +217,6 @@ Two processes may embed the same memory; the second write is the same vector, so
 - **Requirements.**
   - Node 22.18 or later. Opening a store checks that the built-in SQLite has FTS5 and WAL.
   - A `git` executable on PATH, needed only when the Git history provider is configured.
-  - `@huggingface/transformers` and its model files, needed only when the `transformers` embedder is configured. The package is an optional peer dependency; model files are read from a local cache and downloaded only when the configuration allows it (S19).
 - **First install.**
   - Install the library with `npm install`, or the CLI globally or through `npx`.
   - `memorykit init <dir>` creates the database and opens the default Git history provider to create the bare repository. If Git is unavailable, repository creation is deferred to a later open/export.
@@ -278,8 +254,6 @@ Two processes may embed the same memory; the second write is the same vector, so
 | TLS | Certificate missing or invalid on a non-loopback listener | Checks at start-up | The service refuses to start | Not listening |
 | Client | Disconnects while a request is in flight | Socket closes | The operation still completes; a retry with the same operation id returns the stored outcome | Consistent |
 | Search | Scan budget exceeded | Provider counter | `completeness: partial` with a reason | Unchanged |
-| Embedder | Package or model missing, download not allowed, load or inference error | `open` or `embed` throws | `retrieve` returns the lexical result with `ranking.reason: embedder_unavailable`; the indexer backs off; status shows the error | Vectors stay stale until it recovers |
-| Embedder | Query embedding slower than `embedTimeoutMs` | Timer | `retrieve` returns the lexical result with `ranking.reason: query_timeout` | Unchanged |
 | Purge | One boundary fails | Per-boundary result | The coverage report marks that boundary failed and what succeeded stays done; purge can be re-run with the same operation id | Partly purged, and reported |
 
 Logs and errors name the operation, the provider, the memory id, the revision, the outcome and the error code. They never include content or metadata values.
