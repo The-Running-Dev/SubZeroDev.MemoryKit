@@ -9,6 +9,25 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-28 — S18 gate failed: embeddings recover paraphrases but no floor empties no-answer questions; S19 and S20 are not started
+
+- Context: S18 compared S17 lexical with 55 vector and hybrid rules per model (`eval/retrieval/embed.md`; `Xenova/all-MiniLM-L6-v2` at `751bff3`, `Xenova/bge-small-en-v1.5` at `ea104da`, `@huggingface/transformers` 4.3.2, fp32, exact cosine, RRF k = 60, depth 50; Node 26.12.1, win32, i7-11850H). `heldout-2.json` was committed alone first (d4a00fc) and chose nothing.
+- Result: no rule meets every corpus condition, so the gate fails (S18.5).
+  - Best by recall@10, then MRR, then non-relevant, without the conditions: MiniLM, RRF ≥ 0.40. Corpus recall@10 1.0, exact recall@5 1.0, paraphrase recall@10 1.0, MRR 0.947, non-relevant 3.64, no-answer 0.750. heldout.json: recall@10 1.0, no-answer 0.500. heldout-2.json: recall@10 0.857, paraphrase 0.786, no-answer 0.846.
+  - No-answer is the condition no rule meets with the rest. 21 rules fail only it on the corpus (all RRF, both models), at 0.500 or 0.750. Among them, MiniLM RRF ≥ 0.50: corpus recall@10 0.939, MRR 0.900, non-relevant 1.18, no-answer 0.500; heldout.json recall@10 1.0, no-answer 0.500; heldout-2.json recall@10 0.857, no-answer 0.385. So held-out recall@10 also falls short on the second set.
+  - Raising the floor does not separate questions with no answer from paraphrases. MiniLM vector-only reaches no-answer 0 at 0.45, where paraphrase recall@10 is 0.571 and recall@10 0.818. bge returns something for every no-answer question below 0.55 and drops below recall@10 0.90 at 0.65. Plain fusion cannot return less than S17 for a no-answer question, as planned.
+  - What the vectors do buy: on heldout-2.json, S17 lexical has recall@10 0.429 and paraphrase recall@10 0.143; MiniLM RRF ≥ 0.50 raises them to 0.857 and 0.786. On heldout.json, S17 already reaches recall@10 0.944.
+  - Hard thresholds hold for every rule on all three sets: no exposure, no obsolete results, no unexpected errors.
+  - Costs (S18.6): MiniLM 86.9 MiB, cold start 537 ms p50, query 3.8 / 5.0 ms p50 / p95, 137 documents/s. bge 127.6 MiB, cold start 716 ms, query 8.9 / 15.6 ms, 87 documents/s. Exact cosine top 10 over 384 dimensions: about 12–17 ms at 10,000 vectors and 136–138 ms p50 at 100,000.
+- Chosen: no model or rule. S19 and S20 are not started, and the Stage 5 plan is re-run (S18.7).
+- Implementation notes: `@huggingface/transformers` 4.3.2 looks up which tokenizer files exist without the revision, so offline it cannot read a revision-keyed cache by repository id. The eval loads each model from its revision directory as a local path with remote models off; a download goes by repository id and pinned revision. Fused rules are ranked outside `retrieve`, so their response bytes and latency were not measured.
+- Rejected:
+  - Choosing the best rule anyway, since recall gains are real: S18.4 and the Stage 5 entry made the no-answer condition part of the gate, and the best rule returns something for 75% of the corpus no-answer questions, worse than S17.
+  - Re-tuning on the held-out sets: they choose nothing.
+- Revisit: the Stage 5 entry names a reranker if the gate fails on no-answer alone. On the corpus it does, but heldout-2.json recall@10 (0.857) also misses for the closest rule, so the re-plan decides between a reranker, a recall-first rule that drops the no-answer condition, or keeping S17.
+
+---
+
 ## 2026-10-28 — Stage 5: retrieval reopened toward hybrid ranking through an optional local embedder (4C)
 
 - Context: the Stage 4 reopen trigger fired. S17 misses the no-answer target on both query sets (0.500 fitted and held-out; target ≤ 20%), and the lexical precision options are exhausted: every rule that keeps recall@10 ≥ 0.90 returns something for half the no-answer questions (S17 precision rule entry). Issue #32. The user reopened 4C on 2026-10-28.

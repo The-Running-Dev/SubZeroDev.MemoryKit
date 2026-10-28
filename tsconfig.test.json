@@ -5,6 +5,7 @@
     "noEmit": true
   },
   "include": ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts", "bench/**/*.ts", "eval/**/*.ts"],
-  // The consumer resolves the package by name, which only an install provides.
-  "exclude": ["node_modules", "dist", "tests/consumer"]
+  // The consumer resolves the package by name, which only an install provides. eval/embed
+  // imports the embedding runtime, installed only under eval/embed (S18.2).
+  "exclude": ["node_modules", "dist", "tests/consumer", "eval/embed"]
 }

@@ -1,0 +1,9 @@
+{
+  "name": "memorykit-eval-embed",
+  "private": true,
+  "description": "The embedding model runtime for the S18 retrieval eval, installed apart from the root package so npm ci, npm test and CI never install it.",
+  "type": "module",
+  "dependencies": {
+    "@huggingface/transformers": "4.3.2"
+  }
+}

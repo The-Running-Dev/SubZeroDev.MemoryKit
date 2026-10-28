@@ -32,7 +32,7 @@ export const CORPUS_FILE = new URL('corpus.json', import.meta.url);
 export const HELDOUT_FILE = new URL('heldout.json', import.meta.url);
 
 const NO_HISTORY = { provider: 'none' } as const;
-const TOP = 10;
+export const TOP = 10;
 const MAX_PAGES = 100;
 
 export interface Expected {
@@ -388,7 +388,7 @@ export interface QueryScore {
 export type Operation = 'search' | 'retrieve';
 
 // A result as scoring sees it. search returns the whole content; retrieve returns an excerpt.
-interface Row {
+export interface Row {
   id: MemoryId;
   revision: number;
   content: string;
@@ -416,7 +416,7 @@ function retrieveRows(page: RetrieveResult): Row[] {
   }));
 }
 
-interface Execution {
+export interface Execution {
   items: Row[];
   pages: number;
   partialPages: number;
@@ -425,7 +425,7 @@ interface Execution {
 }
 
 // A query without its own limit runs at the top 10, the page size the thresholds are judged at.
-async function execute(
+export async function execute(
   client: MemoryClient,
   query: QuerySpec,
   samples: number[],
@@ -481,7 +481,7 @@ export function rankMetrics(hits: boolean[], relevant: number) {
   };
 }
 
-function score(
+export function score(
   query: QuerySpec,
   expectedError: string | undefined,
   run: Execution,
@@ -564,7 +564,7 @@ function score(
 // The client a query runs as. A query with a scan budget, or a run with another retrieve rule,
 // opens storage directly, because openService takes neither; both paths run the same
 // MemoryService.
-async function withClient<T>(
+export async function withClient<T>(
   dir: string,
   corpus: Corpus,
   scanBudget: number | undefined,

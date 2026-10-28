@@ -7,13 +7,18 @@
 //
 //   node eval/retrieval/run.ts [--filler 0,10000] [--repeat 5] [--out report.md] [--json baseline.json]
 //   node eval/retrieval/run.ts --work [--sizes 10000,50000,100000] [--repeat 5] [--out work.md]
+//   node eval/retrieval/run.ts --embed <model>[,<model>] [--allow-download] [--repeat 5] [--out embed.md]
+//
+// --embed compares local embedding models with the lexical rule (S18, eval/retrieval/embed.ts);
+// it needs the runtime installed under eval/embed (npm install --prefix eval/embed), and fetches
+// a model only with --allow-download.
 //
 // Latency is per call in this process. Bytes are the UTF-8 length of each result as JSON; the
 // token figure is an estimate, ceil(bytes / 4), not a tokenizer count.
 
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { cpus, tmpdir } from 'node:os';
+import { cpus, release, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { RETRIEVE_RULE, type RetrieveRule } from '../../src/storage-sqlite/index.ts';
@@ -299,9 +304,26 @@ const { values } = parseArgs({
     json: { type: 'string' },
     work: { type: 'boolean', default: false },
     sizes: { type: 'string', default: '10000,50000,100000' },
+    embed: { type: 'string' },
+    'allow-download': { type: 'boolean', default: false },
   },
 });
 const repeat = Number(values.repeat);
+if (values.embed !== undefined) {
+  const { embedReport } = await import('./embed.ts');
+  const commit = git('rev-parse', 'HEAD');
+  const dirty = git('status', '--porcelain', '--untracked-files=no') !== '';
+  const environment = `Commit \`${commit || 'unknown'}\`${dirty ? ' (with uncommitted changes)' : ''}. Node ${process.version} on ${process.platform} ${process.arch} (${release()}), ${cpus()[0]?.model ?? 'unknown CPU'} × ${cpus().length}, SQLite ${process.versions.sqlite ?? 'unknown'}.`;
+  const { text } = await embedReport(
+    values.embed.split(','),
+    values['allow-download'],
+    repeat,
+    environment
+  );
+  console.log(text);
+  if (values.out !== undefined) writeFileSync(values.out, text);
+  process.exit(0);
+}
 if (values.work) {
   const { workReport } = await import('./work.ts');
   const commit = git('rev-parse', 'HEAD');
