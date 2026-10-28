@@ -383,7 +383,7 @@ With `--json`, the output is exactly the service result as JSON; `init` prints n
 
 ## Persisted schemas
 
-### SQLite (`<store>/memory.db`, WAL, `PRAGMA user_version` = schema version, currently 2)
+### SQLite (`<store>/memory.db`, WAL, `PRAGMA user_version` = schema version, currently 4)
 
 ```sql
 CREATE TABLE memories (
@@ -396,6 +396,7 @@ CREATE TABLE memories (
 ) STRICT;
 CREATE UNIQUE INDEX memories_ns_key ON memories(namespace, key) WHERE key IS NOT NULL;
 CREATE INDEX memories_ns_state_updated ON memories(namespace, state, updated_at DESC, id);
+CREATE INDEX memories_updated ON memories(updated_at DESC, id);                   -- schema 3; listings across namespaces read in order
 
 CREATE TABLE links (
   source TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE, type TEXT NOT NULL, target TEXT NOT NULL,
@@ -436,7 +437,7 @@ CREATE TABLE tokens (token_id TEXT PRIMARY KEY, principal_id TEXT NOT NULL, gran
 - Outbox `seq` uses `AUTOINCREMENT`, so seqs are never reused after a purge.
 - Every write that changes `memories_fts` makes the same change to `memories_stem`, by rowid, in the same transaction.
 - A purge deletes the `memories` row and its `links`, `memories_fts` and `memories_stem` rows. It nulls the `payload` of that memory's pending and blocked outbox entries and marks them exported with `history_ref = 'discarded'`, which `operation()` and `lastExportedRef` skip. It nulls stored outcomes that are that memory and drops its id from other outcomes' `related`. It then inserts one `purge` outbox entry, unless the store has no history provider or the namespace policy is `none` and nothing of the memory was exported, and a `purges` row whose `report` holds `{ pendingDiscarded, queued }`. A purge entry queued under policy `none` is recorded as `metadata`. The service derives the `PurgeReport` from that and the purge entry's history status on every call.
-- **Existing data:** migration 2 adds `operations.outcome`; operations recorded by schema 1 replay from the current row. Migration 4 creates `memories_stem` and fills it from `memories_fts`. Each migration bumps `user_version` and runs forward-only when the store opens, in one transaction.
+- **Existing data:** migration 2 adds `operations.outcome`; operations recorded by schema 1 replay from the current row. Migration 3 adds the `memories_updated` index. Migration 4 creates `memories_stem` and fills it from `memories_fts`. Each migration bumps `user_version` and runs forward-only when the store opens, in one transaction.
 
 ### Git history repository (`<store>/history.git`, bare, branch `main`)
 
