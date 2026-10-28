@@ -5,6 +5,7 @@ import {
   buildStore,
   expectedModel,
   loadCorpus,
+  loadHeldout,
   percentiles,
   queriesFor,
   quality,
@@ -39,12 +40,14 @@ describe('retrieval evaluation', () => {
   let scores: QueryScore[];
 
   let retrieved: QueryScore[];
+  let heldout: QueryScore[];
 
   before(async () => {
     const dir = tempDir();
     const built = await buildStore(dir, corpus);
     scores = await runQueries(dir, corpus, built);
     retrieved = await runQueries(dir, corpus, built, 1, 'retrieve');
+    heldout = await runQueries(dir, loadHeldout(corpus), built, 1, 'retrieve');
   });
 
   it('S14.1 the corpus covers every case, and its expectations agree with its own steps', () => {
@@ -111,15 +114,16 @@ describe('retrieval evaluation', () => {
 
   it('S14.4 quality matches the committed baseline', () => {
     const baseline = JSON.parse(readFileSync(BASELINE, 'utf8')) as {
-      runs: Array<{ filler: number; quality: Quality; retrieve: Quality }>;
+      runs: Array<{ filler: number; quality: Quality; retrieve: Quality; heldout: Quality }>;
     };
     const recorded = baseline.runs.find((run) => run.filler === 0);
     assert.ok(recorded, 'the baseline has no run without filler');
     assert.deepEqual(quality(scores), recorded.quality);
     assert.deepEqual(quality(retrieved), recorded.retrieve);
+    assert.deepEqual(quality(heldout), recorded.heldout);
   });
 
-  it('S15.6 retrieve runs every query with text, finds what search finds and exposes nothing', () => {
+  it('S15.6 retrieve runs every query with text, with the expected outcome', () => {
     assert.deepEqual(
       retrieved.map((s) => s.id),
       queriesFor(corpus, 'retrieve').map((q) => q.id)
@@ -129,13 +133,17 @@ describe('retrieval evaluation', () => {
       const query = corpus.queries.find((q) => q.id === s.id)!;
       const error = query.retrieveError ?? query.error;
       assert.equal(s.outcome, error === undefined ? 'ok' : 'expected-error', s.id);
-      const searched = scores.find((other) => other.id === s.id)!;
-      if (s.outcome === 'ok') assert.deepEqual(s.returned, searched.returned, s.id);
     }
-    const overall = summarize(retrieved);
-    assert.equal(overall.exposure, 0);
-    assert.equal(overall.obsolete, 0);
-    assert.equal(overall.errors, 0);
+  });
+
+  it('S17.4 retrieve exposes nothing and returns nothing obsolete, on both query sets', () => {
+    assert.ok(heldout.length > 0);
+    for (const set of [retrieved, heldout]) {
+      const overall = summarize(set);
+      assert.equal(overall.exposure, 0);
+      assert.equal(overall.obsolete, 0);
+      assert.equal(overall.errors, 0);
+    }
   });
 
   it('S15.7 the large-content answer stays within the retrieve bound and needs a fetch', () => {

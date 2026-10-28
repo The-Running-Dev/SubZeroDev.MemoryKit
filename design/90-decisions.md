@@ -9,6 +9,24 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-28 — S17 precision rule: share ≥ 0.5 and cut 0.35 without stopwords; the no-answer target is missed
+
+- Context: S17.2 asks for a precision rule chosen by comparison on the S14 corpus. The comparison ran ten rules over the corpus queries without filler (`eval/retrieval/baseline.md`, "Precision rules"; Node 26.12.1, win32, i7-11850H). The held-out queries in `heldout.json` were committed first (2bafec4) and chose nothing.
+- Chosen:
+  - Stopwords are dropped unless nothing else is left. A memory is kept when it holds at least half of the remaining distinct words and scores at least 0.35 times the best kept score. The rule with the highest recall@10, then MRR, then the fewest non-relevant results wins.
+  - Fitted, on the corpus: exact recall@5 1.0, recall@10 0.909, paraphrase recall@10 0.714, MRR 0.870, non-relevant in the top 10 0.70, no-answer queries returning anything 0.500. Held-out: recall@10 0.944, paraphrase recall@10 1.0, MRR 0.917, non-relevant 0.33, no-answer 0.500. Hard thresholds hold on both sets.
+  - The no-answer target (≤ 20%) is missed on both sets and reported as missed. Every rule that keeps recall@10 ≥ 0.90 returns something for at least half the no-answer queries; share ≥ 0.67 reaches 0 but drops paraphrase recall to 0. A lexical rule cannot tell a question with no answer from one whose words a memory happens to hold.
+  - The share is applied inside the index query: for each word, the set of rows holding it, and a row is dropped when it holds too few. Probing each word per row cost 549 ms p95 at 10,000 filler notes, because filler holding one common word was probed up to the scan budget before the first kept row set a cut. With the share in SQL, retrieve p95 is 46 ms there (target 50). Rows the share drops no longer count towards the scan budget; the contract says so.
+  - The second index costs, against the S16 baseline (separate runs, so noisy): at 10,000 filler notes the database grows from 15.8 to 20.3 MiB; create p95 was 8.52 ms before and 7.77 ms after, so the extra write is within the noise. At 100,000 rows a term in 90% of memories takes about 296 ms to the first retrieve row, against 157 ms for search, since FTS5 ranks every match of the OR query (`eval/retrieval/work.md`).
+- Rejected:
+  - Share ≥ 0.67 or 1: no-answer 0, but paraphrase recall@10 0 and recall@10 below 0.76.
+  - Cut alone (share 0, cut 0.35): recall@10 0.970, but no-answer 0.750 and 1.39 non-relevant.
+  - Keeping stopwords: paraphrase recall@10 falls to 0.286, since question words carry half the share.
+  - An OR of AND-groups of ceil(n/2) words as the FTS query: it applies the share too, but the groups grow combinatorially and FTS5's BM25 over repeated phrases would change the scores the rule was chosen on.
+- Revisit: reopen toward vector or hybrid retrieval (4C) when held-out paraphrase recall@10 falls below 0.70, or when a no-answer rate under 20% is required, since the lexical options are exhausted.
+
+---
+
 ## 2026-10-28 — S16 measured: ordering index and FTS candidate cap adopted; the budget counts FTS candidates
 
 - Context: S16 ran `npm run eval -- --work` on synthetic stores of 10,000, 50,000 and 100,000 rows (`eval/retrieval/work.md`, Node 26.12.1, SQLite 3.54.0, win32, i7-11850H). Both rules fixed in the slice applied.

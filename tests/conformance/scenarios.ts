@@ -420,6 +420,61 @@ export const SCENARIOS: Scenario[] = [
     },
   },
   {
+    name: 'S17.5 retrieve finds stemmed words through every write and none after a purge',
+    async run(driver) {
+      const store = tempDir();
+      value(await driver.init(store));
+      const found = async (text: string, states?: string[]) =>
+        (
+          value(await driver.retrieve(store, { text, ...(states && { states }) }))
+            .items as RetrievedItem[]
+        ).map((item) => [item.id, item.revision]);
+      const a = (
+        value(
+          await driver.create(store, {
+            namespace: 'demo',
+            kind: 'note',
+            content: 'lighthouse keeper log',
+          })
+        ).memory as Record<string, unknown>
+      ).id as string;
+      const [first] = value(await driver.retrieve(store, { text: 'lighthouses' }))
+        .items as RetrievedItem[];
+      assert.deepEqual([first!.id, first!.match.terms], [a, ['lighthouses']]);
+
+      value(
+        await driver.update(store, { id: a, expectedRevision: 1, content: 'lighthouse diary' })
+      );
+      assert.deepEqual(await found('diaries'), [[a, 2]]);
+      assert.deepEqual(await found('logs'), []);
+
+      const b = (
+        value(
+          await driver.supersede(store, {
+            id: a,
+            expectedRevision: 2,
+            replacement: { kind: 'note', content: 'beacon tender' },
+          })
+        ).memory as Record<string, unknown>
+      ).id as string;
+      assert.deepEqual(await found('lighthouses'), []);
+      assert.deepEqual(await found('lighthouses', ['superseded']), [[a, 3]]);
+      assert.deepEqual(await found('beacons'), [[b, 1]]);
+
+      value(await driver.transition(store, 'archive', { id: b, expectedRevision: 1 }));
+      assert.deepEqual(await found('beacons'), []);
+      assert.deepEqual(await found('beacons', ['archived']), [[b, 2]]);
+      value(await driver.transition(store, 'restore', { id: b, expectedRevision: 2 }));
+      assert.deepEqual(await found('beacons'), [[b, 3]]);
+      value(await driver.transition(store, 'tombstone', { id: b, expectedRevision: 3 }));
+      assert.deepEqual(await found('beacons'), []);
+
+      if (driver.purge === undefined) return;
+      value(await driver.purge(store, { id: a, expectedRevision: 3 }));
+      assert.deepEqual(await found('lighthouses', ['active', 'superseded', 'archived']), []);
+    },
+  },
+  {
     name: 'S15.5 retrieve shows a reader of one namespace nothing from the other',
     async run(driver) {
       if (driver.retrieveAs === undefined) return;

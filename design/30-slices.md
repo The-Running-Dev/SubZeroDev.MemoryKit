@@ -227,7 +227,7 @@ Acceptance:
 Out of scope: paginated `history` (a response-size concern, deferred with the reason in 90-decisions); worker threads or a second connection for search; changing the scan budget's default.
 
 ## S17 — Retrieve ranks memories that share some of the question's words, measured on held-out queries
-Status: planned
+Status: done
 Delivers: the quality part of Stage 4. Stage 3's misses are lexical: every word is required and word forms differ. So `retrieve` stops requiring every word of the question and matches word forms (`cached` finds `caches`), and a measured precision rule keeps unrelated memories out. Paraphrased questions then find their memories with no model, download or network. `search` keeps its exact, every-word semantics. Vector and hybrid retrieval (4C) are deferred with a trigger in 90-decisions.
 Touches: storage-sqlite (a second FTS5 table with the Porter stemmer, maintained in the same transaction as the record, created and filled by a forward-only migration); service and contract (retrieve matching semantics); eval (held-out queries, retrieve quality per category, index size and write cost); design (10-design, 20-contract)
 Depends on: S15, S16

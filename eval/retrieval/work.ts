@@ -1,6 +1,7 @@
 // Query work benchmark (S16.1). It builds synthetic stores of each size, then runs the storage
 // adapter's own SQL and scan loop on them, without the SDK, and reports for each query shape
-// the time to the first row, the time to a full page of 10 and the query plan.
+// the time to the first row, the time to a full page of 10 and the query plan. The retrieve
+// shapes (S17.6) run the same scan over the stemmed index, matching any of the query's words.
 //
 //   node eval/retrieval/run.ts --work [--sizes 10000,50000,100000] [--repeat 5] [--out work.md]
 //
@@ -17,7 +18,7 @@ import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import type { StorageSearch } from '../../src/contracts/index.ts';
 import { metadataText } from '../../src/model/index.ts';
 import { DATABASE_FILE, initStore } from '../../src/sdk/index.ts';
-import { scan, scanSql } from '../../src/storage-sqlite/index.ts';
+import { RETRIEVE_RULE, scan, scanSql, type Matching } from '../../src/storage-sqlite/index.ts';
 
 const PAGE = 10;
 const BUDGET = 10_000; // the adapter's default scan budget
@@ -31,7 +32,16 @@ const ORDERING_INDEX = 'CREATE INDEX memories_updated ON memories(updated_at DES
 interface Shape {
   name: string;
   query: Partial<StorageSearch>;
+  matching?: Matching; // retrieve's matching; search's when absent
 }
+
+// retrieve's matching under its precision rule's share; the cut is not applied here.
+const anyOf = (...terms: string[]): Matching => ({
+  table: 'memories_stem',
+  any: true,
+  terms,
+  least: Math.max(1, Math.ceil(RETRIEVE_RULE.minShare * terms.length)),
+});
 
 // The six S16.1 shapes, then checks that a small scope is not scanned through a wider index.
 const SHAPES: Shape[] = [
@@ -45,6 +55,22 @@ const SHAPES: Shape[] = [
   {
     name: 'a small namespace in two states, no text',
     query: { patterns: [SMALL], states: ['active', 'archived'] },
+  },
+  {
+    name: 'retrieve: a term matching most memories',
+    query: { text: COMMON },
+    matching: anyOf(COMMON),
+  },
+  { name: 'retrieve: a rare term', query: { text: RARE }, matching: anyOf(RARE) },
+  {
+    name: 'retrieve: a common and a rare term',
+    query: { text: `${COMMON} ${RARE}` },
+    matching: anyOf(COMMON, RARE),
+  },
+  {
+    name: 'retrieve: a term within one namespace',
+    query: { text: COMMON, patterns: ['team/3/proj/3'] },
+    matching: anyOf(COMMON),
   },
 ];
 
@@ -105,6 +131,10 @@ async function build(dir: string, size: number): Promise<DatabaseSync> {
   const fts = db.prepare(
     "INSERT INTO memories_fts (id, kind, content, metadata_text) VALUES (?, 'note', ?, ?)"
   );
+  const stem = db.prepare(
+    'INSERT INTO memories_stem (rowid, id, kind, content, metadata_text) ' +
+      "VALUES (?, ?, 'note', ?, ?)"
+  );
   const start = Date.UTC(2026, 0, 1);
   db.exec('BEGIN');
   for (let i = 0; i < size; i++) {
@@ -128,7 +158,8 @@ async function build(dir: string, size: number): Promise<DatabaseSync> {
       at,
       at
     );
-    fts.run(id, content, metadataText(metadata));
+    const { lastInsertRowid } = fts.run(id, content, metadataText(metadata));
+    stem.run(lastInsertRowid, id, content, metadataText(metadata));
   }
   db.exec('COMMIT');
   return db;
@@ -164,7 +195,7 @@ interface Measured {
 
 function measure(db: DatabaseSync, shape: Shape, repeat: number): Measured {
   const query = search(shape);
-  const { sql, params } = scanSql(query, FINGERPRINT, BUDGET);
+  const { sql, params } = scanSql(query, FINGERPRINT, BUDGET, shape.matching);
   const first = firstRow(db, sql, params, repeat);
   const times: number[] = [];
   let result = { rows: 0, items: 0, partial: false };
@@ -176,7 +207,8 @@ function measure(db: DatabaseSync, shape: Shape, repeat: number): Measured {
       query,
       FINGERPRINT,
       BUDGET,
-      () => items < PAGE && ++items > 0
+      () => items < PAGE && ++items > 0,
+      shape.matching
     );
     if (i > 0) times.push(performance.now() - begin);
     result = { rows, items, partial };
@@ -263,7 +295,7 @@ export async function workReport(
     '',
     environment,
     '',
-    `Synthetic stores built straight into the tables: 100 namespaces \`team/N/proj/M\` of about 1% each, \`${SMALL}\` with ${SMALL_ROWS} rows, 10% archived, "${COMMON}" in about 90% of memories, "${RARE}" in 10, and metadata \`batch\` = 7 in 0.1%. Each query runs the adapter's own SQL (\`scanSql\`) and scan loop (\`scan\`) on a file database, without the SDK, with the default scan budget of ${count(BUDGET)}, active memories only unless the shape says otherwise. Times are medians of ${repeat} runs after one warm-up run. First row is preparing the statement and reading one row; page is the scan loop until ${PAGE} items, the budget or the end.`,
+    `Synthetic stores built straight into the tables, both full-text indexes included: 100 namespaces \`team/N/proj/M\` of about 1% each, \`${SMALL}\` with ${SMALL_ROWS} rows, 10% archived, "${COMMON}" in about 90% of memories, "${RARE}" in 10, and metadata \`batch\` = 7 in 0.1%. Each query runs the adapter's own SQL (\`scanSql\`) and scan loop (\`scan\`) on a file database, without the SDK, with the default scan budget of ${count(BUDGET)}, active memories only unless the shape says otherwise. A retrieve shape matches any of its words in the stemmed index and ranks every match before the page, as retrieve does; its page here stops at ${PAGE} items, without retrieve's precision rule, so it is the most the scan can cost. Times are medians of ${repeat} runs after one warm-up run. First row is preparing the statement and reading one row; page is the scan loop until ${PAGE} items, the budget or the end.`,
     '',
   ];
   for (const run of runs) {

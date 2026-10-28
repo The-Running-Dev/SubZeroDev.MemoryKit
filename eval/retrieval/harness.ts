@@ -1,6 +1,7 @@
 // Retrieval evaluation (S14). Builds a store from the synthetic corpus, runs its queries through
 // the SDK and scores the results against the corpus's hand-written expectations. Each query with
-// text also runs through retrieve (S15), scored the same way.
+// text also runs through retrieve (S15), scored the same way. The held-out queries (S17.1) run
+// against the same store and are scored apart.
 //
 // Ideas taken from QMD at 86d2365d17fc682e491c2c53d1e4a884aee8682a (test/eval-harness.ts):
 // expected results are exact ids, a failed query is never scored as an empty result, and hit
@@ -25,8 +26,10 @@ import {
   type SearchResult,
 } from '../../src/index.ts';
 import { DATABASE_FILE, initStore, openService } from '../../src/sdk/index.ts';
+import { RETRIEVE_RULE, type RetrieveRule } from '../../src/storage-sqlite/index.ts';
 
 export const CORPUS_FILE = new URL('corpus.json', import.meta.url);
+export const HELDOUT_FILE = new URL('heldout.json', import.meta.url);
 
 const NO_HISTORY = { provider: 'none' } as const;
 const TOP = 10;
@@ -78,6 +81,28 @@ export interface Corpus {
 export function loadCorpus(file: URL | string = CORPUS_FILE): Corpus {
   return JSON.parse(readFileSync(file, 'utf8')) as Corpus;
 }
+
+// The corpus with its queries replaced by the held-out ones. They were written before any S17
+// code ran and never chose a parameter, so their results are reported apart from the corpus's.
+export function loadHeldout(corpus: Corpus, file: URL | string = HELDOUT_FILE): Corpus {
+  const { queries } = JSON.parse(readFileSync(file, 'utf8')) as { queries: QuerySpec[] };
+  return { ...corpus, queries };
+}
+
+// The precision rules compared on the corpus's queries without filler (S17.2). RETRIEVE_RULE
+// is the one chosen: the highest recall@10, then MRR, then the fewest non-relevant results.
+export const RULES: RetrieveRule[] = [
+  { minShare: 0, cut: 0, stopwords: false },
+  { minShare: 0, cut: 0, stopwords: true },
+  { minShare: 0.5, cut: 0, stopwords: true },
+  { minShare: 0.67, cut: 0, stopwords: true },
+  { minShare: 1, cut: 0, stopwords: true },
+  { minShare: 0, cut: 0.35, stopwords: true },
+  { minShare: 0.5, cut: 0.2, stopwords: true },
+  RETRIEVE_RULE,
+  { minShare: 0.5, cut: 0.5, stopwords: true },
+  { minShare: 0.5, cut: 0.35, stopwords: false },
+];
 
 // What each memory should be once the steps have run, worked out from the corpus alone.
 export interface ModelEntry {
@@ -536,20 +561,22 @@ function score(
   };
 }
 
-// The client a query runs as. A query with a scan budget opens storage directly, because
-// openService takes no scan budget; both paths run the same MemoryService.
+// The client a query runs as. A query with a scan budget, or a run with another retrieve rule,
+// opens storage directly, because openService takes neither; both paths run the same
+// MemoryService.
 async function withClient<T>(
   dir: string,
   corpus: Corpus,
   scanBudget: number | undefined,
-  run: (clientFor: (principal?: string) => MemoryClient) => Promise<T>
+  run: (clientFor: (principal?: string) => MemoryClient) => Promise<T>,
+  retrieveRule?: RetrieveRule
 ): Promise<T> {
   const opened =
-    scanBudget === undefined
+    scanBudget === undefined && retrieveRule === undefined
       ? await openService({ path: dir, history: NO_HISTORY })
       : await (async () => {
           const service = new MemoryService(
-            new SqliteStorage({ path: join(dir, DATABASE_FILE), scanBudget }),
+            new SqliteStorage({ path: join(dir, DATABASE_FILE), scanBudget, retrieveRule }),
             null,
             {}
           );
@@ -574,32 +601,40 @@ export function queriesFor(corpus: Corpus, operation: Operation): QuerySpec[] {
 }
 
 // Runs every query `repeat` times; the first run is scored and every run adds latency samples.
+// retrieveRule replaces retrieve's precision rule, for the S17.2 comparison.
 export async function runQueries(
   dir: string,
   corpus: Corpus,
   built: Built,
   repeat = 1,
-  operation: Operation = 'search'
+  operation: Operation = 'search',
+  retrieveRule?: RetrieveRule
 ): Promise<QueryScore[]> {
   const queries = queriesFor(corpus, operation);
   const budgets = [...new Set(queries.map((query) => query.scanBudget))];
   const scores = new Map<string, QueryScore>();
   for (const budget of budgets) {
-    await withClient(dir, corpus, budget, async (clientFor) => {
-      for (const query of queries.filter((q) => q.scanBudget === budget)) {
-        const client = clientFor(query.principal);
-        const latencies: number[] = [];
-        const first = await execute(client, query, latencies, operation);
-        for (let i = 1; i < repeat && first.error === null; i++) {
-          await execute(client, query, latencies, operation);
+    await withClient(
+      dir,
+      corpus,
+      budget,
+      async (clientFor) => {
+        for (const query of queries.filter((q) => q.scanBudget === budget)) {
+          const client = clientFor(query.principal);
+          const latencies: number[] = [];
+          const first = await execute(client, query, latencies, operation);
+          for (let i = 1; i < repeat && first.error === null; i++) {
+            await execute(client, query, latencies, operation);
+          }
+          const grants =
+            query.principal === undefined ? null : (corpus.principals[query.principal] ?? []);
+          const expectedError =
+            operation === 'retrieve' ? (query.retrieveError ?? query.error) : query.error;
+          scores.set(query.id, score(query, expectedError, first, latencies, built, grants));
         }
-        const grants =
-          query.principal === undefined ? null : (corpus.principals[query.principal] ?? []);
-        const expectedError =
-          operation === 'retrieve' ? (query.retrieveError ?? query.error) : query.error;
-        scores.set(query.id, score(query, expectedError, first, latencies, built, grants));
-      }
-    });
+      },
+      retrieveRule
+    );
   }
   return queries.map((query) => scores.get(query.id)!);
 }
@@ -730,7 +765,8 @@ const category = (categories: Map<string, Summary>, name: string) => {
   return found;
 };
 
-export const THRESHOLDS: Threshold[] = [
+// The S14 thresholds at filler 0 hold for search; S17.3 and S17.4 judge retrieve by the same ones.
+const FITTED: Threshold[] = [
   { name: 'unauthorized exposure', kind: 'hard', filler: 0, limit: '= 0', value: (o) => o.exposure, met: (v) => v === 0 },
   { name: 'obsolete results in current answers', kind: 'hard', filler: 0, limit: '= 0', value: (o) => o.obsolete, met: (v) => v === 0 },
   { name: 'unexpected, wrong or missing errors', kind: 'hard', filler: 0, limit: '= 0', value: (o) => o.errors, met: (v) => v === 0 },
@@ -740,9 +776,20 @@ export const THRESHOLDS: Threshold[] = [
   { name: 'overall MRR', kind: 'target', filler: 0, limit: '≥ 0.75', value: (o) => o.mrr, met: (v) => v >= 0.75 },
   { name: 'mean non-relevant items in top 10', kind: 'target', filler: 0, limit: '≤ 2', value: (o) => o.nonRelevant10, met: (v) => v <= 2 },
   { name: 'no-answer queries returning anything', kind: 'target', filler: 0, limit: '≤ 20%', value: (o) => o.noAnswerReturned, met: (v) => v <= 0.2 },
+]; // prettier-ignore
+
+export const THRESHOLDS: Threshold[] = [
+  ...FITTED,
   { name: 'search p95 (ms)', kind: 'target', filler: 10_000, limit: '≤ 50', value: (o) => o.latency.p95, met: (v) => v <= 50 },
   { name: 'response bytes p95', kind: 'target', filler: 10_000, limit: '≤ 32 KiB', value: (o) => o.bytes.p95, met: (v) => v <= 32 * 1024 },
   { name: 'cold start p95 (ms)', kind: 'target', filler: 10_000, limit: '≤ 500', value: (_o, _c, cold) => cold.p95, met: (v) => v <= 500 },
   { name: 'retrieve response bytes p95', kind: 'target', operation: 'retrieve', filler: 10_000, limit: '≤ 32 KiB', value: (o) => o.bytes.p95, met: (v) => v <= 32 * 1024 },
   { name: 'retrieve large-content response bytes', kind: 'hard', operation: 'retrieve', filler: 10_000, limit: '≤ 64 KiB', value: (_o, c) => category(c, 'large-content').bytes.max, met: (v) => v <= MAX_RETRIEVE_BYTES },
+  ...FITTED.map((t): Threshold => ({ ...t, name: `retrieve ${t.name}`, operation: 'retrieve' })),
+  { name: 'retrieve p95 (ms)', kind: 'target', operation: 'retrieve', filler: 10_000, limit: '≤ 50', value: (o) => o.latency.p95, met: (v) => v <= 50 },
 ]; // prettier-ignore
+
+// The thresholds judged on the held-out queries too: retrieve's at filler 0.
+export const HELDOUT_THRESHOLDS: Threshold[] = THRESHOLDS.filter(
+  (t) => t.operation === 'retrieve' && t.filler === 0
+);

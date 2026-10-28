@@ -188,6 +188,7 @@ export interface Matching {
   table: 'memories_fts' | 'memories_stem';
   any: boolean;
   terms?: string[]; // the words to match; every word of the text when absent
+  least?: number; // with any and terms: the fewest of the words a row must hold, when above 1
 }
 
 const EVERY_WORD: Matching = { table: 'memories_fts', any: false };
@@ -205,7 +206,7 @@ export interface RetrieveRule {
   stopwords: boolean;
 }
 
-export const RETRIEVE_RULE: RetrieveRule = { minShare: 0, cut: 0, stopwords: false };
+export const RETRIEVE_RULE: RetrieveRule = { minShare: 0.5, cut: 0.35, stopwords: true };
 
 const STOPWORDS = new Set(
   (
@@ -356,12 +357,24 @@ export function scanSql(
   }
   candidates.push(budget + 1);
   const fts = matching.table;
+  // With least above 1, each word's rows are read once into a set, and a row is flagged t0, t1,
+  // … for the words it holds; rows holding fewer than least words are dropped before they are
+  // joined. Any match holds one word, so a least of 1 needs no sets.
+  const words = (matching.least ?? 1) > 1 ? (matching.terms ?? []) : [];
+  const flags = words
+    .map((_, i) => `, (rowid IN (SELECT rowid FROM ${fts} WHERE ${fts} MATCH ?)) AS t${i}`)
+    .join('');
+  if (words.length > 0) {
+    const share = `${words.map((_, i) => `t${i}`).join(' + ')} >= ?`;
+    after = after === '' ? `WHERE ${share} ` : `${after}AND ${share} `;
+    candidates.splice(candidates.length - 1, 0, matching.least!);
+  }
   const sql =
-    `SELECT m.*, c.rank, c.fts_rowid, (${visible.join(' AND ')}) AS visible FROM (` +
-    `SELECT * FROM (SELECT rowid AS fts_rowid, id, bm25(${fts}) AS rank ` +
+    `SELECT m.*, c.*, (${visible.join(' AND ')}) AS visible FROM (` +
+    `SELECT * FROM (SELECT rowid AS fts_rowid, id, bm25(${fts}) AS rank${flags} ` +
     `FROM ${fts} WHERE ${fts} MATCH ?) ${after}ORDER BY rank, id LIMIT ?) c ` +
     'JOIN memories m ON m.id = c.id ORDER BY c.rank, c.id';
-  return { sql, params: [...params, ...candidates], text, cursor };
+  return { sql, params: [...params, ...words.map(quoted), ...candidates], text, cursor };
 }
 
 export interface Scan {
@@ -659,9 +672,9 @@ export class SqliteStorage implements StorageProvider, TokenStore {
   }
 
   // Search's scan over the stemmed index, matching any of the query's words, with each row the
-  // precision rule keeps projected to a compact item. Rows the rule rejects count towards the
-  // scan budget like any other; the scan ends at the first visible row below the cut, since
-  // every later row ranks lower. A page also stops before an item that would take the
+  // precision rule keeps projected to a compact item. The index drops rows holding too few of
+  // the words before the scan sees them; the scan ends at the first visible row below the cut,
+  // since every later row ranks lower. A page also stops before an item that would take the
   // serialized result past MAX_RETRIEVE_BYTES, and its cursor resumes at that item. The largest
   // possible item is about 25 KiB, so a page always holds at least one. The index's own
   // highlight() locates the first matched word in the content, so the excerpt follows the
@@ -670,7 +683,8 @@ export class SqliteStorage implements StorageProvider, TokenStore {
     return this.read((db) => {
       const rule = this.retrieveRule;
       const terms = retrieveTerms(query.text, rule);
-      const matching: Matching = { table: 'memories_stem', any: true, terms };
+      const least = Math.min(terms.length, Math.max(1, Math.ceil(rule.minShare * terms.length)));
+      const matching: Matching = { table: 'memories_stem', any: true, terms, least };
       const locate = db.prepare(
         "SELECT highlight(memories_stem, 2, ?, '') AS marked FROM memories_stem " +
           'WHERE memories_stem MATCH ? AND rowid = ?'
@@ -678,6 +692,14 @@ export class SqliteStorage implements StorageProvider, TokenStore {
       const probe = db.prepare(
         'SELECT 1 FROM memories_stem WHERE memories_stem MATCH ? AND rowid = ?'
       );
+      // The words a kept row holds: flagged by the scan when it applied the share, otherwise
+      // probed, which only kept rows pay for.
+      const holds = (row: Row, rowid: number) =>
+        least > 1
+          ? terms.filter((_, i) => row[`t${i}`] === 1)
+          : terms.length === 1
+            ? terms
+            : terms.filter((term) => probe.get(quoted(term), rowid) !== undefined);
       const carry: { best?: number } = {};
       const items: RetrievedItem[] = [];
       let used = ENVELOPE_BYTES;
@@ -686,11 +708,7 @@ export class SqliteStorage implements StorageProvider, TokenStore {
         const score = -Number(row.rank);
         if (carry.best !== undefined && score < rule.cut * carry.best) return 'end';
         const rowid = Number(row.fts_rowid);
-        const matched =
-          terms.length === 1
-            ? terms
-            : terms.filter((term) => probe.get(quoted(term), rowid) !== undefined);
-        if (matched.length < rule.minShare * terms.length) return true;
+        const matched = holds(row, rowid);
         const id = String(row.id);
         const replacements = supersededBy(db, [id], { patterns: query.readable })[id]!;
         const marked = locate.get(MATCH_MARK, text, rowid) as Row;

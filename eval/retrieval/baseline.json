@@ -1,6 +1,6 @@
 {
-  "commit": "abfad3a8d020ff94f51b80804bc0c1e75954caf5",
-  "dirty": false,
+  "commit": "fd99f7f3c97b759bf4ae264ca0608b8f1f52e6a9",
+  "dirty": true,
   "runs": [
     {
       "filler": 0,
@@ -404,12 +404,12 @@
       },
       "retrieve": {
         "overall": {
-          "recall5": 0.7273,
-          "recall10": 0.7273,
-          "mrr": 0.6818,
-          "ndcg10": 0.6937,
-          "nonRelevant10": 0.1515,
-          "noAnswerReturned": 0,
+          "recall5": 0.9091,
+          "recall10": 0.9091,
+          "mrr": 0.8697,
+          "ndcg10": 0.8793,
+          "nonRelevant10": 0.697,
+          "noAnswerReturned": 0.5,
           "obsolete": 0,
           "exposure": 0,
           "errors": 0,
@@ -433,11 +433,11 @@
             "partialPages": 0
           },
           "paraphrase": {
-            "recall5": 0,
-            "recall10": 0,
-            "mrr": 0,
-            "ndcg10": 0,
-            "nonRelevant10": 0,
+            "recall5": 0.7143,
+            "recall10": 0.7143,
+            "mrr": 0.6,
+            "ndcg10": 0.6267,
+            "nonRelevant10": 0.7143,
             "noAnswerReturned": 0,
             "obsolete": 0,
             "exposure": 0,
@@ -447,11 +447,11 @@
             "partialPages": 0
           },
           "correction": {
-            "recall5": 0.6,
-            "recall10": 0.6,
-            "mrr": 0.6,
-            "ndcg10": 0.6,
-            "nonRelevant10": 0,
+            "recall5": 0.8,
+            "recall10": 0.8,
+            "mrr": 0.8,
+            "ndcg10": 0.8,
+            "nonRelevant10": 1,
             "noAnswerReturned": 0,
             "obsolete": 0,
             "exposure": 0,
@@ -465,7 +465,7 @@
             "recall10": 1,
             "mrr": 1,
             "ndcg10": 1,
-            "nonRelevant10": 0,
+            "nonRelevant10": 1.5,
             "noAnswerReturned": 0,
             "obsolete": 0,
             "exposure": 0,
@@ -491,9 +491,9 @@
           "distractor": {
             "recall5": 1,
             "recall10": 1,
-            "mrr": 0.7,
-            "ndcg10": 0.7786,
-            "nonRelevant10": 1,
+            "mrr": 0.9,
+            "ndcg10": 0.9262,
+            "nonRelevant10": 1.4,
             "noAnswerReturned": 0,
             "obsolete": 0,
             "exposure": 0,
@@ -507,7 +507,7 @@
             "recall10": 1,
             "mrr": 1,
             "ndcg10": 1,
-            "nonRelevant10": 0,
+            "nonRelevant10": 0.6667,
             "noAnswerReturned": 0,
             "obsolete": 0,
             "exposure": 0,
@@ -536,7 +536,7 @@
             "mrr": 0,
             "ndcg10": 0,
             "nonRelevant10": 0,
-            "noAnswerReturned": 0,
+            "noAnswerReturned": 0.5,
             "obsolete": 0,
             "exposure": 0,
             "errors": 0,
@@ -549,7 +549,7 @@
             "recall10": 1,
             "mrr": 1,
             "ndcg10": 1,
-            "nonRelevant10": 0,
+            "nonRelevant10": 0.5,
             "noAnswerReturned": 0,
             "obsolete": 0,
             "exposure": 0,
@@ -601,8 +601,8 @@
           },
           "para-price-cache": {
             "outcome": "ok",
-            "rank": null,
-            "recall10": 0
+            "rank": 1,
+            "recall10": 1
           },
           "para-billing-owner": {
             "outcome": "ok",
@@ -611,23 +611,23 @@
           },
           "para-snapshots": {
             "outcome": "ok",
-            "rank": null,
-            "recall10": 0
+            "rank": 1,
+            "recall10": 1
           },
           "para-rotation-day": {
             "outcome": "ok",
-            "rank": null,
-            "recall10": 0
+            "rank": 1,
+            "recall10": 1
           },
           "para-toggles": {
             "outcome": "ok",
-            "rank": null,
-            "recall10": 0
+            "rank": 1,
+            "recall10": 1
           },
           "para-log-shape": {
             "outcome": "ok",
-            "rank": null,
-            "recall10": 0
+            "rank": 5,
+            "recall10": 1
           },
           "correct-release-new": {
             "outcome": "ok",
@@ -636,8 +636,8 @@
           },
           "correct-release-stale": {
             "outcome": "ok",
-            "rank": null,
-            "recall10": 0
+            "rank": 1,
+            "recall10": 1
           },
           "correct-session-store": {
             "outcome": "ok",
@@ -701,12 +701,12 @@
           },
           "noise-stale-cache": {
             "outcome": "ok",
-            "rank": 2,
+            "rank": 1,
             "recall10": 1
           },
           "noise-session": {
             "outcome": "ok",
-            "rank": 2,
+            "rank": 1,
             "recall10": 1
           },
           "scope-tokens": {
@@ -776,6 +776,192 @@
           },
           "reject-state": {
             "outcome": "expected-error",
+            "rank": null,
+            "recall10": 0
+          }
+        }
+      },
+      "heldout": {
+        "overall": {
+          "recall5": 0.9444,
+          "recall10": 0.9444,
+          "mrr": 0.9167,
+          "ndcg10": 0.9239,
+          "nonRelevant10": 0.3333,
+          "noAnswerReturned": 0.5,
+          "obsolete": 0,
+          "exposure": 0,
+          "errors": 0,
+          "fetches": 0,
+          "pages": 22,
+          "partialPages": 0
+        },
+        "categories": {
+          "paraphrase": {
+            "recall5": 1,
+            "recall10": 1,
+            "mrr": 1,
+            "ndcg10": 1,
+            "nonRelevant10": 0.1111,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 9,
+            "partialPages": 0
+          },
+          "correction": {
+            "recall5": 0.75,
+            "recall10": 0.75,
+            "mrr": 0.75,
+            "ndcg10": 0.75,
+            "nonRelevant10": 0.25,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 4,
+            "partialPages": 0
+          },
+          "distractor": {
+            "recall5": 1,
+            "recall10": 1,
+            "mrr": 0.9,
+            "ndcg10": 0.9262,
+            "nonRelevant10": 0.8,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 5,
+            "partialPages": 0
+          },
+          "no-answer": {
+            "recall5": 0,
+            "recall10": 0,
+            "mrr": 0,
+            "ndcg10": 0,
+            "nonRelevant10": 0,
+            "noAnswerReturned": 0.5,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 4,
+            "partialPages": 0
+          }
+        },
+        "queries": {
+          "held-para-key-renewal": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-para-invoice-backlog": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-para-schema-signoff": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-para-backup-retention": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-para-oncall-handover": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-para-log-request-id": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-para-failover-steps": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-para-reindex-blocker": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-para-stale-totals": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-correct-session-engine": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "held-correct-release-afternoon": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-correct-shared-broker": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-correct-staging-name": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-noise-token-expiry": {
+            "outcome": "ok",
+            "rank": 2,
+            "recall10": 1
+          },
+          "held-noise-session-storage": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-noise-nightly-backups": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-noise-e4012-restart": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-noise-release-schedule": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-none-cdn": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "held-none-gamma-owner": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "held-none-certificate": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "held-none-beta-backups": {
+            "outcome": "ok",
             "rank": null,
             "recall10": 0
           }
@@ -1184,12 +1370,12 @@
       },
       "retrieve": {
         "overall": {
-          "recall5": 0.6061,
-          "recall10": 0.6061,
-          "mrr": 0.5758,
-          "ndcg10": 0.5837,
-          "nonRelevant10": 1.3333,
-          "noAnswerReturned": 0,
+          "recall5": 0.6667,
+          "recall10": 0.6667,
+          "mrr": 0.6515,
+          "ndcg10": 0.6555,
+          "nonRelevant10": 2.2424,
+          "noAnswerReturned": 0.5,
           "obsolete": 0,
           "exposure": 0,
           "errors": 0,
@@ -1213,11 +1399,11 @@
             "partialPages": 0
           },
           "paraphrase": {
-            "recall5": 0,
-            "recall10": 0,
-            "mrr": 0,
-            "ndcg10": 0,
-            "nonRelevant10": 0,
+            "recall5": 0.5714,
+            "recall10": 0.5714,
+            "mrr": 0.5714,
+            "ndcg10": 0.5714,
+            "nonRelevant10": 0.4286,
             "noAnswerReturned": 0,
             "obsolete": 0,
             "exposure": 0,
@@ -1227,10 +1413,10 @@
             "partialPages": 0
           },
           "correction": {
-            "recall5": 0.4,
-            "recall10": 0.4,
-            "mrr": 0.4,
-            "ndcg10": 0.4,
+            "recall5": 0.6,
+            "recall10": 0.6,
+            "mrr": 0.6,
+            "ndcg10": 0.6,
             "nonRelevant10": 2,
             "noAnswerReturned": 0,
             "obsolete": 0,
@@ -1269,11 +1455,11 @@
             "partialPages": 0
           },
           "distractor": {
-            "recall5": 0.8,
-            "recall10": 0.8,
-            "mrr": 0.6,
-            "ndcg10": 0.6524,
-            "nonRelevant10": 2.8,
+            "recall5": 0.2,
+            "recall10": 0.2,
+            "mrr": 0.1,
+            "ndcg10": 0.1262,
+            "nonRelevant10": 8.2,
             "noAnswerReturned": 0,
             "obsolete": 0,
             "exposure": 0,
@@ -1316,7 +1502,7 @@
             "mrr": 0,
             "ndcg10": 0,
             "nonRelevant10": 0,
-            "noAnswerReturned": 0,
+            "noAnswerReturned": 0.5,
             "obsolete": 0,
             "exposure": 0,
             "errors": 0,
@@ -1381,8 +1567,8 @@
           },
           "para-price-cache": {
             "outcome": "ok",
-            "rank": null,
-            "recall10": 0
+            "rank": 1,
+            "recall10": 1
           },
           "para-billing-owner": {
             "outcome": "ok",
@@ -1391,18 +1577,18 @@
           },
           "para-snapshots": {
             "outcome": "ok",
-            "rank": null,
-            "recall10": 0
+            "rank": 1,
+            "recall10": 1
           },
           "para-rotation-day": {
             "outcome": "ok",
-            "rank": null,
-            "recall10": 0
+            "rank": 1,
+            "recall10": 1
           },
           "para-toggles": {
             "outcome": "ok",
-            "rank": null,
-            "recall10": 0
+            "rank": 1,
+            "recall10": 1
           },
           "para-log-shape": {
             "outcome": "ok",
@@ -1416,8 +1602,8 @@
           },
           "correct-release-stale": {
             "outcome": "ok",
-            "rank": null,
-            "recall10": 0
+            "rank": 1,
+            "recall10": 1
           },
           "correct-session-store": {
             "outcome": "ok",
@@ -1466,18 +1652,18 @@
           },
           "noise-tokens": {
             "outcome": "ok",
-            "rank": 2,
-            "recall10": 1
+            "rank": null,
+            "recall10": 0
           },
           "noise-release": {
             "outcome": "ok",
-            "rank": 1,
-            "recall10": 1
+            "rank": null,
+            "recall10": 0
           },
           "noise-backup": {
             "outcome": "ok",
-            "rank": 1,
-            "recall10": 1
+            "rank": null,
+            "recall10": 0
           },
           "noise-stale-cache": {
             "outcome": "ok",
@@ -1556,6 +1742,192 @@
           },
           "reject-state": {
             "outcome": "expected-error",
+            "rank": null,
+            "recall10": 0
+          }
+        }
+      },
+      "heldout": {
+        "overall": {
+          "recall5": 0.7778,
+          "recall10": 0.7778,
+          "mrr": 0.7778,
+          "ndcg10": 0.7778,
+          "nonRelevant10": 1.7222,
+          "noAnswerReturned": 0.5,
+          "obsolete": 0,
+          "exposure": 0,
+          "errors": 0,
+          "fetches": 0,
+          "pages": 22,
+          "partialPages": 0
+        },
+        "categories": {
+          "paraphrase": {
+            "recall5": 1,
+            "recall10": 1,
+            "mrr": 1,
+            "ndcg10": 1,
+            "nonRelevant10": 0.1111,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 9,
+            "partialPages": 0
+          },
+          "correction": {
+            "recall5": 0.5,
+            "recall10": 0.5,
+            "mrr": 0.5,
+            "ndcg10": 0.5,
+            "nonRelevant10": 2.5,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 4,
+            "partialPages": 0
+          },
+          "distractor": {
+            "recall5": 0.6,
+            "recall10": 0.6,
+            "mrr": 0.6,
+            "ndcg10": 0.6,
+            "nonRelevant10": 4,
+            "noAnswerReturned": 0,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 5,
+            "partialPages": 0
+          },
+          "no-answer": {
+            "recall5": 0,
+            "recall10": 0,
+            "mrr": 0,
+            "ndcg10": 0,
+            "nonRelevant10": 0,
+            "noAnswerReturned": 0.5,
+            "obsolete": 0,
+            "exposure": 0,
+            "errors": 0,
+            "fetches": 0,
+            "pages": 4,
+            "partialPages": 0
+          }
+        },
+        "queries": {
+          "held-para-key-renewal": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-para-invoice-backlog": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-para-schema-signoff": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-para-backup-retention": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-para-oncall-handover": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-para-log-request-id": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-para-failover-steps": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-para-reindex-blocker": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-para-stale-totals": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-correct-session-engine": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "held-correct-release-afternoon": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "held-correct-shared-broker": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-correct-staging-name": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-noise-token-expiry": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "held-noise-session-storage": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-noise-nightly-backups": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-noise-e4012-restart": {
+            "outcome": "ok",
+            "rank": 1,
+            "recall10": 1
+          },
+          "held-noise-release-schedule": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "held-none-cdn": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "held-none-gamma-owner": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "held-none-certificate": {
+            "outcome": "ok",
+            "rank": null,
+            "recall10": 0
+          },
+          "held-none-beta-backups": {
+            "outcome": "ok",
             "rank": null,
             "recall10": 0
           }
