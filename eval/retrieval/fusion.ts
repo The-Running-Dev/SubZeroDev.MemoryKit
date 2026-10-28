@@ -122,8 +122,8 @@ function valueOf(threshold: Threshold, measured: Measured): number | undefined {
 // The S18.4 conditions are the S17.3 thresholds on the corpus: every hard one and every target.
 export const CONDITIONS = HELDOUT_THRESHOLDS;
 const HARD = HELDOUT_THRESHOLDS.filter((t) => t.kind === 'hard');
-const HELD_RECALL = HELDOUT_THRESHOLDS.find((t) => t.name === 'retrieve overall recall@10')!;
-const HELD_NO_ANSWER = HELDOUT_THRESHOLDS.find(
+export const HELD_RECALL = HELDOUT_THRESHOLDS.find((t) => t.name === 'retrieve overall recall@10')!;
+export const HELD_NO_ANSWER = HELDOUT_THRESHOLDS.find(
   (t) => t.name === 'retrieve no-answer queries returning anything'
 )!;
 

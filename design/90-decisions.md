@@ -9,6 +9,44 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-28 — S21 gate failed: no reranker configuration gets no-answer questions under 20%; Stage 5 closes with S17 after a plan re-run
+
+- Context:
+  - S21 reranked three candidate sources (S17's list, S17 with any word, and their fusion with MiniLM vectors at floor 0.30), each at depths 10, 20 and 50 and eight relevance thresholds from 0.01 to 0.7.
+  - Two cross-encoders, both `@huggingface/transformers` 4.3.2, fp32, measured on Node 26.12.1, win32, i7-11850H: `Xenova/ms-marco-MiniLM-L-6-v2` at `a091443` (87.5 MiB) and `Xenova/ms-marco-TinyBERT-L-2-v2` at `b76bb5e` (17.5 MiB). Report: `eval/retrieval/rerank.md`.
+- Result: the gate failed.
+  - No configuration meets every corpus condition. Across all 144 configurations, corpus no-answer is never below 0.250, against the ≤ 20% limit.
+    - One of the 4 corpus no-answer questions (`none-scattered-words`) keeps `owner-billing` at every threshold up to 0.7.
+  - The best configuration by S21.4's order is MiniLM, S17 with any word, depth 50, relevance ≥ 0.05.
+    - Corpus: recall@10 0.939, paraphrase recall@10 0.857, MRR 0.924, no-answer 0.250, model time p95 2,561 ms.
+    - `heldout.json`: no-answer 0.750.
+    - `heldout-2.json`: recall@10 0.524 and no-answer 0.462.
+  - The held-out sets confirm the floor. No configuration gets no-answer below 0.250 on `heldout.json` or below 0.231 on `heldout-2.json`.
+  - Reranking S17's own list does help a little. MiniLM at depth 10, relevance ≥ 0.05, keeps corpus recall@10 at 0.909.
+    - It halves corpus no-answer from 0.500 to 0.250 and lifts MRR from 0.870 to 0.909.
+    - It leaves `heldout.json` no-answer at 0.500.
+    - It cannot add what S17 misses: `heldout-2.json` recall@10 0.333.
+  - Costs:
+    - Reranking S17's own list costs model time p95 18–33 ms with MiniLM at depths 20 and 50, and ≤ 3.3 ms with TinyBERT.
+    - The any-word and fused sources cost 0.96–2.6 s with MiniLM and 91–275 ms with TinyBERT.
+    - The depth-10 figure on S17's list, 68.9 ms with MiniLM, is the first cell timed. It runs on a cold model because the runner does no warm-up; an earlier uncommitted run measured 17.6 ms for it. Tail timings also vary between runs.
+    - TinyBERT never reaches paraphrase recall@10 0.70 on the corpus.
+  - The S17.4 hard thresholds hold for every configuration on every set.
+- Consequence (S21.7):
+  - S19 and S20 are not started.
+  - The plan is re-run with this result, to close Stage 5 with S17's `retrieve` and retire S19 and S20.
+  - The Stage 5 re-plan's revisit, quantized rerankers, is not triggered: no configuration meets every quality condition.
+- Departures from the slice:
+  - S21 reuses S18's runner. `eval/retrieval/embed.ts` now exports how a query's lists are built and scored, rather than copying them. The test pins S17's reference row to `baseline.json`.
+  - Each candidate's full content is scored, truncated by the tokenizer at 512 tokens, so the memory's start is kept.
+  - Model time scores a query's candidates in one batch, padded to the longest pair. Long memories padded to 512 tokens cause the long tail on the any-word and fused sources. Scoring pair by pair might shorten it, but the outcome does not depend on cost, since no configuration meets the quality conditions.
+- Rejected:
+  - Choosing the best configuration anyway, or dropping the no-answer condition. The S18 and Stage 5 re-plan entries both rejected that, and no configuration reaches it even on the corpus it is chosen on.
+  - Adding a larger reranker, a third held-out set or another threshold grid now. The grid was fixed before any run. The 0.25 floor holds up to relevance 0.7 for both models. Larger rerankers were rejected in the re-plan.
+- Revisit: a reranker or ranking method that, measured on the unchanged sets, gets no-answer questions under 20% while keeping S18.4's recall conditions.
+
+---
+
 ## 2026-10-28 — Stage 5 re-planned: measure a cross-encoder reranker (S21) before building anything; S17 stays if it fails
 
 - Context: S18's gate failed (entry below), and that entry leaves this re-plan to choose between a reranker, a recall-first rule without the no-answer condition, and keeping S17.
