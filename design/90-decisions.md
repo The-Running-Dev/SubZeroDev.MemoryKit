@@ -579,3 +579,9 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 - **Context:** the brief assumed a single machine, contradicting a platform that exposes an API and an MCP server.
 - **Chosen:** embedded, local-service and remote-service modes on the same core semantics. One authoritative instance per store may serve many remote clients.
 - **Rejected:** single-machine only — fails S-B and S-C; multi-node replication, clustering or consensus — remote access is not distributed storage, and v1 does not need it.
+
+## 2026-10-28 - Serve existing desktop hosts over stdio
+
+- Context: Codex desktop 26.1023.6123.0 requests MCP 2025-06-18. Native host logs prove initialization fails with -32022 against the modern-only server, preventing tool discovery. This supersedes the stdio-only revision restriction in the S10 decision above.
+- Chosen: use SDK v2's existing `serveStdio` option `legacy: 'serve'`. Its opening exchange pins one instance from the existing factory for either era. Keep HTTP modern-only and its authentication unchanged. No protocol shim, new service, storage or domain logic.
+- Validation: an isolated subprocess test sends the host's exact initialize revision, discovers the existing tool catalog and checks create, namespace-filtered search, read, correction, tombstone and domain validation. Existing modern stdio/HTTP and access-control tests remain required. This protocol regression does not alone claim native desktop routing success.
