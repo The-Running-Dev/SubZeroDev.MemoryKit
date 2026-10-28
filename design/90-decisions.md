@@ -9,6 +9,24 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-28 — S16 measured: ordering index and FTS candidate cap adopted; the budget counts FTS candidates
+
+- Context: S16 ran `npm run eval -- --work` on synthetic stores of 10,000, 50,000 and 100,000 rows (`eval/retrieval/work.md`, Node 26.12.1, SQLite 3.54.0, win32, i7-11850H). Both rules fixed in the slice applied.
+  - S16.3: a listing over all namespaces took 86 ms to the first row at 50,000 without an ordering index and 0.07 ms with one.
+  - S16.4: a term in about 90% of rows took 536 ms to the first row at 100,000 with the pre-S16 SQL, which joined every match to `memories` and sorted them before returning one.
+- Chosen:
+  - Schema 3 adds `memories_updated ON memories(updated_at DESC, id)`. A listing then reads rows in order. Scoped listings still find their rows through `memories_ns_state_updated` and sort them, so a small namespace stays under 0.2 ms and a broad prefix pays for the sort (98 ms below).
+  - With text, SQLite ranks the matches and returns only the best `budget + 1` FTS candidates after the cursor, which are then joined to `memories`. The scan counts every candidate, including those the scope, state, kind and metadata filters drop. A page that reaches the budget is `partial` / `scan_budget`, and its cursor resumes after the last candidate examined. This amends the 2026-10-25 entry "Search as built (S6)": with text, the budget counts FTS candidates, not rows after the SQL filters. Without text it is unchanged.
+  - The term in 90% of rows now takes 190 ms to the first row at 100,000. What remains is FTS5 ranking every match, which the budget does not bound; the contract says so.
+  - Prefix scope is a range, `namespace = base OR (namespace >= base/ AND namespace < base0)`, which uses the namespace index. Before, every prefix scanned the whole table (81 ms at 100,000 for one covering 10% of rows). Now a 20-row prefix takes 0.07 ms, but the 10% prefix still sorts its rows and takes 98 ms.
+  - No query in the eval or conformance suites became partial at the default budget.
+- Rejected:
+  - Keeping the old budget semantics with text: bounding the join needs a `LIMIT` on candidates before the filters run.
+  - Making a broad prefix walk `memories_updated` instead: without statistics the planner cannot tell a broad prefix from a small one, and walking the whole index is the worse failure for a small one.
+  - A time budget, again: nothing can interrupt the synchronous FTS ranking.
+
+---
+
 ## 2026-10-28 — S15 excerpts are located with `highlight`, not `snippet`
 
 - Context: implementing S15. The entry below says `snippet` only locates the match. `snippet` can choose the kind or metadata column, and it returns a token-bounded fragment, not a position, so the content offset of the match is not recoverable from it.

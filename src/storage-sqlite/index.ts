@@ -158,16 +158,18 @@ function requireStore(db: DatabaseSync, version: number): void {
 }
 
 // Scope as SQL. LIKE is avoided because "_" is legal in namespaces and is a LIKE wildcard.
-function scopeSql(scope: RowScope): { sql: string; params: SQLInputValue[] } {
+export function scopeSql(scope: RowScope): { sql: string; params: SQLInputValue[] } {
   if (scope.patterns.includes('*')) return { sql: '1', params: [] };
   if (scope.patterns.length === 0) return { sql: '0', params: [] };
   const clauses: string[] = [];
   const params: SQLInputValue[] = [];
   for (const pattern of scope.patterns) {
     if (pattern.endsWith('/*')) {
+      // "a/" <= namespace < "a0" is every name under "a/", since "0" follows "/" in byte
+      // order; as a range, it can use the namespace index.
       const base = pattern.slice(0, -2);
-      clauses.push('(namespace = ? OR substr(namespace, 1, ?) = ?)');
-      params.push(base, base.length + 1, base + '/');
+      clauses.push('(namespace = ? OR (namespace >= ? AND namespace < ?))');
+      params.push(base, base + '/', base + '0');
     } else {
       clauses.push('namespace = ?');
       params.push(pattern);
@@ -254,11 +256,15 @@ function firstMark(content: string, marked: string): number {
   return at;
 }
 
-// The rows a search examines, in its order, from the row after the cursor. Without text they
-// are newest first, keyed by updatedAt; with text they are by BM25 rank, keyed by rank.
-function scanSql(
+// The rows a search examines, in its order, from the row after the cursor, each with `visible`
+// set when it is in the scope, the states and the kinds. Without text they are the visible rows,
+// newest first, keyed by updatedAt. With text they are the first `budget + 1` FTS matches by
+// BM25 rank, keyed by rank, visible or not: SQLite ranks every match before the first row, but
+// joins and returns only those, so the scan budget bounds the rows read from `memories`.
+export function scanSql(
   query: StorageSearch,
-  fingerprint: string
+  fingerprint: string,
+  budget: number
 ): { sql: string; params: SQLInputValue[]; text: string | null } {
   const text = query.text === undefined ? null : ftsQuery(query.text);
   const cursor =
@@ -266,47 +272,81 @@ function scanSql(
       ? null
       : decodeCursor(query.cursor, fingerprint, text === null ? 'string' : 'number');
   const scope = scopeSql(query);
-  const where = [scope.sql, `state IN (${query.states.map(() => '?').join(',')})`];
+  const visible = [scope.sql, `state IN (${query.states.map(() => '?').join(',')})`];
   const params: SQLInputValue[] = [...scope.params, ...query.states];
   if (query.kinds !== undefined) {
-    where.push(`kind IN (${query.kinds.map(() => '?').join(',')})`);
+    visible.push(`kind IN (${query.kinds.map(() => '?').join(',')})`);
     params.push(...query.kinds);
   }
-  let sql: string;
   if (text === null) {
     if (cursor) {
-      where.push('(updated_at < ? OR (updated_at = ? AND id > ?))');
+      visible.push('(updated_at < ? OR (updated_at = ? AND id > ?))');
       params.push(cursor.key, cursor.key, cursor.id);
     }
-    sql = `SELECT * FROM memories WHERE ${where.join(' AND ')} ORDER BY updated_at DESC, id`;
-  } else {
-    if (cursor) {
-      where.push('(rank > ? OR (rank = ? AND id > ?))');
-      params.push(cursor.key, cursor.key, cursor.id);
-    }
-    params.unshift(text);
-    sql =
-      'SELECT * FROM (SELECT m.*, bm25(memories_fts) AS rank, memories_fts.rowid AS fts_rowid ' +
-      'FROM memories_fts ' +
-      'JOIN memories m ON m.id = memories_fts.id WHERE memories_fts MATCH ?) ' +
-      `WHERE ${where.join(' AND ')} ORDER BY rank, id`;
+    const sql =
+      `SELECT *, 1 AS visible FROM memories WHERE ${visible.join(' AND ')} ` +
+      'ORDER BY updated_at DESC, id';
+    return { sql, params, text };
   }
-  return { sql, params, text };
+  const candidates: SQLInputValue[] = [text];
+  let after = '';
+  if (cursor) {
+    after = 'WHERE (rank > ? OR (rank = ? AND id > ?)) ';
+    candidates.push(cursor.key, cursor.key, cursor.id);
+  }
+  candidates.push(budget + 1);
+  const sql =
+    `SELECT m.*, c.rank, c.fts_rowid, (${visible.join(' AND ')}) AS visible FROM (` +
+    'SELECT * FROM (SELECT rowid AS fts_rowid, id, bm25(memories_fts) AS rank ' +
+    `FROM memories_fts WHERE memories_fts MATCH ?) ${after}ORDER BY rank, id LIMIT ?) c ` +
+    'JOIN memories m ON m.id = c.id ORDER BY c.rank, c.id';
+  return { sql, params: [...params, ...candidates], text };
 }
 
-function nextCursor(
-  last: Row | null,
-  text: string | null,
+export interface Scan {
+  rows: number; // rows examined, towards the scan budget
+  partial: boolean; // stopped at the scan budget
+  cursor: string | null;
+}
+
+// Search's and retrieve's scan. Every row the query returns counts towards the scan budget,
+// visible or not; take is offered each visible row the metadata filter keeps and returns false
+// to end the page before it. A page that stops early has a cursor that resumes after the last
+// row it examined. Rows that are not visible go no further than this loop.
+export function scan(
+  db: DatabaseSync,
+  query: StorageSearch,
   fingerprint: string,
-  stopped: boolean
-): string | null {
-  if (!stopped || last === null) return null;
-  return encodeCursor({
-    v: 1,
-    key: text === null ? String(last.updated_at) : Number(last.rank),
-    id: String(last.id),
-    query: fingerprint,
-  });
+  budget: number,
+  take: (row: Row, text: string | null) => boolean
+): Scan {
+  const { sql, params, text } = scanSql(query, fingerprint, budget);
+  let last: Row | null = null;
+  let rows = 0;
+  let more = false;
+  let partial = false;
+  for (const row of db.prepare(sql).iterate(...params) as Iterable<Row>) {
+    if (rows === budget) {
+      partial = true;
+      break;
+    }
+    rows++;
+    if (row.visible === 1 && matchesMetadata(row, query.metadata) && !take(row, text)) {
+      more = true;
+      break;
+    }
+    last = row;
+  }
+  const cursor =
+    (more || partial) && last !== null
+      ? encodeCursor({
+          v: 1,
+          key: text === null ? String(last.updated_at) : Number(last.rank),
+          id: String(last.id),
+          query: fingerprint,
+        })
+      : null;
+  return { rows, partial, cursor };
 }
 
 // What the result costs besides its items: the envelope with a cursor and a partial reason.
@@ -523,28 +563,14 @@ export class SqliteStorage implements StorageProvider, TokenStore {
   // last row it examined.
   search(query: StorageSearch): Promise<SearchResult> {
     return this.read((db) => {
-      const fingerprint = searchFingerprint(query);
-      const { sql, params, text } = scanSql(query, fingerprint);
       const rows: Row[] = [];
-      let last: Row | null = null;
-      let scanned = 0;
-      let more = false;
-      let partial = false;
-      for (const row of db.prepare(sql).iterate(...params) as Iterable<Row>) {
-        if (scanned === this.scanBudget) {
-          partial = true;
-          break;
-        }
-        scanned++;
-        const matches = matchesMetadata(row, query.metadata);
-        if (matches && rows.length === query.limit) {
-          more = true;
-          break;
-        }
-        last = row;
-        if (matches) rows.push(row);
-      }
-
+      const { partial, cursor } = scan(
+        db,
+        query,
+        searchFingerprint(query),
+        this.scanBudget,
+        (row) => rows.length < query.limit && rows.push(row) > 0
+      );
       const derived = supersededBy(
         db,
         rows.map((row) => String(row.id)),
@@ -554,7 +580,6 @@ export class SqliteStorage implements StorageProvider, TokenStore {
         ...toRecord(db, row),
         supersededBy: derived[String(row.id)]!,
       }));
-      const cursor = nextCursor(last, text, fingerprint, more || partial);
       return partial
         ? { items, nextCursor: cursor, completeness: 'partial', partialReason: 'scan_budget' }
         : { items, nextCursor: cursor, completeness: 'complete' };
@@ -568,8 +593,6 @@ export class SqliteStorage implements StorageProvider, TokenStore {
   // content, so the excerpt follows the tokenizer exactly.
   retrieve(query: StorageRetrieve): Promise<RetrieveResult> {
     return this.read((db) => {
-      const fingerprint = retrieveFingerprint(query);
-      const { sql, params, text } = scanSql(query, fingerprint);
       const terms = [...new Set(searchTerms(query.text))];
       const locate = db.prepare(
         "SELECT highlight(memories_fts, 2, ?, '') AS marked FROM memories_fts " +
@@ -577,45 +600,35 @@ export class SqliteStorage implements StorageProvider, TokenStore {
       );
       const items: RetrievedItem[] = [];
       let used = ENVELOPE_BYTES;
-      let last: Row | null = null;
-      let scanned = 0;
-      let more = false;
-      let partial = false;
-      for (const row of db.prepare(sql).iterate(...params) as Iterable<Row>) {
-        if (scanned === this.scanBudget) {
-          partial = true;
-          break;
+      const take = (row: Row, text: string | null): boolean => {
+        if (items.length === query.limit) return false;
+        const id = String(row.id);
+        const replacements = supersededBy(db, [id], { patterns: query.readable })[id]!;
+        const marked = locate.get(MATCH_MARK, text, Number(row.fts_rowid)) as Row;
+        const item = retrievedItem(
+          toSource(row),
+          replacements,
+          Number(row.rank),
+          terms,
+          firstMark(String(row.content), String(marked.marked)),
+          query.excerptChars
+        );
+        const size = Buffer.byteLength(JSON.stringify(item), 'utf8') + 1;
+        if (used + size > MAX_RETRIEVE_BYTES) {
+          if (items.length === 0) throw new Error('a retrieved item exceeds the page bound');
+          return false;
         }
-        scanned++;
-        const matches = matchesMetadata(row, query.metadata);
-        if (matches && items.length === query.limit) {
-          more = true;
-          break;
-        }
-        if (matches) {
-          const id = String(row.id);
-          const replacements = supersededBy(db, [id], { patterns: query.readable })[id]!;
-          const marked = locate.get(MATCH_MARK, text, Number(row.fts_rowid)) as Row;
-          const item = retrievedItem(
-            toSource(row),
-            replacements,
-            Number(row.rank),
-            terms,
-            firstMark(String(row.content), String(marked.marked)),
-            query.excerptChars
-          );
-          const size = Buffer.byteLength(JSON.stringify(item), 'utf8') + 1;
-          if (used + size > MAX_RETRIEVE_BYTES) {
-            if (items.length === 0) throw new Error('a retrieved item exceeds the page bound');
-            more = true;
-            break;
-          }
-          used += size;
-          items.push(item);
-        }
-        last = row;
-      }
-      const cursor = nextCursor(last, text, fingerprint, more || partial);
+        used += size;
+        items.push(item);
+        return true;
+      };
+      const { partial, cursor } = scan(
+        db,
+        query,
+        retrieveFingerprint(query),
+        this.scanBudget,
+        take
+      );
       return partial
         ? { items, nextCursor: cursor, completeness: 'partial', partialReason: 'scan_budget' }
         : { items, nextCursor: cursor, completeness: 'complete' };

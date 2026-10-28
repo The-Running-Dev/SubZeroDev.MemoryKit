@@ -1,7 +1,7 @@
 // Schema 1 (20-contract.md, persisted schemas). Each later migration bumps user_version
 // and runs forward-only, in one transaction, when the store opens.
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const MIGRATIONS: readonly string[] = [
   `
@@ -50,4 +50,7 @@ CREATE TABLE tokens (token_id TEXT PRIMARY KEY, principal_id TEXT NOT NULL, gran
 `,
   // Schema 2: the outcome an operation returned, as JSON, so a replay can return it.
   `ALTER TABLE operations ADD COLUMN outcome TEXT;`,
+  // Schema 3: newest first across namespaces, so a listing reads rows in order instead of
+  // sorting the table (S16).
+  `CREATE INDEX memories_updated ON memories(updated_at DESC, id);`,
 ];

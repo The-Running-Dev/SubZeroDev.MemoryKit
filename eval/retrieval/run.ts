@@ -4,6 +4,7 @@
 // also runs through retrieve (S15), reported beside search.
 //
 //   node eval/retrieval/run.ts [--filler 0,10000] [--repeat 5] [--out report.md] [--json baseline.json]
+//   node eval/retrieval/run.ts --work [--sizes 10000,50000,100000] [--repeat 5] [--out work.md]
 //
 // Latency is per call in this process. Bytes are the UTF-8 length of each result as JSON; the
 // token figure is an estimate, ceil(bytes / 4), not a tokenizer count.
@@ -202,9 +203,21 @@ const { values } = parseArgs({
     repeat: { type: 'string', default: '5' },
     out: { type: 'string' },
     json: { type: 'string' },
+    work: { type: 'boolean', default: false },
+    sizes: { type: 'string', default: '10000,50000,100000' },
   },
 });
 const repeat = Number(values.repeat);
+if (values.work) {
+  const { workReport } = await import('./work.ts');
+  const commit = git('rev-parse', 'HEAD');
+  const dirty = git('status', '--porcelain', '--untracked-files=no') !== '';
+  const environment = `Commit \`${commit || 'unknown'}\`${dirty ? ' (with uncommitted changes)' : ''}. Node ${process.version} on ${process.platform} ${process.arch}, ${cpus()[0]?.model ?? 'unknown CPU'}, SQLite ${process.versions.sqlite ?? 'unknown'}.`;
+  const text = await workReport(values.sizes.split(',').map(Number), repeat, environment);
+  console.log(text);
+  if (values.out !== undefined) writeFileSync(values.out, text);
+  process.exit(0);
+}
 const runs: Run[] = [];
 for (const filler of values.filler.split(',').map(Number)) {
   console.error(`Evaluating with ${filler} filler notes...`);
