@@ -209,7 +209,7 @@ Acceptance:
 Out of scope: changing what matches or how it ranks (S17); any change to `search`; embeddings.
 
 ## S16 — Search and retrieve bound the SQLite work they start
-Status: planned
+Status: done
 Delivers: Stage 4B. A broad query or a selective filter can no longer make one call do unbounded SQLite work while the scan budget reports it as bounded. The work SQLite does before the first row is measured. The smallest changes that bound it are made without changing order, authorization, pagination or completeness.
 Touches: storage-sqlite (query shapes, scope predicates, indexes through a forward-only migration); eval (a work benchmark at 10,000, 50,000 and 100,000 memories); design (10-design, and 20-contract where it describes the scan budget)
 Depends on: S15

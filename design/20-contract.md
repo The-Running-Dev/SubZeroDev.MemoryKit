@@ -124,6 +124,11 @@ export interface SearchResult {
   items: MemoryRecord[]; nextCursor: string | null;
   completeness: 'complete' | 'partial'; partialReason?: 'scan_budget' | 'time_budget';   // v1 produces scan_budget only
 }
+// The scan budget (SqliteStorage scanBudget, default 10,000) bounds the rows one page examines. With text, they are FTS
+// candidates in rank order, including those the scope, state, kind and metadata filters drop; without text, rows after
+// the scope, state and kind filters. A page that reaches it is partial / scan_budget, with a cursor after the last row
+// examined. It does not bound time, nor the FTS match itself: SQLite still ranks every match of the text before the first
+// candidate. No time budget is enforced, and time_budget is never produced.
 // S15. Same filters, authorization, order and paging as search; text is required.
 // Fixed bounds, all ValidationFailed: limit default 10, at most min(50, maxPageSize); excerptChars default 280, at most 1000.
 export interface RetrieveQuery extends Omit<SearchQuery, 'text'> { text: string; excerptChars?: number }

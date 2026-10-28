@@ -428,7 +428,10 @@ describe('sdk', () => {
     await client.close();
 
     const db = new DatabaseSync(join(path, 'memory.db'));
-    db.exec('ALTER TABLE operations DROP COLUMN outcome; PRAGMA user_version = 1');
+    db.exec(
+      'DROP INDEX memories_updated; ALTER TABLE operations DROP COLUMN outcome; ' +
+        'PRAGMA user_version = 1'
+    );
     db.close();
 
     const reopened = await openStore({ path });
@@ -441,6 +444,10 @@ describe('sdk', () => {
     try {
       const version = check.prepare('PRAGMA user_version').get() as { user_version: number };
       assert.equal(version.user_version, SCHEMA_VERSION);
+      const index = check
+        .prepare("SELECT 1 FROM sqlite_schema WHERE type = 'index' AND name = 'memories_updated'")
+        .get();
+      assert.ok(index !== undefined, 'schema 3 adds the ordering index');
     } finally {
       check.close();
     }
