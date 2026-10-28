@@ -9,6 +9,38 @@ Reopen any entry below only on a demonstrable contradiction or a genuine blocker
 
 ---
 
+## 2026-10-28 — Stage 5: retrieval reopened toward hybrid ranking through an optional local embedder (4C)
+
+- Context: the Stage 4 reopen trigger fired. S17 misses the no-answer target on both query sets (0.500 fitted and held-out; target ≤ 20%), and the lexical precision options are exhausted: every rule that keeps recall@10 ≥ 0.90 returns something for half the no-answer questions (S17 precision rule entry). Issue #32. The user reopened 4C on 2026-10-28.
+- The brief allows this only as an option. Lines 70, 104 and 156 rule out mandatory embeddings, vector-database integration, large-scale semantic indexing and model inference in the v1 retrieval provider, and lines 76 and 169 require search and retrieval without a model or a network. This plan keeps all of them:
+  - The embedder is an optional provider and off by default (line 167: "An optional provider may need more"). With none configured, `retrieve` returns the S17 result and nothing is downloaded or loaded.
+  - Vectors live in the store's own SQLite database. No vector database, extension or service is added.
+  - Similarity is exact and in-process over the caller's scope. Approximate and large-scale semantic indexing stay deferred.
+  - `search` is unchanged and stays the deterministic retrieval of line 156.
+- Chosen:
+  - Measure before building (S18). The eval compares lexical, vector and hybrid ranking with two small local models on the S14 corpus and on held-out questions, before any product code. A second held-out set with at least 12 no-answer questions is committed first, since 4 no-answer questions per set measure in steps of 25 points.
+  - Rank fusion, vector-gated fusion (a lexical match is kept only if its vector clears the floor) and a similarity floor are compared. Plain fusion keeps every lexical match, so it cannot return less than S17 does for a question with no answer; only a rule that needs the vector to agree can. A reranker is not compared (carry-over: fusion before a reranker).
+  - Gate: S19 and S20 are built only if some rule meets every corpus condition (recall@10 ≥ 0.90, exact recall@5 = 1.0, paraphrase recall@10 ≥ 0.70, MRR ≥ 0.75, non-relevant in the top 10 ≤ 2, no-answer ≤ 20%), and the one chosen among those keeps recall@10 ≥ 0.90 and no-answer ≤ 20% on both held-out sets. Otherwise S18 records the result here and the plan is re-run.
+  - An `Embedder` port in contracts turns texts into unit-length vectors of a declared model, as plain number arrays (invariant 19). It is a model port, not a retrieval contract. StorageProvider keeps owning search and retrieval, and stores and ranks the vectors behind capability `retrieve.hybrid`. So no separate retrieval contract is introduced, which the carry-over allows only with an implementation and a migration plan.
+  - Two embedders:
+    - `TransformersEmbedder` on its own package entry, over `@huggingface/transformers` (ONNX, in-process, no API key). It is an optional peer dependency, loaded only when configured, like the Git provider.
+    - `HashEmbedder`, deterministic and dependency-free, for tests and conformance. CI never downloads a model.
+  - A model is downloaded only when the configuration allows it (`allowDownload`, default false). Otherwise a missing model makes the embedder unavailable; it never causes a network call.
+  - Vectors are derived data. A background indexer in the service writes them after the record commits, like the history drainer, so a write never waits on or fails with the model. Each vector records the revision and model it was computed from and is used only while both are current. Status reports indexed and stale counts and the last error. A purge deletes the vector in the purge transaction.
+  - What is embedded is the content alone, as for excerpts; metadata and evidence are not.
+  - Hybrid ranking runs inside the storage query with the scope, filters and authorization of lexical `retrieve`. Each list is cut to a fixed depth, the lists are fused, and the fused list is paged with a cursor. The fusion rule, floor and depth are S18's.
+  - Fallback: with no embedder, a model that does not load, or a query embedding that fails or exceeds its timeout, `retrieve` returns the lexical result and says why in `ranking`. A cursor names the method that produced it; a hybrid cursor whose query can no longer be embedded fails with the existing `ValidationFailed`, and the caller restarts. No new error code reaches a caller.
+  - Indexing never holds a short-lived process: an embedder that fails to open leaves the store open, `close` waits for an embed call only up to a timeout, and one-shot CLI commands do not index after a write.
+- Rejected:
+  - sqlite-vec or another SQLite extension: it adds a native binary per platform, `node:sqlite` loads extensions only when allowed at open, and exact scoring has not been shown too slow.
+  - A vector database or a hosted embedding API: excluded by the brief's install footprint and offline lines.
+  - Embedding inside the write transaction: a write would wait on, and could fail with, the model. Invariant 5 covers the row and its search text; vectors are explicitly outside it (invariant 20).
+  - Changing `search`, or making hybrid the default: callers rely on `search`'s every-word semantics (Stage 4 entry), and the brief's v1 retrieval is deterministic.
+  - A cross-encoder reranker or LLM ranking first: a second model and more latency, before fusion has been measured.
+- Revisit: sqlite-vec or approximate search when hybrid `retrieve` p95 exceeds 50 ms at 10,000 memories in S20, or 100,000 memories are required; a reranker if S18's gate fails on no-answer alone.
+
+---
+
 ## 2026-10-28 — S17 precision rule: share ≥ 0.5 and cut 0.35 without stopwords; the no-answer target is missed
 
 - Context: S17.2 asks for a precision rule chosen by comparison on the S14 corpus. The comparison ran ten rules over the corpus queries without filler (`eval/retrieval/baseline.md`, "Precision rules"; Node 26.12.1, win32, i7-11850H). The held-out queries in `heldout.json` were committed first (2bafec4) and chose nothing.
