@@ -307,7 +307,7 @@ Acceptance:
 Out of scope: sqlite-vec or approximate search; rerankers; changing `search`; making hybrid the default.
 
 ## S21 — Measure whether a reranker separates questions with no answer from paraphrased ones
-Status: todo
+Status: done
 Delivers: Stage 5, measurement again. Before any product code, the eval shows whether a small local reranker, which reads the question and each candidate memory together, keeps paraphrased answers while giving an agent nothing for a question no memory answers. The result decides whether Stage 5 builds anything or closes with S17's lexical retrieval (90-decisions, Stage 5 re-plan).
 Touches: eval (a reranker runner in `eval/embed/` on the pinned `@huggingface/transformers`; reranking over S18's candidate lists; costs; `eval/retrieval/rerank.md`); design (90-decisions)
 Depends on: S18
