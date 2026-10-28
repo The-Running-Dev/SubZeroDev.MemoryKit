@@ -150,7 +150,7 @@ This covers create, update, archive, supersede, tombstone and restore.
 5. The provider stops at its scan budget. The result carries `completeness`:
    - `complete`: every match is in this page or reachable through `nextCursor`.
    - `partial`: the budget stopped the search, so matches may be missing. A reason is given.
-   - With text, the budget counts FTS candidates in rank order, including those the filters drop, so SQLite joins and sorts at most that many rows. Without text, it counts rows after the scope, state and kind filters, read in order from an index. Either way the cursor resumes after the last row examined.
+   - With text, the budget counts FTS candidates in rank order, including those the filters drop, so SQLite joins at most that many rows to `memories` (FTS5 still ranks every match). Without text, it counts rows after the scope, state and kind filters, read in order from an index. Either way the cursor resumes after the last row examined.
    - The budget bounds rows, not time. SQLite still ranks every match of the text before the first candidate, and no time budget is enforced.
 
 **Retrieve.**
