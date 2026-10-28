@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
+import { createInterface } from 'node:readline';
 import { after, before, describe, it } from 'node:test';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
@@ -64,20 +65,6 @@ function listening(child: ChildProcess): Promise<string> {
     });
     child.stderr!.setEncoding('utf8').on('data', (chunk: string) => (err += chunk));
     child.on('exit', (code) => reject(new Error(`serve exited ${code}: ${err}`)));
-  });
-}
-
-// The first line a process writes after it is sent one JSON-RPC message.
-function firstReply(child: ChildProcess, message: unknown): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    let out = '';
-    child.stdout!.setEncoding('utf8').on('data', (chunk: string) => {
-      out += chunk;
-      const end = out.indexOf('\n');
-      if (end >= 0) resolve(JSON.parse(out.slice(0, end)) as Record<string, unknown>);
-    });
-    child.on('exit', (code) => reject(new Error(`mcp exited ${code}`)));
-    child.stdin!.write(JSON.stringify(message) + '\n');
   });
 }
 
@@ -338,19 +325,89 @@ describe('S10 MCP', () => {
     assert.equal((await step('memory_restore', 4)).state, 'active');
   });
 
-  it('S10.5 a 2025-era client is refused with the supported versions', async () => {
+  it(
+    'a Codex 2025-06-18 stdio client discovers tools and runs the memory lifecycle',
+    { timeout: 30000 },
+    async () => {
+      const store = tempDir();
+      await initStore({ path: store });
+      const child = spawn(process.execPath, [CLI, 'mcp', '--store', store]);
+      const lines = createInterface({ input: child.stdout! });
+      const replies = lines[Symbol.asyncIterator]();
+      let sequence = 0;
+      const request = async (method: string, params: unknown = {}) => {
+        const id = ++sequence;
+        child.stdin!.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+        const next = await replies.next();
+        assert.equal(next.done, false);
+        const reply = JSON.parse(next.value!) as {
+          id: number;
+          result: Structured;
+          error?: unknown;
+        };
+        assert.equal(reply.id, id);
+        assert.equal(reply.error, undefined);
+        return reply.result;
+      };
+      try {
+        const initialized = await request('initialize', {
+          ...LEGACY_INITIALIZE.params,
+          protocolVersion: '2025-06-18',
+        });
+        assert.equal(initialized.protocolVersion, '2025-06-18');
+        child.stdin!.write(
+          JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n'
+        );
+        const tools = (await request('tools/list')).tools as { name: string }[];
+        assert.deepEqual(tools.map((tool) => tool.name).sort(), [...MCP_TOOLS].sort());
+        const call = async (name: string, args: Structured) => {
+          const result = await request('tools/call', { name, arguments: args });
+          assert.equal(result.isError, undefined);
+          return result.structuredContent as Structured;
+        };
+        const created = await call('memory_create', {
+          namespace: 'synthetic/host',
+          kind: 'note',
+          content: 'synthetic original',
+        });
+        const id = (created.memory as Structured).id;
+        await call('memory_create', {
+          namespace: 'synthetic/other',
+          kind: 'note',
+          content: 'other',
+        });
+        const found = await call('memory_search', { namespaces: ['synthetic/host'] });
+        assert.deepEqual(
+          (found.items as Structured[]).map((item) => item.id),
+          [id]
+        );
+        assert.equal((await call('memory_get', { id })).content, 'synthetic original');
+        const corrected = await call('memory_update', {
+          id,
+          expectedRevision: 1,
+          content: 'synthetic corrected',
+        });
+        assert.equal((corrected.memory as Structured).content, 'synthetic corrected');
+        const tombstoned = await call('memory_tombstone', { id, expectedRevision: 2 });
+        assert.equal((tombstoned.memory as Structured).state, 'tombstoned');
+        const invalid = await request('tools/call', {
+          name: 'memory_create',
+          arguments: { namespace: 'Invalid', kind: 'note', content: 'x' },
+        });
+        assert.equal(invalid.isError, true);
+        assert.equal((invalid.structuredContent as Structured).code, 'ValidationFailed');
+      } finally {
+        lines.close();
+        const exited = new Promise((resolve) => child.once('exit', resolve));
+        child.stdin!.end();
+        await exited;
+      }
+    }
+  );
+
+  it('S10.5 HTTP refuses a 2025-era client with the supported versions', async () => {
     const store = tempDir();
     await initStore({ path: store });
-    const child = spawn(process.execPath, [CLI, 'mcp', '--store', store]);
-    closers.push(async () => {
-      const exited = new Promise((resolve) => child.once('exit', resolve));
-      child.stdin.end();
-      await exited;
-    });
-    const reply = await firstReply(child, LEGACY_INITIALIZE);
-    const error = reply.error as { code: number; data: { supported: string[] } };
-    assert.equal(error.code, -32022);
-    assert.deepEqual(error.data.supported, [MCP_PROTOCOL_VERSION]);
 
     const token = await localToken(store, [{ pattern: '*', permissions: ['read'] }]);
     const server = await serve({

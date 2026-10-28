@@ -247,13 +247,14 @@ export function mcpHttpHandler(service: MemoryService): McpHttpHandler {
   );
 }
 
-// stdio over this process, for one embedded caller. `closed` settles when the client closes
+// stdio over this process, for one embedded caller. The SDK serves 2025-era hosts
+// (including Codex) and the modern binding through the same tool factory. `closed` settles when the client closes
 // the input or `close` is called.
 export function serveMcpStdio(client: MemoryClient): {
   closed: Promise<void>;
   close(): Promise<void>;
 } {
-  const handle = serveStdio(() => createMcpServer(client), { legacy: 'reject' });
+  const handle = serveStdio(() => createMcpServer(client), { legacy: 'serve' });
   let settle = (): void => {};
   const closed = new Promise<void>((resolve) => (settle = resolve));
   let closing: Promise<void> | undefined;
