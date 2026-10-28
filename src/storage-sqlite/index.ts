@@ -66,6 +66,7 @@ export interface SqliteStorageOptions {
   path: string; // the database file, normally <store>/memory.db
   busyTimeoutMs?: number;
   scanBudget?: number;
+  retrieveRule?: RetrieveRule; // retrieve's precision rule; RETRIEVE_RULE unless an eval compares others
 }
 
 const DEFAULT_SCAN_BUDGET = 10_000;
@@ -178,20 +179,67 @@ export function scopeSql(scope: RowScope): { sql: string; params: SQLInputValue[
   return { sql: '(' + clauses.join(' OR ') + ')', params };
 }
 
-// Each word is quoted, so the text never reaches FTS5 as query syntax; the words are ANDed.
-function ftsQuery(text: string): string {
-  return searchTerms(text)
-    .map((term) => '"' + term.replaceAll('"', '""') + '"')
-    .join(' ');
+// Each word is quoted, so the text never reaches FTS5 as query syntax.
+const quoted = (term: string) => '"' + term.replaceAll('"', '""') + '"';
+
+// The FTS5 table a text query matches and how its words combine. search requires every word
+// under unicode61; retrieve takes any of its words under the Porter stemmer (S17).
+export interface Matching {
+  table: 'memories_fts' | 'memories_stem';
+  any: boolean;
+  terms?: string[]; // the words to match; every word of the text when absent
+}
+
+const EVERY_WORD: Matching = { table: 'memories_fts', any: false };
+
+function ftsQuery(text: string, matching: Matching): string {
+  return (matching.terms ?? searchTerms(text)).map(quoted).join(matching.any ? ' OR ' : ' ');
+}
+
+// retrieve's precision rule (S17.2). A memory is kept when it contains at least minShare of
+// the query's words and its score is at least cut times the best kept score. With stopwords,
+// common English words are dropped from the query unless nothing else is left.
+export interface RetrieveRule {
+  minShare: number;
+  cut: number;
+  stopwords: boolean;
+}
+
+export const RETRIEVE_RULE: RetrieveRule = { minShare: 0, cut: 0, stopwords: false };
+
+const STOPWORDS = new Set(
+  (
+    'a an and are as at be by can could did do does for from had has have how i in is it its ' +
+    'me my of on or our should that the their them they this to was we were what when where ' +
+    'which who whom why will with would you your'
+  ).split(' ')
+);
+
+// The distinct words retrieve matches, in query order.
+export function retrieveTerms(text: string, rule: RetrieveRule): string[] {
+  const seen = new Set<string>();
+  const terms = searchTerms(text).filter((term) => {
+    const folded = term.toLowerCase();
+    if (seen.has(folded)) return false;
+    seen.add(folded);
+    return true;
+  });
+  if (!rule.stopwords) return terms;
+  const content = terms.filter(
+    (term) => !STOPWORDS.has(term.toLowerCase().replace(/[^\p{L}\p{N}]/gu, ''))
+  );
+  return content.length > 0 ? content : terms;
 }
 
 // A cursor holds the last row a page examined, as its sort key and id, and the fingerprint of
-// the query it belongs to.
+// the query it belongs to. A retrieve cursor also carries the best score kept so far, which
+// its precision cut is relative to.
 interface Cursor {
   v: 1;
   key: number | string; // bm25 rank with text, otherwise updatedAt
   id: MemoryId;
   query: string;
+  best?: number;
 }
 
 function searchFingerprint(query: StorageSearch): string {
@@ -228,7 +276,8 @@ function decodeCursor(text: string, fingerprint: string, keyType: 'number' | 'st
     cursor.v !== 1 ||
     typeof cursor.key !== keyType ||
     typeof cursor.id !== 'string' ||
-    cursor.query !== fingerprint
+    cursor.query !== fingerprint ||
+    (cursor.best !== undefined && typeof cursor.best !== 'number')
   ) {
     throw new ValidationFailedError('Invalid cursor: invalid_cursor', {
       field: 'cursor',
@@ -236,6 +285,16 @@ function decodeCursor(text: string, fingerprint: string, keyType: 'number' | 'st
     });
   }
   return cursor as Cursor;
+}
+
+// A memory has the same rowid in both FTS tables. id is not indexed there, so it is found once,
+// in memories_fts, and both rows are deleted by rowid.
+function unindex(db: DatabaseSync, id: MemoryId): void {
+  const rows = db.prepare('SELECT rowid FROM memories_fts WHERE id = ?').all(id) as Row[];
+  for (const { rowid } of rows) {
+    db.prepare('DELETE FROM memories_fts WHERE rowid = ?').run(Number(rowid));
+    db.prepare('DELETE FROM memories_stem WHERE rowid = ?').run(Number(rowid));
+  }
 }
 
 function matchesMetadata(row: Row, wanted: StorageSearch['metadata']): boolean {
@@ -264,9 +323,10 @@ function firstMark(content: string, marked: string): number {
 export function scanSql(
   query: StorageSearch,
   fingerprint: string,
-  budget: number
-): { sql: string; params: SQLInputValue[]; text: string | null } {
-  const text = query.text === undefined ? null : ftsQuery(query.text);
+  budget: number,
+  matching: Matching = EVERY_WORD
+): { sql: string; params: SQLInputValue[]; text: string | null; cursor: Cursor | null } {
+  const text = query.text === undefined ? null : ftsQuery(query.text, matching);
   const cursor =
     query.cursor === undefined
       ? null
@@ -286,7 +346,7 @@ export function scanSql(
     const sql =
       `SELECT *, 1 AS visible FROM memories WHERE ${visible.join(' AND ')} ` +
       'ORDER BY updated_at DESC, id';
-    return { sql, params, text };
+    return { sql, params, text, cursor };
   }
   const candidates: SQLInputValue[] = [text];
   let after = '';
@@ -295,12 +355,13 @@ export function scanSql(
     candidates.push(cursor.key, cursor.key, cursor.id);
   }
   candidates.push(budget + 1);
+  const fts = matching.table;
   const sql =
     `SELECT m.*, c.rank, c.fts_rowid, (${visible.join(' AND ')}) AS visible FROM (` +
-    'SELECT * FROM (SELECT rowid AS fts_rowid, id, bm25(memories_fts) AS rank ' +
-    `FROM memories_fts WHERE memories_fts MATCH ?) ${after}ORDER BY rank, id LIMIT ?) c ` +
+    `SELECT * FROM (SELECT rowid AS fts_rowid, id, bm25(${fts}) AS rank ` +
+    `FROM ${fts} WHERE ${fts} MATCH ?) ${after}ORDER BY rank, id LIMIT ?) c ` +
     'JOIN memories m ON m.id = c.id ORDER BY c.rank, c.id';
-  return { sql, params: [...params, ...candidates], text };
+  return { sql, params: [...params, ...candidates], text, cursor };
 }
 
 export interface Scan {
@@ -311,16 +372,20 @@ export interface Scan {
 
 // Search's and retrieve's scan. Every row the query returns counts towards the scan budget,
 // visible or not; take is offered each visible row the metadata filter keeps and returns false
-// to end the page before it. A page that stops early has a cursor that resumes after the last
-// row it examined. Rows that are not visible go no further than this loop.
+// to end the page before it, or 'end' when no later row can be taken. A page that stops early
+// has a cursor that resumes after the last row it examined. Rows that are not visible go no
+// further than this loop. carry.best travels in the cursor from page to page.
 export function scan(
   db: DatabaseSync,
   query: StorageSearch,
   fingerprint: string,
   budget: number,
-  take: (row: Row, text: string | null) => boolean
+  take: (row: Row, text: string | null) => boolean | 'end',
+  matching: Matching = EVERY_WORD,
+  carry: { best?: number } = {}
 ): Scan {
-  const { sql, params, text } = scanSql(query, fingerprint, budget);
+  const { sql, params, text, cursor: from } = scanSql(query, fingerprint, budget, matching);
+  if (from?.best !== undefined) carry.best = from.best;
   let last: Row | null = null;
   let rows = 0;
   let more = false;
@@ -331,9 +396,13 @@ export function scan(
       break;
     }
     rows++;
-    if (row.visible === 1 && matchesMetadata(row, query.metadata) && !take(row, text)) {
-      more = true;
-      break;
+    if (row.visible === 1 && matchesMetadata(row, query.metadata)) {
+      const taken = take(row, text);
+      if (taken === 'end') break;
+      if (!taken) {
+        more = true;
+        break;
+      }
     }
     last = row;
   }
@@ -344,6 +413,7 @@ export function scan(
           key: text === null ? String(last.updated_at) : Number(last.rank),
           id: String(last.id),
           query: fingerprint,
+          ...(carry.best === undefined ? {} : { best: carry.best }),
         })
       : null;
   return { rows, partial, cursor };
@@ -365,6 +435,7 @@ export class SqliteStorage implements StorageProvider, TokenStore {
   private readonly path: string;
   private readonly busyTimeoutMs: number;
   private readonly scanBudget: number;
+  private readonly retrieveRule: RetrieveRule;
   private db: DatabaseSync | null = null;
   private tail: Promise<unknown> = Promise.resolve();
 
@@ -372,6 +443,7 @@ export class SqliteStorage implements StorageProvider, TokenStore {
     this.path = opts.path;
     this.busyTimeoutMs = opts.busyTimeoutMs ?? 5000;
     this.scanBudget = Math.max(1, Math.floor(opts.scanBudget ?? DEFAULT_SCAN_BUDGET));
+    this.retrieveRule = opts.retrieveRule ?? RETRIEVE_RULE;
   }
 
   async open(): Promise<void> {
@@ -586,30 +658,47 @@ export class SqliteStorage implements StorageProvider, TokenStore {
     });
   }
 
-  // Search's scan, with each matching row projected to a compact item. A page also stops
-  // before an item that would take the serialized result past MAX_RETRIEVE_BYTES, and its
-  // cursor resumes at that item. The largest possible item is about 25 KiB, so a page always
-  // holds at least one. The index's own highlight() locates the first matched term in the
-  // content, so the excerpt follows the tokenizer exactly.
+  // Search's scan over the stemmed index, matching any of the query's words, with each row the
+  // precision rule keeps projected to a compact item. Rows the rule rejects count towards the
+  // scan budget like any other; the scan ends at the first visible row below the cut, since
+  // every later row ranks lower. A page also stops before an item that would take the
+  // serialized result past MAX_RETRIEVE_BYTES, and its cursor resumes at that item. The largest
+  // possible item is about 25 KiB, so a page always holds at least one. The index's own
+  // highlight() locates the first matched word in the content, so the excerpt follows the
+  // tokenizer exactly.
   retrieve(query: StorageRetrieve): Promise<RetrieveResult> {
     return this.read((db) => {
-      const terms = [...new Set(searchTerms(query.text))];
+      const rule = this.retrieveRule;
+      const terms = retrieveTerms(query.text, rule);
+      const matching: Matching = { table: 'memories_stem', any: true, terms };
       const locate = db.prepare(
-        "SELECT highlight(memories_fts, 2, ?, '') AS marked FROM memories_fts " +
-          'WHERE memories_fts MATCH ? AND rowid = ?'
+        "SELECT highlight(memories_stem, 2, ?, '') AS marked FROM memories_stem " +
+          'WHERE memories_stem MATCH ? AND rowid = ?'
       );
+      const probe = db.prepare(
+        'SELECT 1 FROM memories_stem WHERE memories_stem MATCH ? AND rowid = ?'
+      );
+      const carry: { best?: number } = {};
       const items: RetrievedItem[] = [];
       let used = ENVELOPE_BYTES;
-      const take = (row: Row, text: string | null): boolean => {
+      const take = (row: Row, text: string | null): boolean | 'end' => {
         if (items.length === query.limit) return false;
+        const score = -Number(row.rank);
+        if (carry.best !== undefined && score < rule.cut * carry.best) return 'end';
+        const rowid = Number(row.fts_rowid);
+        const matched =
+          terms.length === 1
+            ? terms
+            : terms.filter((term) => probe.get(quoted(term), rowid) !== undefined);
+        if (matched.length < rule.minShare * terms.length) return true;
         const id = String(row.id);
         const replacements = supersededBy(db, [id], { patterns: query.readable })[id]!;
-        const marked = locate.get(MATCH_MARK, text, Number(row.fts_rowid)) as Row;
+        const marked = locate.get(MATCH_MARK, text, rowid) as Row;
         const item = retrievedItem(
           toSource(row),
           replacements,
           Number(row.rank),
-          terms,
+          matched,
           firstMark(String(row.content), String(marked.marked)),
           query.excerptChars
         );
@@ -620,6 +709,7 @@ export class SqliteStorage implements StorageProvider, TokenStore {
         }
         used += size;
         items.push(item);
+        carry.best ??= score;
         return true;
       };
       const { partial, cursor } = scan(
@@ -627,7 +717,9 @@ export class SqliteStorage implements StorageProvider, TokenStore {
         query,
         retrieveFingerprint(query),
         this.scanBudget,
-        take
+        take,
+        matching,
+        carry
       );
       return partial
         ? { items, nextCursor: cursor, completeness: 'partial', partialReason: 'scan_budget' }
@@ -739,7 +831,7 @@ export class SqliteStorage implements StorageProvider, TokenStore {
       const queued = request.queueHistory && (policy !== 'none' || exported !== undefined);
 
       db.prepare('DELETE FROM links WHERE source = ?').run(id);
-      db.prepare('DELETE FROM memories_fts WHERE id = ?').run(id);
+      unindex(db, id);
       db.prepare('DELETE FROM memories WHERE id = ?').run(id);
 
       let seq: number | null = null;
@@ -1161,10 +1253,14 @@ class SqliteTransaction implements StorageTransaction {
         'INSERT INTO links (source, type, target, ordinal) VALUES (?, ?, ?, ?)'
       );
       record.links.forEach((item, ordinal) => link.run(record.id, item.type, item.target, ordinal));
-      db.prepare('DELETE FROM memories_fts WHERE id = ?').run(record.id);
+      unindex(db, record.id);
+      const indexed = [record.id, record.kind, record.content, metadataText(record.metadata)];
+      const { lastInsertRowid } = db
+        .prepare('INSERT INTO memories_fts (id, kind, content, metadata_text) VALUES (?, ?, ?, ?)')
+        .run(...indexed);
       db.prepare(
-        'INSERT INTO memories_fts (id, kind, content, metadata_text) VALUES (?, ?, ?, ?)'
-      ).run(record.id, record.kind, record.content, metadataText(record.metadata));
+        'INSERT INTO memories_stem (rowid, id, kind, content, metadata_text) VALUES (?, ?, ?, ?, ?)'
+      ).run(lastInsertRowid, ...indexed);
     }
 
     const seqs: number[] = [];
