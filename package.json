@@ -20,7 +20,8 @@
     "memorykit": "dist/cli/main.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=22.18.0"
@@ -34,7 +35,9 @@
     "check:package": "node scripts/check-package.ts",
     "bench": "node --no-warnings bench/baseline.ts",
     "eval": "node --no-warnings eval/retrieval/run.ts",
-    "start": "node dist/cli/main.js"
+    "start": "node dist/cli/main.js",
+    "prebuild": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true });\"",
+    "check:release": "node scripts/verify-release.ts"
   },
   "keywords": [
     "memory",
@@ -55,5 +58,17 @@
     "prettier": "^3.0.0",
     "typescript": "^5.9.0",
     "typescript-eslint": "^8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/The-Running-Dev/SubZeroDev.MemoryKit.git"
+  },
+  "homepage": "https://github.com/The-Running-Dev/SubZeroDev.MemoryKit#readme",
+  "bugs": {
+    "url": "https://github.com/The-Running-Dev/SubZeroDev.MemoryKit/issues"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
   }
 }

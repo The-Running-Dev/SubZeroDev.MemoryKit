@@ -12,9 +12,13 @@ command line, over HTTP and over MCP. No database server and no AI service are n
 
 ## Install
 
-The package is not published yet. Pack it from a checkout and install the tarball:
+The package is not published yet. `subzerodev-memorykit` on npmjs is the proposed
+distribution identity, pending owner approval; `private: true` still blocks publication.
+See [the publication plan](docs/publishing.md) for the comparison, ownership checks and
+release procedure. Pack it from a checkout and install the tarball:
 
 ```bash
+npm ci
 npm pack
 ```
 
@@ -25,25 +29,25 @@ npm install ./subzerodev-memorykit-0.1.0.tgz
 ## Command line
 
 ```bash
-npx memorykit init ./store
+npx --no-install memorykit init ./store
 ```
 
 ```bash
-npx memorykit create --store ./store --namespace team/notes --kind note --content "Deploys run on Fridays"
+npx --no-install memorykit create --store ./store --namespace team/notes --kind note --content "Deploys run on Fridays"
 ```
 
 ```bash
-npx memorykit search --store ./store --namespace "team/*" --text deploys
+npx --no-install memorykit search --store ./store --namespace "team/*" --text deploys
 ```
 
 `retrieve` takes the same filters and returns compact items with a bounded excerpt instead of
 whole records, for a caller with a context budget; `get` fetches a record whole.
 
 ```bash
-npx memorykit retrieve --store ./store --namespace "team/*" --text deploys
+npx --no-install memorykit retrieve --store ./store --namespace "team/*" --text deploys
 ```
 
-`npx memorykit --help` lists every command: update, archive, restore, tombstone, supersede,
+`npx --no-install memorykit --help` lists every command: update, archive, restore, tombstone, supersede,
 purge, history and revision, operation status, namespace history policy, history sync, tokens,
 `serve` (HTTP) and `mcp` (MCP over stdio). Exit code 3 means the write succeeded and its
 history export is still pending.
@@ -74,6 +78,9 @@ silently, and an `operationId` makes a retried write return the first outcome. `
 a configuration file or persist a default policy. Pass configuration on every open. History
 defaults to Git and the default namespace policy to `full`; a namespace's policy is persisted
 on first write or explicit set, so changing an open-time default does not change existing ones.
+
+The imports below use the current local/proposed name. A scoped choice would change both
+the root specifier and the `/history-git` prefix; the API and `memorykit` binary stay the same.
 
 For direct provider composition, use the public Git entry:
 
@@ -107,6 +114,7 @@ bearer tokens from an OpenID Connect issuer. `/mcp` on the same listener and `me
 over stdio expose the memory tools to MCP clients.
 
 <!-- BEGIN project-commands -->
+
 ## Install
 
 ```bash
@@ -136,6 +144,7 @@ npm run lint
 ```bash
 npm start
 ```
+
 <!-- END project-commands -->
 
 `npm run check:package` packs the package, installs it into an empty directory and runs it

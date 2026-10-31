@@ -5,10 +5,19 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { inspectArchiveFile } from './check-archive.ts';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
@@ -26,9 +35,16 @@ function run(command: string, args: string[], cwd: string): string {
 
 const work = mkdtempSync(join(tmpdir(), 'memorykit-package-'));
 try {
-  run('npm', ['pack', '--silent', '--pack-destination', work], ROOT);
-  const [tarball] = readdirSync(work).filter((name) => name.endsWith('.tgz'));
-  assert.ok(tarball, 'npm pack wrote no tarball');
+  const supplied = process.argv[2] ? resolve(process.argv[2]) : undefined;
+  if (!supplied) run('npm', ['pack', '--silent', '--pack-destination', work], ROOT);
+  const packed = readdirSync(work).find((name) => name.endsWith('.tgz'));
+  assert.ok(supplied || packed, 'npm pack wrote no tarball');
+  const tarball = supplied ?? join(work, packed!);
+  const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+  const archive = inspectArchiveFile(tarball, manifest);
+  console.log(
+    `archive ok: ${archive.files.length} files, ${archive.bytes} bytes, sha256 ${archive.sha256}`
+  );
 
   const app = join(work, 'app');
   mkdirSync(app);
@@ -36,7 +52,7 @@ try {
     join(app, 'package.json'),
     JSON.stringify({ name: 'consumer', private: true, type: 'module' })
   );
-  run('npm', ['install', '--no-audit', '--no-fund', join('..', tarball)], app);
+  run('npm', ['install', '--no-audit', '--no-fund', tarball], app);
 
   // The installed executable, end to end.
   const memorykit = (...args: string[]) => run('npx', ['--no-install', 'memorykit', ...args], app);
@@ -56,6 +72,7 @@ try {
   assert.match(memorykit('get', id, '--store', 'store'), /installed/);
   console.log('cli ok');
 
+  // A scoped identity changes resolution paths but never the executable name.
   // The consumer, type-checked against the installed declarations, then run.
   const consumers = ['consumer.ts', 'history-modules.ts', 'git-history.ts'];
   for (const file of consumers) {
@@ -85,6 +102,11 @@ try {
   }
   console.log(run(process.execPath, ['--no-warnings', 'consumer.ts'], app).trim());
   console.log(run(process.execPath, ['--no-warnings', 'git-history.ts'], app).trim());
+  assert.equal(
+    inspectArchiveFile(tarball, manifest).sha256,
+    archive.sha256,
+    'archive changed during consumer checks'
+  );
 } finally {
   rmSync(work, { recursive: true, force: true });
 }
