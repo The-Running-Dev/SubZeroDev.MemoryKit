@@ -474,6 +474,14 @@ CREATE TABLE tokens (token_id TEXT PRIMARY KEY, principal_id TEXT NOT NULL, gran
 
 History export failures are never thrown at the writer. They appear as `history: "pending"` or `history: "blocked"` in outcomes and status. Every error carries `code`, `retryable` and `details`, and none is a bare string.
 
+## Portable workflow extension (S22, 2026-11-01)
+
+The additive workflow contract is specified in [40-portable-workflows.md](40-portable-workflows.md)
+and [the portable guide](../docs/portable-memory.md). It exports application functions over
+an authorized `MemoryClient`; it adds no methods to the core client/provider contracts.
+HTTP adds `POST /v1/capture` and `POST /v1/context`; MCP adds `memory_capture` and
+`memory_context`. Core record/lifecycle/revision semantics and schema versions are unchanged.
+
 ## Unresolved
 
 - npm package name and scope.

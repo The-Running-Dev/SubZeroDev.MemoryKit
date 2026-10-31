@@ -56,8 +56,45 @@ try {
   assert.match(memorykit('get', id, '--store', 'store'), /installed/);
   console.log('cli ok');
 
+  memorykit(
+    'setup',
+    '--store',
+    'portable-store',
+    '--output',
+    'portable-profile',
+    '--history',
+    'none',
+    '--namespace',
+    'project/demo/app'
+  );
+  writeFileSync(
+    join(app, 'capture.json'),
+    JSON.stringify({
+      namespace: 'project/demo/app',
+      source: { host: 'package-test', sessionId: 's', eventId: 'e', ref: 'test:s' },
+      observations: [{ id: 'one', role: 'user', content: 'Portable package recall' }],
+    })
+  );
+  memorykit(
+    'capture',
+    '--profile',
+    'portable-profile/memorykit.profile.json',
+    '--input',
+    'capture.json'
+  );
+  assert.match(
+    memorykit(
+      'context',
+      '--profile',
+      'portable-profile/memorykit.profile.json',
+      '--include-candidates'
+    ),
+    /Portable package recall/
+  );
+  console.log('portable cli ok');
+
   // The consumer, type-checked against the installed declarations, then run.
-  const consumers = ['consumer.ts', 'history-modules.ts', 'git-history.ts'];
+  const consumers = ['consumer.ts', 'history-modules.ts', 'git-history.ts', 'workflow.ts'];
   for (const file of consumers) {
     copyFileSync(join(ROOT, 'tests', 'consumer', file), join(app, file));
   }
@@ -84,6 +121,7 @@ try {
     );
   }
   console.log(run(process.execPath, ['--no-warnings', 'consumer.ts'], app).trim());
+  console.log(run(process.execPath, ['--no-warnings', 'workflow.ts'], app).trim());
   console.log(run(process.execPath, ['--no-warnings', 'git-history.ts'], app).trim());
 } finally {
   rmSync(work, { recursive: true, force: true });

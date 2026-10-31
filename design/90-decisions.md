@@ -2,7 +2,17 @@
 
 Append-only. Newest at the top. The rejected alternatives are the point — without them, every future session relitigates the same choice.
 
+## 2026-11-01 — Restore the portable end-user workflow
+
+The owner clarified the general-purpose, cross-project/cross-LLM goal and authorized
+implementation of capture/context and claude-mem migration. Add application workflows above
+the authorized client, with standalone Claude/Codex adapters and optional model ports.
+Keep core semantics, schema and lexical defaults. Experimental explicit embedding integration
+does not invalidate failed S18/S21 measurements or restart retired S19/S20. See
+[S22](40-portable-workflows.md) and [ADR-0002](../docs/decisions/0002-portable-memory-workflows.md).
+
 ## Open
+
 - npm package name and scope.
 
 Reopen any entry below only on a demonstrable contradiction or a genuine blocker (user, 2026-10-25).
