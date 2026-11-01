@@ -4,6 +4,11 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { buildStore, loadCorpus, loadHeldout, percentiles } from '../eval/retrieval/harness.ts';
+import { CachedRecallSelector } from '../src/workflow/recall-cache.ts';
+import { SqliteRecallCache } from '../src/index-sqlite/index.ts';
+import { canonicalJson, sha256Hex } from '../src/model/index.ts';
+import type { MemoryClient } from '../src/service/index.ts';
+import type { ContextInput } from '../src/workflow/index.ts';
 import { openStore } from '../src/sdk/index.ts';
 import { context, type RecallSelector } from '../src/workflow/index.ts';
 import {
@@ -22,10 +27,21 @@ const { values } = parseArgs({
     assert: { type: 'boolean', default: false },
     tasks: { type: 'boolean', default: false },
     trace: { type: 'string' },
+    cache: { type: 'boolean', default: false },
+    'storage-plugin': { type: 'string' },
+    'storage-options': { type: 'string' },
   },
 });
 if (!values.selector || !values.report) throw new Error('--selector and --report are required');
-if (!['sqlite', 'markdown'].includes(values.storage!)) throw new Error('Invalid storage');
+if (!['sqlite', 'markdown', 'plugin'].includes(values.storage!)) throw new Error('Invalid storage');
+const storage =
+  values.storage === 'plugin'
+    ? {
+        provider: 'plugin' as const,
+        module: resolve(values['storage-plugin']!),
+        options: JSON.parse(values['storage-options'] ?? '{}'),
+      }
+    : { provider: values.storage as 'sqlite' | 'markdown' };
 const filler = Number(values.filler);
 if (!Number.isSafeInteger(filler) || filler < 0 || filler > 10000)
   throw new Error('Invalid filler');
@@ -89,6 +105,40 @@ const measured: RecallSelector = {
 };
 const work = mkdtempSync(join(tmpdir(), 'memorykit-quality-'));
 const rows: Record<string, unknown>[] = [];
+const warmRows: Record<string, unknown>[] = [];
+let lastWarmMs = 0;
+async function recall(c: MemoryClient, input: ContextInput, scope = 'embedded') {
+  lastWarmMs = 0;
+  if (!values.cache) return context(c, input, undefined, measured);
+  const cache = new SqliteRecallCache(
+    join(work, 'recall-cache.sqlite'),
+    sha256Hex(
+      canonicalJson([config, storage, input.namespace, input.sharedNamespaces ?? [], scope])
+    )
+  );
+  const selector = new CachedRecallSelector(measured, cache);
+  try {
+    const cold = await context(c, input, undefined, selector);
+    const start = performance.now();
+    const attempts = provider.attempts;
+    const warm = await context(c, input, undefined, selector);
+    lastWarmMs = performance.now() - start;
+    const equal = JSON.stringify(cold.items) === JSON.stringify(warm.items);
+    warmRows.push({
+      scope,
+      query: input.text,
+      ms: lastWarmMs,
+      passed: equal,
+      processAttempts: provider.attempts - attempts,
+      cacheHits: selector.hits,
+    });
+    if (!equal) throw new Error('Warm recall changed the selected records');
+    return cold;
+  } finally {
+    cache.close();
+  }
+}
+
 try {
   const corpus = loadCorpus();
   // Raw lexical queries are intentionally ambiguous. Keep raw measurements available;
@@ -110,10 +160,8 @@ try {
   for (const step of corpus.steps)
     if (step.replacement)
       step.replacement.metadata = { ...step.replacement.metadata, status: 'accepted' };
-  const built = await buildStore(work, corpus, 0, {
-    provider: values.storage as 'sqlite' | 'markdown',
-  });
-  const client = await openStore({ path: work, history: { provider: 'none' } });
+  const built = await buildStore(work, corpus, 0, storage);
+  const client = await openStore({ path: work, storage, history: { provider: 'none' } });
   const custom = new Map<string, string>();
   for (const [key, content] of Object.entries({
     bicycle: 'The bicycle is stored in the attic.',
@@ -180,7 +228,7 @@ try {
         .filter((e) => built.model.get(e.ref)?.state === 'active')
         .map((e) => `${built.ids.get(e.ref)}@${e.revision}`);
       const c = await openStore(
-        { path: work, history: { provider: 'none' } },
+        { path: work, storage, history: { provider: 'none' } },
         q.principal
           ? { id: q.principal, profile: 'local', grants: corpus.principals[q.principal]! }
           : undefined
@@ -188,7 +236,7 @@ try {
       const start = performance.now();
       generatedQueries = [];
       try {
-        const result = await context(
+        const result = await recall(
           c,
           {
             namespace: namespaces[0]!,
@@ -197,8 +245,7 @@ try {
             maxBytes: 65536,
             limit: 10,
           },
-          undefined,
-          measured
+          q.principal ?? 'embedded'
         );
         const ids = result.items.map((r) => `${r.id}@${r.revision}`);
         const relevant = ids.filter((id) => expected.includes(id)).length;
@@ -206,7 +253,7 @@ try {
           set,
           id: q.id,
           category: q.category,
-          ms: performance.now() - start,
+          ms: performance.now() - start - lastWarmMs,
           expected,
           actual: ids,
           recall: expected.length ? relevant / expected.length : null,
@@ -239,17 +286,17 @@ try {
     ],
   ]) {
     if (cases && !cases.has(id!)) continue;
-    const c = await openStore({ path: work, history: { provider: 'none' } });
+    const c = await openStore({ path: work, storage, history: { provider: 'none' } });
     const start = performance.now();
     generatedQueries = [];
     try {
-      const result = await context(c, { namespace: 'eval/pilot', text }, undefined, measured);
+      const result = await recall(c, { namespace: 'eval/pilot', text });
       const expected = key ? [custom.get(key)!] : [];
       const actual = result.items.map((r) => r.id);
       rows.push({
         set: 'scale-adversarial',
         id,
-        ms: performance.now() - start,
+        ms: performance.now() - start - lastWarmMs,
         expected,
         actual,
         passed: JSON.stringify(actual) === JSON.stringify(expected),
@@ -261,7 +308,7 @@ try {
       rows.push({
         set: 'scale-adversarial',
         id,
-        ms: performance.now() - start,
+        ms: performance.now() - start - lastWarmMs,
         error: toProblem(e),
       });
     } finally {
@@ -291,7 +338,12 @@ try {
       retries: provider.attempts - calls,
       inputBytes,
       outputBytes,
-      note: 'Logical calls and process attempts including retries; input bytes count logical request data, output bytes count completed logical calls, not token accounting or billing',
+      note: 'Actual uncached logical calls and process attempts including retries; input bytes count logical request data, output bytes count completed logical calls, not token accounting or billing',
+    },
+    warm: {
+      enabled: values.cache,
+      latencyMs: percentiles(warmRows.map((r) => Number(r.ms))),
+      rows: warmRows,
     },
     latencyMs: percentiles(rows.flatMap((r) => (typeof r.ms === 'number' ? [r.ms] : []))),
     rows,

@@ -1,3 +1,4 @@
+import { runStorageConformance } from 'subzerodev-memorykit/conformance';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -41,6 +42,15 @@ try {
     assert.equal((await client.syncHistory()).blocked, null);
   } finally {
     await client.close();
+  }
+  for (const storage of [
+    { provider: 'sqlite' as const },
+    { provider: 'markdown' as const },
+    config.storage,
+  ]) {
+    const report = await runStorageConformance(storage);
+    assert.equal(report.passed, true, JSON.stringify(report));
+    assert.ok(report.cases.length >= 11);
   }
   console.log('installed storage plugin and Git history ok');
 } finally {

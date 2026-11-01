@@ -48,24 +48,34 @@ export async function discover(
   if (ranked.length > 16) reasons.add('discovery_queries_limited');
   const searches = [...new Set([...generated, ...ranked.slice(0, 16)])];
   const pool = new Map<string, { record: MemoryRecord; score: number }>();
-  for (const search of searches) {
-    const result = await client.retrieve({
-      ...query,
-      text: search,
-      limit: Math.min(50, bound),
-      excerptChars: 1,
-    });
-    if (result.completeness === 'partial' || result.nextCursor !== null)
-      reasons.add('discovery_results_limited');
-    for (const [index, hit] of result.items.entries()) {
-      const previous = pool.get(hit.id);
-      const record =
-        previous?.record.revision === hit.revision ? previous.record : await client.get(hit.id);
-      if (!eligible(record) || record.revision !== hit.revision) {
-        reasons.add('records_changed');
-        continue;
+  for (let offset = 0; offset < searches.length; offset += 4) {
+    const batch = await Promise.allSettled(
+      searches.slice(offset, offset + 4).map((search) =>
+        client.retrieve({
+          ...query,
+          text: search,
+          limit: Math.min(50, bound),
+          excerptChars: 1,
+        })
+      )
+    );
+    const failed = batch.find((result) => result.status === 'rejected');
+    if (failed?.status === 'rejected') throw failed.reason;
+    for (const settled of batch) {
+      if (settled.status !== 'fulfilled') continue;
+      const result = settled.value;
+      if (result.completeness === 'partial' || result.nextCursor !== null)
+        reasons.add('discovery_results_limited');
+      for (const [index, hit] of result.items.entries()) {
+        const previous = pool.get(hit.id);
+        const record =
+          previous?.record.revision === hit.revision ? previous.record : await client.get(hit.id);
+        if (!eligible(record) || record.revision !== hit.revision) {
+          reasons.add('records_changed');
+          continue;
+        }
+        pool.set(record.id, { record, score: (previous?.score ?? 0) + 1 / (60 + index + 1) });
       }
-      pool.set(record.id, { record, score: (previous?.score ?? 0) + 1 / (60 + index + 1) });
     }
   }
   const discovered = [...pool.values()]

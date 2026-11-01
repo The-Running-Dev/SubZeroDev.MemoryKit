@@ -1,4 +1,4 @@
-// Optional derived-vector index. No text, tokens or source records are persisted here.
+// Optional derived caches. Recall cache values contain sensitive queries and quoted text.
 import { chmodSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -72,4 +72,59 @@ export class SqliteEmbeddingIndex implements EmbeddingIndex {
 function validateKeys(keys: string[]): void {
   if (keys.some((key) => !/^[a-f0-9]{64}$/.test(key)))
     throw new ValidationFailedError('Index keys must be SHA-256 identities');
+}
+
+/** Opt-in sensitive output cache. Five-minute TTL; globally bounded to 64 entries and
+ * 16 MiB of values per file. Deleting entries is logical eviction, not secure erasure. */
+export class SqliteRecallCache {
+  private readonly db: DatabaseSync;
+  private readonly bucket: string;
+  constructor(path: string, bucket: string) {
+    validateKeys([bucket]);
+    this.bucket = bucket;
+    mkdirSync(dirname(path), { recursive: true });
+    this.db = new DatabaseSync(path);
+    if (process.platform !== 'win32') chmodSync(path, 0o600);
+    this.db.exec(
+      'PRAGMA busy_timeout=10000; PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS recall_cache (bucket TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, expires INTEGER NOT NULL, PRIMARY KEY(bucket,key));'
+    );
+  }
+  async get(key: string): Promise<unknown[] | null> {
+    validateKeys([key]);
+    const row = this.db
+      .prepare('SELECT value FROM recall_cache WHERE bucket=? AND key=? AND expires>?')
+      .get(this.bucket, key, Date.now());
+    if (!row) return null;
+    try {
+      const value: unknown = JSON.parse(String(row.value));
+      return Array.isArray(value) ? value : null;
+    } catch {
+      return null;
+    }
+  }
+  async put(key: string, value: unknown[]): Promise<void> {
+    validateKeys([key]);
+    const json = JSON.stringify(value);
+    if (Buffer.byteLength(json) > 256 * 1024) return;
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.db.prepare('DELETE FROM recall_cache WHERE expires<=?').run(Date.now());
+      this.db
+        .prepare('INSERT OR REPLACE INTO recall_cache VALUES (?,?,?,?)')
+        .run(this.bucket, key, json, Date.now() + 300000);
+      this.db.exec(
+        'DELETE FROM recall_cache WHERE rowid NOT IN (SELECT rowid FROM recall_cache ORDER BY expires DESC, rowid DESC LIMIT 64)'
+      );
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+  async clear(): Promise<void> {
+    this.db.prepare('DELETE FROM recall_cache WHERE bucket=?').run(this.bucket);
+  }
+  close(): void {
+    this.db.close();
+  }
 }

@@ -84,9 +84,9 @@ memorykit context --profile /absolute/config-v2/memorykit.profile.json --text 'y
 
 Upgrade preserves the profile's capture, acceptance, scope and provider choices and points
 new fragments at the current installed CLI. Choose a fresh output directory every time.
-Review/merge the fragments into Claude settings or Codex hooks, preserving unrelated groups;
-review/re-trust Codex hooks through `/hooks`. Remove old MemoryKit groups once replacements are
-active. Regenerate fragments after changing selector command timeouts or enabling discovery.
+Apply them with `memorykit install --profile <new-profile> --host <host> --settings <settings>`
+for managed ownership checks and preservation of unrelated groups. Review/re-trust Codex hooks
+through `/hooks`. Use `uninstall` with the old profile before changing ownership paths. Regenerate fragments after changing selector command timeouts or enabling discovery.
 Doctor checks opening/status, not model login quality or host hook activation. Existing automatic
 capture stays off unless explicitly enabled in the profile. For another project, an unpinned
 profile follows Git origin; without a supported origin choose an explicit namespace.
@@ -150,3 +150,25 @@ import can reserve the new logical ID; retry with another new ID after investiga
 storage plugins must implement optional `snapshot`/`restoreSnapshot` to support migration;
 normal contract-version-1 plugins remain compatible. In-memory/custom history archives are
 unsupported. Migrations require enough memory/disk for a complete snapshot and Git bundle.
+
+
+## Packaged compatibility checks
+
+Import `runStorageConformance` from `subzerodev-memorykit/conformance`. It runs the same shared
+service scenarios used by the transport tests, always against fresh temporary directories,
+with Git history. It returns a versioned report with case names and pass/fail, omitting plugin
+error details that might contain credentials. Git must be installed.
+
+```js
+import { runStorageConformance } from 'subzerodev-memorykit/conformance';
+const report = await runStorageConformance({ provider: 'markdown' });
+if (!report.passed) throw new Error(JSON.stringify(report));
+```
+
+For plugins backed by a remote database, pass a synchronous factory that returns a new logical
+store identity for every case. Never use an existing production store. The runner deletes only
+its local directories; you must remove the disposable database rows/stores afterward. The
+packaged `examples/check-storage-plugin.mjs <trusted-config.json>` illustrates SQLite, Markdown
+and the included PostgreSQL plugin's `storeId` convention. Other plugins must adapt the factory
+to their own isolation options. Modules run trusted code. Compatibility does not certify
+throughput, every token-store behavior, crash durability or backend-specific fault recovery.

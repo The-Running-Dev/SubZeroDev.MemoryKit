@@ -472,3 +472,95 @@ upstream exporter over synthetic worker API responses. Regenerate using
 reviews and migrates its records with provenance and source roles intact. It does not test a
 personal database or claim the worker's entire search API returns every stored row; choose an
 upstream export query that covers your intended migration and review counts before cutover.
+
+### Attributed review from remote hosts
+
+Any host can use `POST /v1/review/queue` with
+`{"namespace":"project/acme/app","limit":20}` and `POST /v1/review` with
+`{"namespace":"project/acme/app","id":"MEMORY_ID","expectedRevision":1,"action":"accept"}`.
+Both require the usual bearer token. MCP exposes equivalent `memory_review_queue` and
+`memory_review` tools over HTTP or stdio. Queue access needs read permission; a decision
+also needs write permission. Stdio uses the configured local store's embedded identity.
+
+Actions are `accept`, `reject`, `correct` (add `content`) and `duplicate` (add
+`duplicateOf`, an accepted exact-text match in the same namespace). A correction creates a
+replacement and supersedes the original atomically. Decisions preserve source role and
+provenance; accepting an assistant recap does not turn it into a user statement or establish
+independent truth. Inspect the source and obtain the user's decision before calling an action.
+Every decision needs the displayed revision; refetch after a conflict. These review endpoints
+have no idempotency-key replay contract. After a lost response, fetch the record/queue before
+retrying. Pending Git history is reported separately from the committed decision.
+
+### Optional verified recall cache
+
+Add `"cache":"/absolute/private/path/recall-cache.sqlite"` inside an existing `recall`
+profile entry. Regenerate installed hooks after profile changes. This caches exact provider
+expansion, selection and verification requests for five minutes. Current authorized discovery,
+quote validation and the final record/revision/eligibility check still run on every request.
+A repeated identical task can avoid model calls; a changed task or passage list is a cold call.
+Searches run in bounded parallel batches of four, preserving their original ranking order.
+No lexical fallback runs when the selector abstains or fails.
+
+The CLI isolates buckets by store/service, hashed credential, namespace and shared scopes,
+candidate policy and full recall configuration. Use a new provider ID when an adapter/model
+changes behind the same command. SDK users compose `CachedRecallSelector` with the
+`RecallCache` port; they must include those authorization/configuration boundaries in their
+own cache bucket identity. Never share one bucket between principals or stores.
+
+This cache contains sensitive quotations and expansion terms. It is opt-in, bounded globally
+per file to 64 entries, 256 KiB each (16 MiB of current JSON values); insertion evicts expired
+entries. Expired entries are never reused. `memorykit recall-cache-clear --profile PROFILE`
+logically clears only that profile scope's bucket. Other buckets, SQLite free pages, WAL and
+backups can retain prior bytes. Purging a source prevents stale injection immediately; cache
+expiry/clear is not secure physical erasure. Include the closed cache file and its sidecars in
+private retention/deletion procedures. Add `--cache` to the full quality harness to measure
+cold and immediate repeated-query latency and actual uncached provider attempts separately.
+
+### Daily cutover and rollback rehearsal
+
+Use a dedicated installation directory and a fresh store until the following rehearsal passes.
+Keep the current host settings, MemoryKit profile, plugin versions/configuration and original
+claude-mem database/export privately backed up. Stop writers before taking a consistent database
+backup or portable archive; do not copy an actively written SQLite main file alone.
+
+1. Build the reviewed candidate: `npm ci`, `npm run build`, `npm run check:release`,
+   `npm run check:package`. Pack with `npm pack --pack-destination /absolute/candidate-dir`.
+   On a clean source commit run `node scripts/prepare-candidate.ts --archive /absolute/candidate-dir/subzerodev-memorykit-0.2.0-rc.1.tgz --output /absolute/candidate-dir/candidate.json`.
+   The manifest records the checkout revision and archive digests; it is not a signature or a
+   claim that model quality gates passed. Check the validation reports and CI separately.
+2. Install those exact bytes in a dedicated Node project with
+   `npm install --ignore-scripts /absolute/candidate-dir/subzerodev-memorykit-0.2.0-rc.1.tgz`.
+   Compare its SHA-256/SHA-512 with the candidate manifest before installation. Keep the previous
+   installation available for rollback. Nothing here publishes to a registry.
+3. Run the installed CLI's `setup --store NEW_STORE --output NEW_CONFIG --storage sqlite`
+   (or `markdown`, or the explicit trusted plugin/module options). Git history is the default.
+   Use a stable, explicit namespace or project origin mapping; do not share a namespace simply
+   because two unrelated repositories have the same folder name. Keep capture off initially.
+4. Export the source using its supported export format. Prepare an explicit project-to-namespace
+   mapping. Run `import-claude-mem --profile PROFILE --input EXPORT --mapping MAPPING --source-id STABLE_ID --dry-run`,
+   inspect the plan, then repeat without `--dry-run`. Import creates candidates. Inspect the review
+   queue and decide each acceptance, rejection, correction or duplicate explicitly. Re-run
+   `reconcile-claude-mem` with the identical source identity and mapping after source changes;
+   coverage reconciliation does not accept records or prove their truth.
+5. Run `doctor --profile PROFILE`; resolve pending history with `history-sync --store STORE`
+   using the same storage options. With writers stopped, `export-store /private/archive.json --store STORE`
+   retains portable current state and Git history. Restore it with
+   `import-store /private/archive.json --store FRESH_STORE --storage markdown` (or your backend).
+   Never test restore over a live store. See [storage plugins](storage-plugins.md) for external
+   database identity, backup, migration and fresh-store requirements.
+6. From the checkout, run `scripts/verify-replacement.ts` against the installed package, the full
+   recall quality gate with the intended provider, and `scripts/verify-native-recall.ts` for each
+   intended native host/backend. Include paraphrases, verbose tasks, old records, correction,
+   rejection, another project and no-answer tasks. A provider error or false injection blocks
+   that provider's daily-use claim; a failed local-model gate remains a failure even if Codex passes.
+7. When ready to switch, disable the old writer/hooks through that host's settings, then install
+   the new owned hooks with `install --profile PROFILE --host codex` or `claude-code`. Review
+   Codex hook trust through `/hooks`; run `doctor --host HOST --profile PROFILE --probe` and
+   verify an actual invocation receipt. Enable capture only after reviewing its scope and retained
+   data. Keep both sets of hooks from running as competing writers during cutover.
+8. For rollback, stop new writers, export/back up the new store and preserve its post-cutover
+   records. `uninstall --profile PROFILE --host HOST` removes only owned groups. Restore the
+   prior host settings/installation and original source backup as appropriate. Rehearse a portable
+   archive restore into another fresh store before trusting it. Reconcile new records explicitly;
+   restoring an older backup alone discards later work. Clear unused recall/index buckets under
+   the private retention policy. No personal cutover is performed by these synthetic checks.

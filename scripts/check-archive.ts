@@ -87,6 +87,9 @@ export function inspectArchive(archive: Buffer, expected: Record<string, unknown
     sha256: createHash('sha256').update(archive).digest('hex'),
     integrity: `sha512-${createHash('sha512').update(archive).digest('base64')}`,
     files: [...files.keys()].sort(),
+    fileDigests: Object.fromEntries(
+      [...files].map(([path, bytes]) => [path, createHash('sha256').update(bytes).digest('hex')])
+    ),
     bytes: archive.length,
   };
 }
