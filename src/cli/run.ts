@@ -1,3 +1,5 @@
+import { readFileSync, writeFileSync } from 'node:fs';
+import { exportStore, importStore } from '../sdk/portable.ts';
 import { resolve } from 'node:path';
 import { parseArgs, type ParseArgsConfig } from 'node:util';
 import { validatePrincipal, type Grant } from '../access/index.ts';
@@ -113,6 +115,8 @@ Commands:
   mcp --store <dir>                 Serve the store as an MCP server over stdio
   token create --store <dir> --principal <id> --grant <permissions>:<pattern>...
                                    Issue a token; the secret is printed once
+  export-store <archive.json> --store <dir>  Export an offline store and retained Git history
+  import-store <archive.json> --store <new-dir>  Restore with optional storage plugin flags
   token list --store <dir>
   token revoke <token-id> --store <dir>
 
@@ -588,6 +592,27 @@ export async function run(
 
   try {
     switch (command) {
+      case 'export-store': {
+        if (values.url) throw new UsageError('Portable export requires a local store');
+        const [file] = only(rest, 1, 'export-store <archive.json>');
+        const archive = await exportStore(storeConfig(values));
+        writeFileSync(resolve(file!), JSON.stringify(archive) + '\n', { flag: 'wx', mode: 0o600 });
+        print(
+          { records: archive.snapshot.records.length, checksum: archive.checksum },
+          'Exported verified store\n'
+        );
+        return EXIT_OK;
+      }
+      case 'import-store': {
+        if (values.url) throw new UsageError('Portable import requires a local destination');
+        const [file] = only(rest, 1, 'import-store <archive.json>');
+        const result = await importStore(
+          storeConfig(values),
+          JSON.parse(readFileSync(resolve(file!), 'utf8'))
+        );
+        print(result, 'Imported verified store\n');
+        return EXIT_OK;
+      }
       case 'init': {
         if (values.url !== undefined) throw new UsageError('init takes a directory, not --url');
         const dir =

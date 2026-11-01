@@ -89,7 +89,12 @@ interface Profile {
   limit?: number;
   distiller?: CommandProviderOptions;
   embedding?: { id: string; command: CommandProviderOptions };
-  recall?: { id: string; command: CommandProviderOptions; discovery?: boolean };
+  recall?: {
+    id: string;
+    command: CommandProviderOptions;
+    discovery?: boolean;
+    verification?: boolean;
+  };
 }
 function readBounded(fd: number, max: number): string {
   const chunks: Buffer[] = [];
@@ -174,13 +179,15 @@ function profile(value: unknown): Profile {
     if (provider === undefined) continue;
     fields(
       provider,
-      ['id', 'command', ...(provider === p.recall ? ['discovery'] : [])],
+      ['id', 'command', ...(provider === p.recall ? ['discovery', 'verification'] : [])],
       ['id', 'command']
     );
     if (typeof provider.id !== 'string' || provider.id.trim() === '' || provider.id.length > 256)
       throw new ValidationFailedError('Provider needs an id');
     validateCommand(provider.command);
   }
+  if (p.recall?.verification !== undefined && typeof p.recall.verification !== 'boolean')
+    throw new ValidationFailedError('Invalid recall verification option');
   if (p.recall?.discovery !== undefined && typeof p.recall.discovery !== 'boolean')
     throw new ValidationFailedError('Invalid recall discovery option');
   return p;
@@ -229,7 +236,11 @@ async function setup(p: Profile, output: string): Promise<object> {
               UserPromptSubmit: [
                 group(
                   Math.ceil(
-                    ((p.recall?.command.timeoutMs ?? 30000) * (p.recall?.discovery ? 2 : 1)) / 1000
+                    ((p.recall?.command.timeoutMs ?? 30000) *
+                      (1 +
+                        Number(p.recall?.discovery === true) +
+                        Number(p.recall?.verification === true))) /
+                      1000
                   ) + 10
                 ),
               ],
@@ -451,6 +462,7 @@ export async function runWorkflow(
             capture: p.capture === true,
             recall: p.recall?.id ?? null,
             discovery: p.recall?.discovery === true,
+            verification: p.recall?.verification === true,
           },
           runtime: { node: process.version, cli: fileURLToPath(import.meta.url) },
         });
@@ -469,7 +481,12 @@ export async function runWorkflow(
         const selector =
           p.recall === undefined
             ? undefined
-            : new CommandRecallSelector(p.recall.id, p.recall.command, p.recall.discovery);
+            : new CommandRecallSelector(
+                p.recall.id,
+                p.recall.command,
+                p.recall.discovery,
+                p.recall.verification
+              );
         const result = await context(client, contextInput, embedding, selector);
         if (command === 'hook') {
           if (result.text)

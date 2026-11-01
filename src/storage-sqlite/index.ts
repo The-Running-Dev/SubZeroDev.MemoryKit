@@ -13,6 +13,7 @@ import type {
   PurgeRequest,
   RowScope,
   StorageProvider,
+  StorageSnapshot,
   StorageRetrieve,
   StorageSearch,
   StorageTransaction,
@@ -558,6 +559,78 @@ export class SqliteStorage implements StorageProvider, TokenStore {
         return fn(this.connection());
       } catch (error) {
         throw storageError(error, this.busyTimeoutMs);
+      }
+    });
+  }
+
+  snapshot(): Promise<StorageSnapshot> {
+    return this.immediate((db) => {
+      if (db.prepare("SELECT 1 FROM outbox WHERE status != 'exported' LIMIT 1").get())
+        throw new StoreBusyError('Drain history before exporting');
+      const last = db
+        .prepare(
+          "SELECT * FROM outbox WHERE status='exported' AND history_ref != 'discarded' ORDER BY seq DESC LIMIT 1"
+        )
+        .get() as Row | undefined;
+      const rows = db.prepare('SELECT * FROM memories ORDER BY id').all() as Row[];
+      const policies = db.prepare('SELECT * FROM namespaces ORDER BY name').all() as Row[];
+      return {
+        records: rows.map((r) => toRecord(db, r)),
+        namespaces: policies.map((r) => ({
+          name: String(r.name),
+          historyPolicy: String(r.history_policy) as HistoryPolicy,
+        })),
+        anchor: last ? { entry: outboxEntry(last), ref: String(last.history_ref) } : null,
+      };
+    });
+  }
+  restoreSnapshot(snapshot: StorageSnapshot): Promise<void> {
+    return this.immediate(async (db) => {
+      for (const table of ['memories', 'operations', 'outbox', 'namespaces', 'tokens', 'purges'])
+        if (db.prepare(`SELECT 1 FROM ${table} LIMIT 1`).get())
+          throw new StoreUnavailableError('Migration requires an empty destination');
+      const first = snapshot.records[0];
+      if (first) {
+        const tx = new SqliteTransaction(db);
+        await tx.commit(
+          {
+            rows: snapshot.records.map((record) => ({ record })),
+            outbox: [],
+            operation: {
+              principalId: 'migration',
+              operationId: 'migration',
+              fingerprint: 'migration',
+              memoryId: first.id,
+              revision: first.revision,
+              outcome: { memory: first, related: [] },
+            },
+          },
+          snapshot.records.map((r) => ({ id: r.id, revision: null }))
+        );
+        db.prepare("DELETE FROM operations WHERE principal_id='migration'").run();
+      }
+      for (const n of snapshot.namespaces)
+        db.prepare('INSERT INTO namespaces(name,history_policy,created_at) VALUES(?,?,?)').run(
+          n.name,
+          n.historyPolicy,
+          new Date().toISOString()
+        );
+      if (snapshot.anchor) {
+        const { entry: e, ref } = snapshot.anchor;
+        db.prepare(
+          "INSERT INTO outbox(seq,operation_id,memory_id,revision,operation,actor,at,namespace,policy,payload,status,history_ref) VALUES(?,?,?,?,?,?,?,?,?,NULL,'exported',?)"
+        ).run(
+          e.seq,
+          e.operationId,
+          e.memoryId,
+          e.revision,
+          e.operation,
+          e.actor,
+          e.at,
+          e.namespace,
+          e.policy,
+          ref
+        );
       }
     });
   }

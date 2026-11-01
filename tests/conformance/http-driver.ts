@@ -1,3 +1,4 @@
+import { storeConfig } from './storage.ts';
 import { PERMISSIONS, type Grant } from '../../src/access/index.ts';
 import { toProblem } from '../../src/model/index.ts';
 import { connect, initStore, openTokenStore } from '../../src/sdk/index.ts';
@@ -41,7 +42,7 @@ export async function localToken(
   principalId: string,
   grants: Grant[]
 ): Promise<string> {
-  const tokens = await openTokenStore({ path: store });
+  const tokens = await openTokenStore(storeConfig(store));
   try {
     return (await tokens.issue(principalId, grants)).secret;
   } finally {
@@ -55,7 +56,7 @@ async function startLocal(store: string): Promise<Running> {
     { pattern: '*', permissions: [...PERMISSIONS] },
   ]);
   const server = await serve({
-    store: { path: store },
+    store: storeConfig(store),
     listen: { host: '127.0.0.1', port: 0 },
     auth: { profile: 'local' },
   });
@@ -76,7 +77,7 @@ async function startRemote(store: string): Promise<Running> {
   issuer ??= startIssuer(AUDIENCE);
   const { issuer: url, token } = await issuer;
   const server = await serve({
-    store: { path: store },
+    store: storeConfig(store),
     listen: { host: '127.0.0.1', port: 0 },
     tls: { certFile: CERT_FILE, keyFile: KEY_FILE },
     auth: {
@@ -128,7 +129,7 @@ function driverOver(
   const client = async (store: string) => (await service(store)).client;
   return {
     name,
-    init: (store) => capture(async () => (await initStore({ path: store }), null)),
+    init: (store) => capture(async () => (await initStore(storeConfig(store)), null)),
     create: (store, input, operationId) =>
       capture(async () =>
         plain(

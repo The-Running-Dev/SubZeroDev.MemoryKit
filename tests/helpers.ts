@@ -10,7 +10,8 @@ export const CLI = join(REPO_ROOT, 'src', 'cli', 'main.ts');
 
 const created: string[] = [];
 after(() => {
-  for (const dir of created) rmSync(dir, { recursive: true, force: true });
+  for (const dir of created)
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
 export function tempDir(): string {

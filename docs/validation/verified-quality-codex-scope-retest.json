@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "provider": "codex",
+  "discovery": true,
+  "storage": "sqlite",
+  "taskQueries": true,
+  "queryOverrides": {
+    "exact-error-code": "What does error E4012 mean in the Alpha billing worker?",
+    "noise-tokens": "When do Alpha API tokens expire?",
+    "noise-release": "When do Alpha releases ship?",
+    "noise-backup": "When do Alpha database backups run and how long are they retained?",
+    "noise-stale-cache": "How long does Alpha cache product prices to avoid stale checkout totals?",
+    "noise-session": "Which database stores Alpha session data?"
+  },
+  "verification": true,
+  "cases": [
+    "scope-tokens"
+  ],
+  "fillerNewerThanFacts": 1000,
+  "transformations": [
+    "Set metadata.status=accepted on raw corpus records and replacements for workflow eligibility",
+    "Only active accepted exact-scope task recall; raw-search-only scenarios classified as skipped",
+    "Implicit namespace enumeration intersects the principal read grants; explicit scopes remain unchanged"
+  ],
+  "cost": {
+    "calls": 3,
+    "inputBytes": 4517,
+    "outputBytes": 426,
+    "note": "Payload bytes, not provider token accounting or billing"
+  },
+  "latencyMs": {
+    "p50": 20342.421499999997,
+    "p95": 20342.421499999997
+  },
+  "rows": [
+    {
+      "set": "corpus",
+      "id": "scope-tokens",
+      "category": "cross-namespace",
+      "ms": 20342.421499999997,
+      "expected": [
+        "01M6C87K346N2VWPKKPJWMF6CJ@1"
+      ],
+      "actual": [
+        "01M6C87K346N2VWPKKPJWMF6CJ@1"
+      ],
+      "recall": 1,
+      "falseInjections": 0,
+      "noAnswer": false,
+      "reasons": [],
+      "generatedQueries": [
+        "API tokens",
+        "token expiration",
+        "token expiry",
+        "access tokens",
+        "refresh tokens",
+        "token lifetime",
+        "token renewal",
+        "credential expiration"
+      ],
+      "bytes": 498
+    }
+  ]
+}

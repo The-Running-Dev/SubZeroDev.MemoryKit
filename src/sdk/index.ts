@@ -153,3 +153,5 @@ export async function openTokenStore(
 }
 
 export { connect, type ConnectOptions } from './connect.ts';
+
+export { exportStore, importStore, type PortableArchive } from './portable.ts';

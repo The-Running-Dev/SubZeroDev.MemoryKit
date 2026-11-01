@@ -13,8 +13,8 @@ memorykit doctor --profile /absolute/config-v1/memorykit.profile.json
 
 SQLite remains the default and is identified by `memory.db`. Other stores identify their
 provider kind in `memorykit.store.json`; old SQLite stores remain compatible. Selecting
-a different provider for an existing store fails. This release does not convert existing
-stores between backends. Back up the entire store directory with hosts stopped.
+a different provider for an existing store fails. Use the verified export/import commands below to migrate into a new store. Back up the entire
+store directory with hosts stopped.
 
 ## External modules
 
@@ -90,3 +90,63 @@ active. Regenerate fragments after changing selector command timeouts or enablin
 Doctor checks opening/status, not model login quality or host hook activation. Existing automatic
 capture stays off unless explicitly enabled in the profile. For another project, an unpinned
 profile follows Git origin; without a supported origin choose an explicit namespace.
+
+## PostgreSQL plugin
+
+Install the optional `pg` dependency (included by normal npm installs). Pass the absolute path
+of the installed package's `dist/storage-postgres/index.js` as `--storage-plugin`. Set
+`MEMORYKIT_POSTGRES_URL` in the server/host environment; configuration stores only the variable
+name, never the URL or password:
+
+```sh
+memorykit setup --store /absolute/store --storage-plugin /absolute/package/dist/storage-postgres/index.js --storage-options '{"connectionStringEnv":"MEMORYKIT_POSTGRES_URL","storeId":"team-memory"}' --history git --output /absolute/config
+```
+
+The SDK can also import `PostgresStorage` from `subzerodev-memorykit/storage-postgres`.
+Logical `storeId` must be new at initialization; reopening never silently creates a missing
+store. Initialization needs CREATE/INSERT access to `memorykit_stores`; subsequent opens need
+SELECT/UPDATE only. Use PostgreSQL connection settings appropriate to your server, including
+TLS where required. Errors omit connection details. `timeoutMs` bounds connection, lock and
+statement waits (default 10000, maximum 120000).
+
+This first plugin stores one JSONB snapshot per logical store and serializes writes with a
+row lock. It reuses Markdown's deterministic state engine, with transactional rollback in
+PostgreSQL. Search scans records and has the same ranking limitations as Markdown. It targets
+modest stores; it does not provide indexed full-text/vector search or high write throughput.
+Tokens, replay, policies, leases and outbox state share the same database transaction.
+
+Git history remains local to the configured store directory. Keep one authoritative service
+with that directory; pointing multiple independently initialized history directories at the
+same PostgreSQL store is not a distributed deployment. Back up both PostgreSQL and the local
+Git directory. Other storage plugins can implement different layouts without changing hosts.
+
+## Verified backend migration
+
+Stop every writer, drain history with `memorykit history-sync --store /absolute/source`, then
+export to a new file. Use the same explicit plugin flags on source operations when applicable.
+
+```sh
+memorykit export-store /absolute/archive.json --store /absolute/source
+memorykit import-store /absolute/archive.json --store /absolute/destination --storage markdown
+```
+
+The destination must
+be a new directory and, for PostgreSQL, a new logical `storeId`. SDK administrators use
+`exportStore(sourceConfig)` and `importStore(destinationConfig, archive)`. These operations
+are deliberately local administration APIs, unavailable to HTTP/MCP clients.
+
+The versioned archive contains current records (including inactive states), IDs, keys,
+revisions, provenance, candidate/accepted/rejected metadata, namespace policies and the full
+retained Git main history bundle. Revision identity continues at the destination. Tokens and
+operation replay caches are excluded; issue new tokens and use new operation IDs. Git history
+can retain previously purged content under its existing purge contract. Treat archives as
+sensitive backups. Checksums detect corruption, not an untrusted producer's authenticity.
+
+Export refuses undrained/blocked history and detects a changed snapshot. Import validates
+structure/checksum/Git bundle, restores in a staging directory, rechecks the snapshot, then
+moves it to the destination. Do not run competing administrators on the same destination.
+It never updates the source or replaces an existing populated destination. A failed PostgreSQL
+import can reserve the new logical ID; retry with another new ID after investigating. Custom
+storage plugins must implement optional `snapshot`/`restoreSnapshot` to support migration;
+normal contract-version-1 plugins remain compatible. In-memory/custom history archives are
+unsupported. Migrations require enough memory/disk for a complete snapshot and Git bundle.

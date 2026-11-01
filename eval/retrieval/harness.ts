@@ -25,7 +25,7 @@ import {
   type SearchQuery,
   type SearchResult,
 } from '../../src/index.ts';
-import { DATABASE_FILE, initStore, openService } from '../../src/sdk/index.ts';
+import { DATABASE_FILE, initStore, openService, type StorageConfig } from '../../src/sdk/index.ts';
 import { RETRIEVE_RULE, type RetrieveRule } from '../../src/storage-sqlite/index.ts';
 
 export const CORPUS_FILE = new URL('corpus.json', import.meta.url);
@@ -236,15 +236,20 @@ function sizeOf(path: string): number {
 
 // Writes the filler, then the corpus, then the steps, and checks every memory came out as the
 // model says. A mismatch is a broken corpus or store, so it throws rather than scores.
-export async function buildStore(dir: string, corpus: Corpus, fillerCount = 0): Promise<Built> {
+export async function buildStore(
+  dir: string,
+  corpus: Corpus,
+  fillerCount = 0,
+  storage?: StorageConfig
+): Promise<Built> {
   const model = expectedModel(corpus);
   const extra = filler(fillerCount);
   for (const entry of extra) {
     const { ref, ...rest } = entry;
     model.set(ref, rest);
   }
-  await initStore({ path: dir, history: NO_HISTORY });
-  const { service, close } = await openService({ path: dir, history: NO_HISTORY });
+  await initStore({ path: dir, history: NO_HISTORY, storage });
+  const { service, close } = await openService({ path: dir, history: NO_HISTORY, storage });
   const ids = new Map<string, MemoryId>();
   const creates: number[] = [];
   const steps: number[] = [];
