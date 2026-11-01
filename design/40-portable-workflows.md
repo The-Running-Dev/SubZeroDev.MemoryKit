@@ -34,7 +34,10 @@ HTTP/MCP never execute model commands selected by tool/request arguments.
 1. SDK, CLI, HTTP and MCP invoke the same workflows; any model can be an explicit caller.
 2. CLI setup writes a profile and reviewable Claude/Codex/MCP fragments without modifying
    live settings. Capture defaults off. Generated Git/none history choice is consistent.
-3. Claude/Codex SessionStart recalls context; opt-in Stop/PreCompact capture bounded transcript
+3. Claude/Codex UserPromptSubmit recalls context using a normalized, bounded prompt query.
+   SessionStart recency is explicit opt-in (`startupContext`); `context:false` disables both.
+   Blank/non-searchable prompts and no matches emit nothing, without a recency fallback.
+   Opt-in Stop/PreCompact capture bounded transcript
    user/assistant text. Tool/system/private/context content is omitted. Failures do not block hosts.
 4. Source role and generated status stay separate. Corrections/lifecycle and explicit shared
    scope are honored. Context treats memory as untrusted data and budgets the complete envelope.
@@ -42,6 +45,10 @@ HTTP/MCP never execute model commands selected by tool/request arguments.
    bounded execution/input/output and sanitized failures. Ship an optional Ollama example.
 6. Verify actual cross-process Claude capture to Codex recall, retries/acceptance/project
    isolation, migration, malformed input, provider failures, HTTP/MCP and packed consumers.
+7. Run an opt-in installed Claude Code acceptance harness against a packed CLI and synthetic
+   store: actual prompt event, model-visible random value, fresh processes, project/shared
+   scopes, correction and no answer. Keep model calls outside normal credential-free CI.
+   Describe fixture relevance/paraphrase/verbose-task results without changing S18/S21 gates.
 
 No automatic acceptance, semantic deduplication, recommended embedding model, persistent
 vector indexing, universal host lifecycle hooks or npm publication is included. S18/S21

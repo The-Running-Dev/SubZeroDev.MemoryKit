@@ -3,7 +3,8 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync, appendFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
-import { projectNamespace, readTranscript } from '../src/hosts/index.ts';
+import { projectNamespace, promptQuery, readTranscript } from '../src/hosts/index.ts';
+import { openStore } from '../src/sdk/index.ts';
 import { CLI, tempDir } from './helpers.ts';
 
 function cli(args: string[], input?: unknown, cwd?: string) {
@@ -51,8 +52,8 @@ describe('portable host integration', () => {
     const settings = JSON.parse(
       readFileSync(join(f.output, 'claude.settings.fragment.json'), 'utf8')
     );
-    assert.deepEqual(Object.keys(settings.hooks), ['SessionStart']);
-    const hook = settings.hooks.SessionStart[0].hooks[0];
+    assert.deepEqual(Object.keys(settings.hooks), ['UserPromptSubmit']);
+    const hook = settings.hooks.UserPromptSubmit[0].hooks[0];
     assert.equal(hook.command, process.execPath);
     assert.ok(hook.args.includes(f.profile));
     const event = {
@@ -125,7 +126,8 @@ describe('portable host integration', () => {
     assert.equal(accept.status, 0, accept.stderr);
     const start = (cwd: string) =>
       cli(['hook', '--profile', f.profile, '--host', 'codex'], {
-        hook_event_name: 'SessionStart',
+        hook_event_name: 'UserPromptSubmit',
+        prompt: 'SQLite WAL',
         cwd,
       });
     const recalled = start(alpha);
@@ -138,6 +140,139 @@ describe('portable host integration', () => {
     const after = JSON.parse(cli(args, undefined, alpha).stdout).items;
     assert.equal(after.length, 3);
     assert.equal(after.find((item: { id: string }) => item.id === items[0].id).status, 'accepted');
+  });
+
+  it('retrieves the submitted task across hosts and restarts, respecting scopes and corrections', async () => {
+    const f = setup();
+    const alpha = repo('https://github.com/acme/alpha.git');
+    const beta = repo('https://github.com/acme/beta.git');
+    const client = await openStore({ path: f.store, history: { provider: 'none' } });
+    let currentId: string;
+    try {
+      const add = async (namespace: string, content: string, status = 'accepted') =>
+        (await client.create({ namespace, kind: 'note', content, metadata: { status } })).memory;
+      const old = await add('project/acme/alpha', 'Quartz deployment target is OLD-RED.');
+      const corrected = await client.supersede({
+        id: old.id,
+        expectedRevision: 1,
+        replacement: {
+          kind: 'note',
+          content: 'Quartz deployment target is NEW-BLUE.',
+          metadata: { status: 'accepted' },
+        },
+      });
+      currentId = corrected.memory.id;
+      await add('project/acme/alpha', 'Lunch menu is soup.');
+      await add('project/acme/alpha', 'Quartz target is UNREVIEWED.', 'candidate');
+      await add('project/acme/beta', 'Quartz deployment target is OTHER-PROJECT.');
+      await add('team/engineering', 'Quartz deployment checks require SHARED-CHECK.');
+      await add('personal/private', 'Quartz private value is PRIVATE-SECRET.');
+    } finally {
+      await client.close();
+    }
+    const p = JSON.parse(readFileSync(f.profile, 'utf8'));
+    p.sharedNamespaces = ['team/engineering'];
+    writeFileSync(f.profile, JSON.stringify(p));
+    for (const host of ['claude-code', 'codex']) {
+      const run = (prompt: unknown, cwd = alpha, extra: object = {}) =>
+        cli(['hook', '--profile', f.profile, '--host', host], {
+          hook_event_name: 'UserPromptSubmit',
+          cwd,
+          prompt,
+          transcript_path: null,
+          ...extra,
+        });
+      // Each invocation opens the durable store in a fresh process.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const found = run('Quartz deployment');
+        assert.equal(found.status, 0, found.stderr);
+        const output = JSON.parse(found.stdout).hookSpecificOutput;
+        assert.equal(output.hookEventName, 'UserPromptSubmit');
+        assert.match(output.additionalContext, /NEW-BLUE/);
+        assert.ok(output.additionalContext.includes(currentId));
+        assert.match(output.additionalContext, /SHARED-CHECK/);
+        assert.doesNotMatch(
+          output.additionalContext,
+          /OLD-RED|OTHER-PROJECT|PRIVATE-SECRET|UNREVIEWED|soup/
+        );
+      }
+      assert.equal(run('unmatched-zebracorn').stdout, '');
+      assert.equal(run('   ').stdout, '');
+      assert.equal(run('!!! 😀').stdout, '');
+      const clipped = run('Quartz deployment ' + 'x'.repeat(2000));
+      assert.equal(clipped.status, 0, clipped.stderr);
+      assert.match(clipped.stderr, /first 1024/);
+      const other = run('Quartz', beta);
+      assert.match(other.stdout, /OTHER-PROJECT/);
+      assert.doesNotMatch(other.stdout, /NEW-BLUE|PRIVATE-SECRET/);
+      for (const prompt of [undefined, 42, {}]) {
+        const invalid = run(prompt);
+        assert.equal(invalid.status, 1);
+        assert.equal(invalid.stdout, '');
+      }
+      const tooLarge = run('x'.repeat(65537));
+      assert.equal(tooLarge.status, 1);
+      assert.equal(tooLarge.stdout, '');
+      const start = cli(['hook', '--profile', f.profile, '--host', host], {
+        hook_event_name: 'SessionStart',
+        cwd: alpha,
+      });
+      assert.equal(start.stdout, '');
+      assert.equal(start.status, 0);
+    }
+  });
+
+  it('bounds normalized prompt queries without splitting Unicode or selecting recency', () => {
+    assert.deepEqual(promptQuery('\nQuartz\t deployment\r\n'), {
+      text: 'Quartz deployment',
+      truncated: false,
+    });
+    assert.deepEqual(promptQuery('!!!'), { text: undefined, truncated: false });
+    const result = promptQuery('x'.repeat(1023) + '😀 tail');
+    assert.equal(result.text!.length, 1023);
+    assert.equal(result.truncated, true);
+    assert.doesNotMatch(result.text!, /\p{Cs}/u);
+  });
+
+  it('makes startup context explicit and honors the context kill switch before opening a store', async () => {
+    const f = setup(['--namespace', 'project/acme/alpha', '--startup-context']);
+    const settings = JSON.parse(readFileSync(join(f.output, 'codex.hooks.fragment.json'), 'utf8'));
+    assert.deepEqual(Object.keys(settings.hooks), ['UserPromptSubmit', 'SessionStart']);
+    const client = await openStore({ path: f.store, history: { provider: 'none' } });
+    try {
+      await client.create({
+        namespace: 'project/acme/alpha',
+        kind: 'note',
+        content: 'Explicit startup memory',
+        metadata: { status: 'accepted' },
+      });
+    } finally {
+      await client.close();
+    }
+    const start = cli(['hook', '--profile', f.profile, '--host', 'codex'], {
+      cwd: f.dir,
+      hook_event_name: 'SessionStart',
+    });
+    assert.equal(start.status, 0, start.stderr);
+    assert.match(
+      JSON.parse(start.stdout).hookSpecificOutput.additionalContext,
+      /Explicit startup memory/
+    );
+    const p = JSON.parse(readFileSync(f.profile, 'utf8'));
+    p.context = false;
+    p.store = join(f.dir, 'missing-store');
+    writeFileSync(f.profile, JSON.stringify(p));
+    for (const event of [
+      { hook_event_name: 'UserPromptSubmit', prompt: 'Quartz' },
+      { hook_event_name: 'SessionStart' },
+    ]) {
+      const result = cli(['hook', '--profile', f.profile, '--host', 'codex'], {
+        cwd: f.dir,
+        ...event,
+      });
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stdout, '');
+    }
   });
 
   it('parses Codex messages, skips tool/private/context content and reports bounded text', () => {

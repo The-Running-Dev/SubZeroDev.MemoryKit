@@ -2,7 +2,13 @@ import { closeSync, existsSync, mkdirSync, openSync, readSync, writeFileSync } f
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { parseHookEvent, projectNamespace, readTranscript, type Host } from '../hosts/index.ts';
+import {
+  parseHookEvent,
+  projectNamespace,
+  promptQuery,
+  readTranscript,
+  type Host,
+} from '../hosts/index.ts';
 import { sha256Hex, toProblem, ValidationFailedError } from '../model/index.ts';
 import {
   CommandDistiller,
@@ -38,7 +44,7 @@ export const WORKFLOW_COMMANDS = [
 ];
 const HELP = `MemoryKit portable workflows:
   setup --store <dir> --output <dir> [--namespace <ns>] [--shared-namespace <ns>]...
-        [--capture] [--include-candidates] [--history git|none]
+        [--capture] [--include-candidates] [--startup-context] [--history git|none]
     Creates a new store if absent and writes a profile plus host configuration fragments.
     Merge fragments into host settings to activate; existing host settings are untouched.
   capture --profile <json> --input <json|->
@@ -66,6 +72,7 @@ interface Profile {
   history?: 'git' | 'none';
   capture?: boolean;
   context?: boolean;
+  startupContext?: boolean;
   includeCandidates?: boolean;
   maxBytes?: number;
   limit?: number;
@@ -114,6 +121,7 @@ function profile(value: unknown): Profile {
       'history',
       'capture',
       'context',
+      'startupContext',
       'includeCandidates',
       'maxBytes',
       'limit',
@@ -130,7 +138,7 @@ function profile(value: unknown): Profile {
     (value.tokenEnv !== undefined &&
       (typeof value.tokenEnv !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(value.tokenEnv))) ||
     (value.history !== undefined && !['git', 'none'].includes(value.history as string)) ||
-    ['capture', 'context', 'includeCandidates'].some(
+    ['capture', 'context', 'startupContext', 'includeCandidates'].some(
       (key) => value[key] !== undefined && typeof value[key] !== 'boolean'
     )
   ) {
@@ -184,11 +192,15 @@ async function setup(p: Profile, output: string): Promise<object> {
       host === 'claude-code'
         ? { command: process.execPath, args }
         : { command: 'node ' + args.map(quoted).join(' ') };
-    const group = { matcher: '', hooks: [{ type: 'command', ...command, timeout: 60 }] };
+    const group = (timeout: number) => ({
+      matcher: '',
+      hooks: [{ type: 'command', ...command, timeout }],
+    });
     return {
       hooks: {
-        SessionStart: [group],
-        ...(p.capture ? { Stop: [group], PreCompact: [group] } : {}),
+        ...(p.context === false ? {} : { UserPromptSubmit: [group(30)] }),
+        ...(p.context !== false && p.startupContext === true ? { SessionStart: [group(30)] } : {}),
+        ...(p.capture ? { Stop: [group(60)], PreCompact: [group(60)] } : {}),
       },
     };
   };
@@ -208,7 +220,7 @@ async function setup(p: Profile, output: string): Promise<object> {
       null,
       2
     ),
-    'README.md': `# MemoryKit host setup\n\nProfile: ${config}\n\nMerge the Claude fragment's event groups into ~/.claude/settings.json and the Codex fragment's groups into ~/.codex/hooks.json. Preserve existing groups. In Codex, use /hooks to review and trust the new hooks. Remove these groups to uninstall. The MCP fragment uses the common JSON server format; adapt it to your host's server configuration.\n\nCapture is ${p.capture ? 'enabled in this profile' : 'off'}. Context ${p.includeCandidates ? 'includes visibly attributed, unverified candidates' : 'includes accepted records only'}. SessionStart reads context; Stop and PreCompact capture bounded user/assistant transcript text when enabled. Tools, system messages, sidechains, private-marked messages and injected MemoryKit context are excluded. No background observer runs.\n\nKeep this profile outside untrusted repositories: configured distiller/embedding commands execute as you. Namespace derives from the current Git origin unless explicitly pinned. Shared scopes are read only by these workflows; capture writes only the current project namespace. Use the raw create/supersede API to deliberately curate shared knowledge.\n`,
+    'README.md': `# MemoryKit host setup\n\nProfile: ${config}\n\nMerge the Claude fragment's event groups into ~/.claude/settings.json and the Codex fragment's groups into ~/.codex/hooks.json. Preserve existing groups. In Codex, use /hooks to review and trust the new hooks. Remove these groups to uninstall. The MCP fragment uses the common JSON server format; adapt it to your host's server configuration.\n\nCapture is ${p.capture ? 'enabled in this profile' : 'off'}. Context ${p.includeCandidates ? 'includes visibly attributed, unverified candidates' : 'includes accepted records only'}. UserPromptSubmit queries with the submitted prompt and emits additionalContext only for matching memories. Recent context at SessionStart is ${p.startupContext ? 'enabled' : 'off; opt in with --startup-context'}. Set context:false in the profile to disable both recall hooks. Stop and PreCompact capture bounded user/assistant transcript text when enabled. Tools, system messages, sidechains, private-marked messages and injected MemoryKit context are excluded. No background observer runs.\n\nKeep this profile outside untrusted repositories: configured distiller/embedding commands execute as you. Namespace derives from the current Git origin unless explicitly pinned. Shared scopes are read only by these workflows; capture writes only the current project namespace. Use the raw create/supersede API to deliberately curate shared knowledge.\n`,
   };
   for (const name of Object.keys(files))
     if (existsSync(join(output, name)))
@@ -247,6 +259,7 @@ export async function runWorkflow(
         output: { type: 'string' },
         text: { type: 'string' },
         capture: { type: 'boolean' },
+        'startup-context': { type: 'boolean' },
         'include-candidates': { type: 'boolean' },
         'max-bytes': { type: 'string' },
         limit: { type: 'string' },
@@ -286,6 +299,7 @@ export async function runWorkflow(
       ...(v['shared-namespace'] === undefined ? {} : { sharedNamespaces: v['shared-namespace'] }),
       ...(v.history === undefined ? {} : { history: v.history }),
       ...(v.capture === undefined ? {} : { capture: v.capture }),
+      ...(v['startup-context'] === undefined ? {} : { startupContext: v['startup-context'] }),
       ...(v['include-candidates'] === undefined
         ? {}
         : { includeCandidates: v['include-candidates'] }),
@@ -304,17 +318,25 @@ export async function runWorkflow(
       return 0;
     }
     const event = command === 'hook' ? parseHookEvent(readBounded(0, 65536)) : undefined;
+    const prompt =
+      event?.hook_event_name === 'UserPromptSubmit' ? promptQuery(event.prompt!) : undefined;
     if (command === 'hook') {
       if (v.profile === undefined)
         throw new ValidationFailedError('Hooks require an explicit profile');
       if (v.host !== 'claude-code' && v.host !== 'codex')
         throw new ValidationFailedError('Unsupported hook host');
       if (
-        event!.hook_event_name === 'SessionStart'
-          ? p.context === false
+        event!.hook_event_name === 'SessionStart' || event!.hook_event_name === 'UserPromptSubmit'
+          ? p.context === false ||
+            (event!.hook_event_name === 'SessionStart' && p.startupContext !== true) ||
+            (event!.hook_event_name === 'UserPromptSubmit' && prompt!.text === undefined)
           : p.capture !== true || event!.stop_hook_active === true
       )
         return 0;
+      if (prompt?.truncated)
+        io.stderr(
+          'MemoryKit recall query uses the first 1024 characters of the normalized prompt.\n'
+        );
     }
     const namespace =
       p.namespace ??
@@ -322,7 +344,7 @@ export async function runWorkflow(
     const contextInput: ContextInput = {
       namespace,
       sharedNamespaces: p.sharedNamespaces,
-      text: v.text,
+      text: prompt === undefined ? v.text : prompt.text,
       includeCandidates: p.includeCandidates,
       maxBytes: p.maxBytes,
       limit: p.limit,
@@ -350,13 +372,17 @@ export async function runWorkflow(
           : new CommandEmbeddings(p.embedding.id, p.embedding.command);
       if (
         command === 'context' ||
-        (command === 'hook' && event!.hook_event_name === 'SessionStart')
+        (command === 'hook' &&
+          ['SessionStart', 'UserPromptSubmit'].includes(event!.hook_event_name))
       ) {
         const result = await context(client, contextInput, embedding);
         if (command === 'hook') {
           if (result.text)
             print({
-              hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: result.text },
+              hookSpecificOutput: {
+                hookEventName: event!.hook_event_name,
+                additionalContext: result.text,
+              },
             });
           if (result.completeness === 'partial')
             io.stderr('MemoryKit context is partial: ' + result.reasons.join(', ') + '\n');

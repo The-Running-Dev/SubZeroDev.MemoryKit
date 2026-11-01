@@ -27,7 +27,11 @@ plus arguments; Codex uses a quoted command string.
 Capture is off unless `--capture` is present. Context includes accepted records only unless
 `--include-candidates` is present. Both flags give automatic, visibly unverified observations
 between sessions. For curated memory, capture candidates and accept selected records later.
-Profile booleans `capture`, `context` and `includeCandidates` are independent.
+Profile booleans `capture`, `context`, `startupContext` and `includeCandidates` are independent.
+Default recall runs on `UserPromptSubmit` and uses the submitted task as the query.
+Recent-memory injection at `SessionStart` requires `--startup-context` during setup,
+or `"startupContext": true` plus a SessionStart hook. `"context": false` disables both.
+The default fragments contain only UserPromptSubmit unless capture or startup context is enabled.
 Git history is the default; `--history none` selects SQLite-only operation in the profile
 and generated MCP configuration. History selection must be supplied on every open.
 
@@ -103,7 +107,21 @@ with pending history. Inspect individual write history status.
 
 ## Capture, review and correction
 
-SessionStart injects context through `additionalContext`. Stop and PreCompact capture text
+UserPromptSubmit injects matching context through `additionalContext`. Empty, whitespace-only
+and punctuation-only prompts inject nothing; no match also produces no stdout. It never falls
+back to recent memories. Prompt whitespace/control characters are normalized, then a prefix
+of at most 1024 UTF-16 code units is used, without splitting a surrogate pair. A truncated
+query is reported on stderr. Hook input is bounded to 64 KiB. This is deterministic lexical
+querying, not task summarization: paraphrases and verbose prompts can miss relevant records.
+Optional embedding behavior remains experimental, including its answerability limitations.
+
+To upgrade fragments generated before task-aware recall, run setup into a new output directory
+using the existing store, preserve profile provider/shared-scope options, then replace the old
+MemoryKit hook groups with the new ones. Old SessionStart hooks are silent unless
+`startupContext` is explicitly enabled. Other hosts can use `memory_context` or CLI
+`context --text` with a concise task query; installing a model alone does not register native hooks.
+
+Stop and PreCompact capture text
 when enabled. Hook failures exit 1, never the host-blocking exit 2. No background observer runs.
 The parser reads the final 2 MiB, selects the last 100 user/assistant messages and clips each
 to 8192 UTF-8 bytes, reporting omissions on stderr. Tools, system messages, sidechains,

@@ -1,15 +1,22 @@
 import { execFileSync } from 'node:child_process';
 import { openSync, closeSync, fstatSync, readSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
-import { isPlainObject, parseNamespace, sha256Hex, ValidationFailedError } from '../model/index.ts';
+import {
+  isPlainObject,
+  MAX_SEARCH_TEXT_LENGTH,
+  parseNamespace,
+  sha256Hex,
+  ValidationFailedError,
+} from '../model/index.ts';
 import { type CaptureInput, type Observation } from '../workflow/index.ts';
 
 export type Host = 'claude-code' | 'codex';
 export interface HookEvent {
-  hook_event_name: 'SessionStart' | 'Stop' | 'PreCompact';
+  hook_event_name: 'SessionStart' | 'UserPromptSubmit' | 'Stop' | 'PreCompact';
   cwd: string;
   session_id?: string;
-  transcript_path?: string;
+  transcript_path?: string | null;
+  prompt?: string;
   stop_hook_active?: boolean;
 }
 export function parseHookEvent(raw: string): HookEvent {
@@ -23,15 +30,32 @@ export function parseHookEvent(raw: string): HookEvent {
     !isPlainObject(value) ||
     typeof value.cwd !== 'string' ||
     !isAbsolute(value.cwd) ||
-    !['SessionStart', 'Stop', 'PreCompact'].includes(value.hook_event_name as string) ||
+    !['SessionStart', 'UserPromptSubmit', 'Stop', 'PreCompact'].includes(
+      value.hook_event_name as string
+    ) ||
     (value.session_id !== undefined && typeof value.session_id !== 'string') ||
     (value.transcript_path !== undefined &&
+      value.transcript_path !== null &&
       (typeof value.transcript_path !== 'string' || !isAbsolute(value.transcript_path))) ||
+    (value.prompt !== undefined && typeof value.prompt !== 'string') ||
+    (value.hook_event_name === 'UserPromptSubmit' && typeof value.prompt !== 'string') ||
     (value.stop_hook_active !== undefined && typeof value.stop_hook_active !== 'boolean')
   ) {
     throw new ValidationFailedError('Invalid hook event');
   }
   return value as unknown as HookEvent;
+}
+
+// Host prompts can exceed the service's search bound. Select a deterministic prefix;
+// never turn an empty/punctuation-only prompt into a no-query recent-memory request.
+export function promptQuery(prompt: string): { text: string | undefined; truncated: boolean } {
+  const normalized = prompt
+    .replace(/\p{Cc}/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  const truncated = normalized.length > MAX_SEARCH_TEXT_LENGTH;
+  const text = normalized.slice(0, MAX_SEARCH_TEXT_LENGTH).replace(/[\uD800-\uDBFF]$/u, '');
+  return { text: /[\p{L}\p{N}]/u.test(text) ? text : undefined, truncated };
 }
 
 export function projectNamespace(cwd: string): string {

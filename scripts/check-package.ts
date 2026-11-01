@@ -5,7 +5,15 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -65,7 +73,8 @@ try {
     '--history',
     'none',
     '--namespace',
-    'project/demo/app'
+    'project/demo/app',
+    '--include-candidates'
   );
   writeFileSync(
     join(app, 'capture.json'),
@@ -92,6 +101,30 @@ try {
     /Portable package recall/
   );
   console.log('portable cli ok');
+
+  // Execute the installed generated prompt hook with real stdin, rather than only
+  // inspect its configuration. No native host credentials/model calls are needed here.
+  const settings = JSON.parse(
+    readFileSync(join(app, 'portable-profile/claude.settings.fragment.json'), 'utf8')
+  );
+  assert.deepEqual(Object.keys(settings.hooks), ['UserPromptSubmit']);
+  const hook = settings.hooks.UserPromptSubmit[0].hooks[0];
+  const recalled = spawnSync(hook.command, hook.args, {
+    cwd: app,
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: 30000,
+    input: JSON.stringify({
+      hook_event_name: 'UserPromptSubmit',
+      cwd: app,
+      prompt: 'Portable package recall',
+    }),
+  });
+  assert.equal(recalled.status, 0, recalled.stderr);
+  const envelope = JSON.parse(recalled.stdout).hookSpecificOutput;
+  assert.equal(envelope.hookEventName, 'UserPromptSubmit');
+  assert.match(envelope.additionalContext, /Portable package recall/);
+  console.log('installed prompt hook ok');
 
   // The consumer, type-checked against the installed declarations, then run.
   const consumers = ['consumer.ts', 'history-modules.ts', 'git-history.ts', 'workflow.ts'];

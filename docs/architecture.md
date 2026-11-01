@@ -25,7 +25,8 @@ Claude/Codex transcript hooks       Any application/model
 
 The workflow layer imports domain types and the authorized client contract only. It never
 opens stores, discovers private sources, launches models or grants access. Host adapters
-parse bounded transcript text. CLI selects explicit configuration, connections and optional
+parse bounded transcript text and prompt events. Default native recall queries at prompt
+submission; startup recency requires explicit opt-in. CLI selects configuration, connections and optional
 providers. HTTP/MCP invoke workflows without request-selected executables. Conventional
 applications use the raw memory service without any capture/model dependency.
 
@@ -46,3 +47,5 @@ Default retrieval remains lexical. Optional model ports do not alter the failed 
 quality gates or claim answerability. See [portable memory](portable-memory.md) for usage
 and limits, [the contract](../design/20-contract.md) for semantics, and
 [ADR-0002](decisions/0002-portable-memory-workflows.md) for the extension decision.
+Task-aware host timing and upgrade behavior are recorded in
+[ADR-0003](decisions/0003-task-aware-host-recall.md).
