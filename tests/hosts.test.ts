@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import { projectNamespace, promptQuery, readTranscript } from '../src/hosts/index.ts';
 import { openStore } from '../src/sdk/index.ts';
+import { capture, planCapture } from '../src/workflow/index.ts';
 import { CLI, tempDir } from './helpers.ts';
 
 function cli(args: string[], input?: unknown, cwd?: string) {
@@ -402,6 +403,47 @@ const p=r.passages[0]; console.log(JSON.stringify({selections:[{id:p.id,revision
     const repeated = read();
     assert.equal(repeated[0]!.id, initial[1]!.id);
     assert.equal(new Set(repeated.map((item) => item.id)).size, 4);
+  });
+
+  it('replays Codex capture after a resumed transcript moves to another file', async () => {
+    const f = setup(['--namespace', 'project/acme/alpha']);
+    const transcript = join(f.dir, 'initial.jsonl');
+    const relocated = join(f.dir, 'resumed.jsonl');
+    const text =
+      JSON.stringify({
+        timestamp: '2026-11-01T10:00:00Z',
+        type: 'response_item',
+        payload: { type: 'message', role: 'user', content: 'Keep this source statement.' },
+      }) + '\n';
+    writeFileSync(transcript, text);
+    writeFileSync(relocated, JSON.stringify({ type: 'session_meta' }) + '\n' + text);
+    const event = { hook_event_name: 'Stop' as const, cwd: f.dir, session_id: 'same-session' };
+    const initial = readTranscript(
+      'codex',
+      { ...event, transcript_path: transcript },
+      'project/acme/alpha'
+    ).input!;
+    const resumed = readTranscript(
+      'codex',
+      { ...event, transcript_path: relocated },
+      'project/acme/alpha'
+    ).input!;
+    assert.deepEqual(planCapture(resumed), planCapture(initial));
+    assert.equal(resumed.source.ref, 'codex:session:same-session');
+    const client = await openStore({ path: f.store, history: { provider: 'none' } });
+    try {
+      const first = await capture(client, initial);
+      assert.equal(first.completeness, 'complete');
+      const id = first.items[0]!.outcome.memory.id;
+      await client.update({ id, expectedRevision: 1, metadata: { status: 'accepted' } });
+      const replay = await capture(client, resumed);
+      assert.deepEqual(replay.failures, []);
+      assert.equal(replay.items[0]!.outcome.memory.id, id);
+      assert.equal((await client.get(id)).metadata.status, 'accepted');
+      assert.equal((await client.search({ namespaces: ['project/acme/alpha'] })).items.length, 1);
+    } finally {
+      await client.close();
+    }
   });
 
   it('requires an explicit namespace without a supported remote and fails hooks without blocking the host', () => {

@@ -130,7 +130,13 @@ export function readTranscript(host: Host, event: HookEvent, namespace: string):
     host,
     sessionId: event.session_id,
     eventId: 'transcript',
-    ref: 'file:' + event.transcript_path,
+    // Codex relocates a resumed transcript as well as rewriting its contents.
+    // Evidence participates in the idempotent request body, so bind it to the
+    // source session rather than a mutable on-disk filename.
+    ref:
+      host === 'codex'
+        ? 'codex:session:' + encodeURIComponent(event.session_id)
+        : 'file:' + event.transcript_path,
   };
   let offset = start,
     skipped = 0,
