@@ -274,7 +274,10 @@ export function createScenarios(tempDir: () => string): Scenario[] {
         // operation is the contract's way to observe completion, without deleting twice.
         const deadline = Date.now() + 30000;
         const boundaries = () =>
-          report.boundaries as Record<string, { result: string; detail?: string }>;
+          report.boundaries as Record<
+            'history_current_tree' | 'current_storage',
+            { result: string; detail?: string }
+          >;
         while (boundaries().history_current_tree.result === 'failed' && Date.now() < deadline) {
           assert.match(
             boundaries().history_current_tree.detail ?? '',
