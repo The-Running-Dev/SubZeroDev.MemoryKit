@@ -127,9 +127,16 @@ export function createScenarios(tempDir: () => string): Scenario[] {
           await driver.create(store, { namespace: 'demo', kind: 'note', content: 'x' }, 'op-1')
         );
         const memory = created.memory as Record<string, unknown>;
-        // A slow export can outlast historyWaitMs, so the write may report pending; the export
-        // still finishes before the store closes.
-        const operation = value(await driver.operation(store, 'op-1'));
+        // Long-lived transports may still be exporting when operation status is read.
+        // Check the acknowledgement transition before asserting the completed history shape.
+        let operation = value(await driver.operation(store, 'op-1'));
+        const deadline = Date.now() + 30_000;
+        while (operation.history === 'pending' && Date.now() < deadline) {
+          assert.equal(operation.storage, 'persisted');
+          assert.equal(operation.historyRef, null);
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          operation = value(await driver.operation(store, 'op-1'));
+        }
         assert.equal(typeof operation.historyRef, 'string');
         if (created.history === 'persisted') assert.equal(operation.historyRef, created.historyRef);
         assert.deepEqual(operation, {
