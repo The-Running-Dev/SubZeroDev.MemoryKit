@@ -39,6 +39,7 @@ import type {
 } from '../service/index.ts';
 import type { MemoryRecord } from '../model/index.ts';
 import { runWorkflow, WORKFLOW_COMMANDS } from './workflow.ts';
+import { STORAGE_OPTIONS, storageOptions } from './storage.ts';
 
 export interface CliIo {
   stdout(text: string): void;
@@ -63,6 +64,9 @@ export const EXIT_USAGE = 2;
 export const EXIT_HISTORY_PENDING = 3;
 
 const USAGE = `Usage: memorykit <command> [options]
+
+Local stores: --storage sqlite|markdown, or --storage-plugin <absolute module>
+[--storage-options <JSON>]. Built-in provider selection persists with the store.
 
 Every command except init, serve, mcp and token takes either --store <dir> or
 --url <url> [--token-env <VAR>], where <VAR> names the variable holding the token.
@@ -122,6 +126,7 @@ Options:
 `;
 
 const OPTIONS = {
+  ...STORAGE_OPTIONS,
   store: { type: 'string' },
   history: { type: 'string' },
   json: { type: 'boolean' },
@@ -413,6 +418,7 @@ function storeConfig(values: Values): StoreConfig {
   }
   return {
     path: resolve(required(values, 'store')),
+    storage: storageOptions(values),
     ...(values.history === undefined ? {} : { history: { provider: values.history } }),
   };
 }
@@ -427,6 +433,14 @@ async function openClient(
     return deps.openStore(storeConfig(values));
   }
   if (values.store !== undefined) throw new UsageError('Give --store or --url, not both');
+  if (
+    values.storage !== undefined ||
+    values['storage-plugin'] !== undefined ||
+    values['storage-options'] !== undefined
+  )
+    throw new UsageError(
+      'Storage configuration belongs to the server; it cannot be selected with --url'
+    );
   const name = values['token-env'];
   let token: string | undefined;
   if (name !== undefined) {
@@ -580,7 +594,7 @@ export async function run(
           rest.length === 0 && values.store !== undefined
             ? values.store
             : only(rest, 1, 'init <dir>')[0]!;
-        await initStore({ path: resolve(dir) });
+        await initStore({ ...storeConfig({ ...values, store: dir }), path: resolve(dir) });
         if (!values.json) io.stdout(`Initialized store at ${resolve(dir)}\n`);
         return EXIT_OK;
       }

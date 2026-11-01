@@ -136,7 +136,13 @@ try {
 
   // A scoped identity changes resolution paths but never the executable name.
   // The consumer, type-checked against the installed declarations, then run.
-  const consumers = ['consumer.ts', 'history-modules.ts', 'git-history.ts', 'workflow.ts'];
+  const consumers = [
+    'consumer.ts',
+    'history-modules.ts',
+    'git-history.ts',
+    'workflow.ts',
+    'storage-plugin.ts',
+  ];
   for (const file of consumers) {
     copyFileSync(join(ROOT, 'tests', 'consumer', file), join(app, file));
   }
@@ -164,6 +170,7 @@ try {
   }
   console.log(run(process.execPath, ['--no-warnings', 'consumer.ts'], app).trim());
   console.log(run(process.execPath, ['--no-warnings', 'workflow.ts'], app).trim());
+  console.log(run(process.execPath, ['--no-warnings', 'storage-plugin.ts'], app).trim());
   console.log(run(process.execPath, ['--no-warnings', 'git-history.ts'], app).trim());
   assert.equal(
     inspectArchiveFile(tarball, manifest).sha256,

@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { instructions, schema } from './recall-prompt.mjs';
+import { instructions, schema, expansionInstructions, expansionSchema } from './recall-prompt.mjs';
 
 let work;
 try {
@@ -21,7 +21,11 @@ try {
     if (Buffer.byteLength(raw) > 65536 + 128) throw new Error('Input too large');
   }
   const request = JSON.parse(raw);
-  if (request.version !== 1 || request.task !== 'select' || !Array.isArray(request.passages))
+  if (
+    request.version !== 1 ||
+    !['select', 'expand'].includes(request.task) ||
+    (request.task === 'select' && !Array.isArray(request.passages))
+  )
     throw new Error('Invalid request');
   work = mkdtempSync(join(tmpdir(), 'memorykit-selector-'));
   const env = { ...process.env };
@@ -37,9 +41,9 @@ try {
       '--output-format',
       'json',
       '--json-schema',
-      JSON.stringify(schema),
+      JSON.stringify(request.task === 'expand' ? expansionSchema : schema),
       '--system-prompt',
-      instructions,
+      request.task === 'expand' ? expansionInstructions : instructions,
       '--setting-sources',
       '',
       '--settings',

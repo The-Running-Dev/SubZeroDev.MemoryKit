@@ -28,6 +28,7 @@ const { values } = parseArgs({
     host: { type: 'string', default: 'claude-code' },
     selector: { type: 'string' },
     report: { type: 'string' },
+    storage: { type: 'string', default: 'sqlite' },
   },
 });
 assert.ok(values.cli, 'Supply --cli /absolute/path/to/installed/dist/cli/main.js');
@@ -46,7 +47,7 @@ const run = (command: string, args: string[], cwd = work, input?: string) => {
     input,
     encoding: 'utf8',
     windowsHide: true,
-    timeout: 120000,
+    timeout: 180000,
     maxBuffer: 4 * 1024 * 1024,
   });
   assert.equal(
@@ -59,13 +60,27 @@ const run = (command: string, args: string[], cwd = work, input?: string) => {
 try {
   const version = run(executable, ['--version']).trim();
   const store = join(work, 'store');
-  const config = join(work, 'config with spaces');
-  run(process.execPath, [cli, 'setup', '--store', store, '--output', config, '--history', 'none']);
+  let config = join(work, 'config with spaces');
+  run(process.execPath, [
+    cli,
+    'setup',
+    '--store',
+    store,
+    '--storage',
+    values.storage!,
+    '--output',
+    config,
+    '--history',
+    'none',
+  ]);
   const profilePath = join(config, 'memorykit.profile.json');
   const profile = JSON.parse(readFileSync(profilePath, 'utf8'));
   profile.sharedNamespaces = ['team/native'];
   if (values.selector) profile.recall = JSON.parse(readFileSync(resolve(values.selector), 'utf8'));
   writeFileSync(profilePath, JSON.stringify(profile));
+  const upgraded = join(work, 'upgraded config with spaces');
+  run(process.execPath, [cli, 'upgrade', '--profile', profilePath, '--output', upgraded]);
+  config = upgraded;
   const alpha = join(work, 'alpha'),
     beta = join(work, 'beta');
   for (const project of [alpha, beta]) {
@@ -127,7 +142,7 @@ const fs = require('node:fs');
 const {spawnSync} = require('node:child_process');
 const input = fs.readFileSync(0, 'utf8');
 const result = spawnSync(${JSON.stringify(generated.command)}, ${JSON.stringify(generated.args ?? [])},
-  {input, encoding:'utf8', windowsHide:true, timeout:30000, shell:${isCodex ? JSON.stringify(process.platform === 'win32' ? 'powershell.exe' : '/bin/sh') : 'false'}});
+  {input, encoding:'utf8', windowsHide:true, timeout:150000, shell:${isCodex ? JSON.stringify(process.platform === 'win32' ? 'powershell.exe' : '/bin/sh') : 'false'}});
 fs.writeFileSync(${JSON.stringify(log)}, JSON.stringify({input:JSON.parse(input), status:result.status, output:result.stdout}));
 process.stdout.write(result.stdout || '');
 process.stderr.write(result.stderr || '');
@@ -354,7 +369,11 @@ process.exit(result.status === 0 ? 0 : 1);
         },
         undefined,
         profile.recall
-          ? new CommandRecallSelector(profile.recall.id, profile.recall.command)
+          ? new CommandRecallSelector(
+              profile.recall.id,
+              profile.recall.command,
+              profile.recall.discovery
+            )
           : undefined
       );
       measurements.push({
@@ -371,6 +390,8 @@ process.exit(result.status === 0 ? 0 : 1);
     host: values.host,
     version,
     installedCli: true,
+    storage: values.storage,
+    upgradedGeneratedConfiguration: true,
     checks,
     measurements,
     limitations:

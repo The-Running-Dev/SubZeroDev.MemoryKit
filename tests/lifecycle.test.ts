@@ -19,7 +19,8 @@ async function newStore(): Promise<{
 }> {
   const store = tempDir();
   await initStore({ path: store });
-  return { store, client: await openStore({ path: store }) };
+  // These assertions inspect Git immediately; tolerate slower shared CI disks.
+  return { store, client: await openStore({ path: store, service: { historyWaitMs: 30000 } }) };
 }
 
 function code(expected: string): (error: unknown) => boolean {

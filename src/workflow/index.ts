@@ -15,6 +15,7 @@ import {
   type SearchQuery,
 } from '../model/index.ts';
 import type { CreateInput, MemoryClient, WriteOutcome } from '../service/index.ts';
+import { discover, passageWindow } from './discovery.ts';
 
 export interface Scope {
   namespace: string;
@@ -71,6 +72,8 @@ export interface RecallSelection {
 }
 export interface RecallSelector {
   readonly id: string;
+  // Optional query expansion sees only the task, never the store or its authorization.
+  expand?(query: string): Promise<string[]>;
   // Return only passages useful for this task, with verbatim evidence; [] means abstain.
   select(input: RecallRequest): Promise<RecallSelection[]>;
 }
@@ -351,6 +354,7 @@ export async function context(
   );
   const reasons = new Set<string>();
   let records: MemoryRecord[] = [];
+  const selectedPassages = new Map<string, RecallPassage>();
   let mode: ContextResult['retrieval']['mode'] = input.text === undefined ? 'recent' : 'lexical';
   const eligible = (r: MemoryRecord): boolean =>
     namespaces.includes(r.namespace) &&
@@ -394,13 +398,24 @@ export async function context(
       mode = 'selected';
       // Provider disclosure budget includes the query and serialized passage metadata.
       const request: RecallRequest = { query: input.text, passages: [], limit };
-      for (const record of candidates) {
+      const discovery = await discover(
+        client,
+        query,
+        input.text,
+        candidates,
+        selector,
+        eligible,
+        candidateLimit,
+        reasons
+      );
+      scanned = discovery.records.length;
+      for (const record of discovery.records) {
         const chars = Array.from(record.content);
         const passage: RecallPassage = {
           id: record.id,
           revision: record.revision,
           namespace: record.namespace,
-          content: chars.slice(0, 2048).join(''),
+          content: passageWindow(record.content, discovery.terms),
           truncated: chars.length > 2048,
         };
         if (passage.truncated) reasons.add('selection_content_limited');
@@ -435,8 +450,10 @@ export async function context(
           throw new ValidationFailedError('Recall selection must cite a supplied passage');
         seen.add(selection.id);
         const current = await client.get(selection.id);
-        if (eligible(current) && current.revision === selection.revision) records.push(current);
-        else reasons.add('records_changed');
+        if (eligible(current) && current.revision === selection.revision) {
+          records.push(current);
+          selectedPassages.set(current.id, passage);
+        } else reasons.add('records_changed');
       }
     } else if (embedding !== undefined && candidates.length > 0) {
       // No persistent vector copy: purging a record leaves no second on-disk content store.
@@ -473,6 +490,11 @@ export async function context(
       break;
     }
     const next = item(record);
+    const selectedPassage = selectedPassages.get(record.id);
+    if (selectedPassage?.truncated) {
+      next.content = selectedPassage.content;
+      next.truncated = true;
+    }
     if (Buffer.byteLength(render([...items, next]), 'utf8') > maxBytes) {
       // Binary-search the code-point prefix against the actual serialized envelope budget.
       const chars = Array.from(next.content);
