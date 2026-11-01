@@ -369,6 +369,41 @@ const p=r.passages[0]; console.log(JSON.stringify({selections:[{id:p.id,revision
     );
   });
 
+  it('keeps Codex capture identities stable across transcript rewrites without offset collisions', () => {
+    const dir = tempDir(),
+      transcript = join(dir, 'resumed.jsonl');
+    const row = (content: string, timestamp = '2026-11-01T10:00:00Z', role = 'user') =>
+      JSON.stringify({
+        timestamp,
+        type: 'response_item',
+        payload: { type: 'message', role, content },
+      }) + '\n';
+    const event = {
+      hook_event_name: 'Stop' as const,
+      cwd: dir,
+      session_id: 'resumed',
+      transcript_path: transcript,
+    };
+    const read = () => readTranscript('codex', event, 'project/acme/alpha').input!.observations;
+    writeFileSync(transcript, row('original') + row('retained'));
+    const initial = read();
+    // New text occupies byte zero and an existing observation moves after compaction.
+    writeFileSync(transcript, row('new') + row('retained'));
+    const resumed = read();
+    assert.notEqual(resumed[0]!.id, initial[0]!.id);
+    assert.equal(resumed[1]!.id, initial[1]!.id);
+    writeFileSync(
+      transcript,
+      row('retained') +
+        row('retained') +
+        row('retained', undefined, 'assistant') +
+        row('retained', '2026-11-01T10:01:00Z')
+    );
+    const repeated = read();
+    assert.equal(repeated[0]!.id, initial[1]!.id);
+    assert.equal(new Set(repeated.map((item) => item.id)).size, 4);
+  });
+
   it('requires an explicit namespace without a supported remote and fails hooks without blocking the host', () => {
     assert.throws(() => projectNamespace(tempDir()), /explicit namespace/);
     assert.throws(() => projectNamespace(repo('file:///tmp/owner/repo.git')), /explicit namespace/);

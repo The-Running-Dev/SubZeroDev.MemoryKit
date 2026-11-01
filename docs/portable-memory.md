@@ -9,7 +9,7 @@ second database. The package remains unpublished. Node 22.18 or later is require
 ```bash
 npm ci
 npm pack
-npm install -g ./subzerodev-memorykit-0.1.0.tgz
+npm install -g ./subzerodev-memorykit-0.2.0-rc.1.tgz
 memorykit setup --store /absolute/path/store --output /absolute/path/config --capture --include-candidates
 ```
 
@@ -30,6 +30,10 @@ Install merges owned groups into `~/.claude/settings.json` or `~/.codex/hooks.js
 other settings. A manifest next to the profile records exact group ownership. Repeat install
 after changing a profile or upgrading the package. Edited/missing owned groups and matching
 unowned groups require manual reconciliation; install never guesses ownership by command name.
+Codex transcript capture now binds observation identity to timestamp, role and full message
+text, with an occurrence counter, so resumed/compacted transcripts can move messages without
+offset collisions. Upgrading from the earlier offset-based identity can capture existing
+transcript messages again as candidates; review those before acceptance. Capture stays opt-in.
 Remove old manually merged MemoryKit fragments before adopting managed installation.
 `--settings /absolute/settings.json` selects an isolated/custom host configuration; repeat the
 same override for doctor and uninstall. `--manifest` optionally relocates the ownership record.
