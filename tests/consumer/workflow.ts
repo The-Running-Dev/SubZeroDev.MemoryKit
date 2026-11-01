@@ -9,8 +9,9 @@ import {
   initStore,
   openStore,
   type CaptureInput,
+  type RecallSelector,
 } from 'subzerodev-memorykit';
-import { CommandEmbeddings } from 'subzerodev-memorykit/providers-command';
+import { CommandEmbeddings, CommandRecallSelector } from 'subzerodev-memorykit/providers-command';
 
 const path = mkdtempSync(join(tmpdir(), 'memorykit-workflow-consumer-'));
 try {
@@ -29,6 +30,21 @@ try {
     await accept(client, record.id, record.revision);
     assert.match((await context(client, { namespace: input.namespace })).text, /SQLite WAL/);
     assert.equal(typeof CommandEmbeddings, 'function');
+    assert.equal(typeof CommandRecallSelector, 'function');
+    const selector: RecallSelector = {
+      id: 'consumer-selection',
+      async select({ passages }) {
+        return passages.map((p) => ({ id: p.id, revision: p.revision, quote: p.content }));
+      },
+    };
+    const selected = await context(
+      client,
+      { namespace: input.namespace, text: 'Which database mode should concurrent readers use?' },
+      undefined,
+      selector
+    );
+    assert.equal(selected.retrieval.mode, 'selected');
+    assert.match(selected.text, /SQLite WAL/);
   } finally {
     await client.close();
   }

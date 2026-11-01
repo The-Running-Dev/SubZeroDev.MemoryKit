@@ -1,6 +1,7 @@
 // Optional command provider. Requires an already-running Ollama and explicitly chosen
 // installed models. Downloads nothing. Protocol documentation: docs/portable-memory.md.
 import { parseArgs } from 'node:util';
+import { instructions, schema } from './recall-prompt.mjs';
 
 try {
   const { values } = parseArgs({ options: { model: { type: 'string' }, url: { type: 'string' } } });
@@ -40,6 +41,18 @@ try {
       truncate: false,
     });
     console.log(JSON.stringify({ vectors: result.embeddings }));
+  } else if (request.task === 'select') {
+    const result = await post('/api/chat', {
+      model: values.model,
+      stream: false,
+      format: schema,
+      options: { temperature: 0 },
+      messages: [
+        { role: 'system', content: instructions },
+        { role: 'user', content: JSON.stringify(request) },
+      ],
+    });
+    console.log(JSON.stringify(JSON.parse(result.message.content)));
   } else if (request.task === 'distill') {
     const source = request.input.observations;
     if (!Array.isArray(source)) throw new Error('Invalid observations');
