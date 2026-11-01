@@ -127,6 +127,8 @@ const entries = {
   'package/dist/history-git/index.d.ts': 'export {};',
   'package/dist/providers-command/index.js': 'export {};',
   'package/dist/providers-command/index.d.ts': 'export {};',
+  'package/dist/storage-postgres/index.js': 'export {};',
+  'package/dist/storage-postgres/index.d.ts': 'export {};',
   'package/dist/cli/main.js': '#!/usr/bin/env node\n',
 };
 

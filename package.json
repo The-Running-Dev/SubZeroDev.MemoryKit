@@ -18,6 +18,10 @@
     "./providers-command": {
       "types": "./dist/providers-command/index.d.ts",
       "default": "./dist/providers-command/index.js"
+    },
+    "./storage-postgres": {
+      "types": "./dist/storage-postgres/index.d.ts",
+      "default": "./dist/storage-postgres/index.js"
     }
   },
   "bin": {
@@ -43,7 +47,7 @@
     "bench": "node --no-warnings bench/baseline.ts",
     "eval": "node --no-warnings eval/retrieval/run.ts",
     "start": "node dist/cli/main.js",
-    "prebuild": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true });\"",
+    "prebuild": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });\"",
     "check:release": "node scripts/verify-release.ts"
   },
   "keywords": [
@@ -60,6 +64,7 @@
     "@eslint/js": "^10.0.0",
     "@modelcontextprotocol/client": "^2.4.0",
     "@types/node": "^22.18.0",
+    "@types/pg": "^8.23.1",
     "eslint": "^10.0.0",
     "globals": "^16.0.0",
     "prettier": "^3.0.0",
@@ -77,5 +82,8 @@
   "publishConfig": {
     "registry": "https://registry.npmjs.org",
     "access": "public"
+  },
+  "optionalDependencies": {
+    "pg": "^8.23.1"
   }
 }

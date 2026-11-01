@@ -1,3 +1,4 @@
+import { storeConfig } from './storage.ts';
 import { toProblem } from '../../src/model/index.ts';
 import { initStore, openStore } from '../../src/sdk/index.ts';
 import type { HistoryPolicy } from '../../src/contracts/index.ts';
@@ -30,7 +31,7 @@ async function withClient<T>(
   fn: (client: Awaited<ReturnType<typeof openStore>>) => Promise<T>,
   principal?: Principal
 ): Promise<T> {
-  const client = await openStore({ path: store }, principal);
+  const client = await openStore(storeConfig(store), principal);
   try {
     return await fn(client);
   } finally {
@@ -40,7 +41,7 @@ async function withClient<T>(
 
 export const sdkDriver: Driver = {
   name: 'sdk',
-  init: (store) => capture(async () => (await initStore({ path: store }), null)),
+  init: (store) => capture(async () => (await initStore(storeConfig(store)), null)),
   create: (store, input, operationId) =>
     capture(async () =>
       plain(

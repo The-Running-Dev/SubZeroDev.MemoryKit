@@ -1,5 +1,5 @@
 // Opt-in real-model task recall measurement. Never runs in npm test or reads personal data.
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -18,9 +18,14 @@ const { values } = parseArgs({
     report: { type: 'string' },
     filler: { type: 'string', default: '1000' },
     cases: { type: 'string' },
+    storage: { type: 'string', default: 'sqlite' },
+    assert: { type: 'boolean', default: false },
+    tasks: { type: 'boolean', default: false },
+    trace: { type: 'string' },
   },
 });
 if (!values.selector || !values.report) throw new Error('--selector and --report are required');
+if (!['sqlite', 'markdown'].includes(values.storage!)) throw new Error('Invalid storage');
 const filler = Number(values.filler);
 if (!Number.isSafeInteger(filler) || filler < 0 || filler > 10000)
   throw new Error('Invalid filler');
@@ -28,10 +33,20 @@ const config = JSON.parse(readFileSync(resolve(values.selector), 'utf8')) as {
   id: string;
   command: CommandProviderOptions;
   discovery?: boolean;
+  verification?: boolean;
 };
-const provider = new CommandRecallSelector(config.id, config.command, config.discovery);
+const provider = new CommandRecallSelector(
+  config.id,
+  config.command,
+  config.discovery,
+  config.verification
+);
 const cases = values.cases ? new Set(values.cases.split(',')) : undefined;
 let generatedQueries: string[];
+const trace = (task: string, input: unknown, output: unknown): void => {
+  if (values.trace)
+    appendFileSync(resolve(values.trace), JSON.stringify({ task, input, output }) + '\n');
+};
 let calls = 0,
   inputBytes = 0,
   outputBytes = 0;
@@ -49,10 +64,23 @@ const measured: RecallSelector = {
         },
       }
     : {}),
+  ...(provider.verify
+    ? {
+        verify: async (request, selections) => {
+          calls++;
+          inputBytes += Buffer.byteLength(JSON.stringify({ request, selections }));
+          const out = await provider.verify!(request, selections);
+          trace('verify', { ...request, selections }, out);
+          outputBytes += Buffer.byteLength(JSON.stringify(out));
+          return out;
+        },
+      }
+    : {}),
   select: async (request) => {
     calls++;
     inputBytes += Buffer.byteLength(JSON.stringify(request));
     const out = await provider.select(request);
+    trace('select', request, out);
     outputBytes += Buffer.byteLength(JSON.stringify(out));
     return out;
   },
@@ -61,6 +89,18 @@ const work = mkdtempSync(join(tmpdir(), 'memorykit-quality-'));
 const rows: Record<string, unknown>[] = [];
 try {
   const corpus = loadCorpus();
+  // Raw lexical queries are intentionally ambiguous. Keep raw measurements available;
+  // task mode adds the requested relationship without changing records or relevance labels.
+  const taskQueries: Record<string, string> = {
+    'exact-error-code': 'What does error E4012 mean in the Alpha billing worker?',
+    'noise-tokens': 'When do Alpha API tokens expire?',
+    'noise-release': 'When do Alpha releases ship?',
+    'noise-backup': 'When do Alpha database backups run and how long are they retained?',
+    'noise-stale-cache': 'How long does Alpha cache product prices to avoid stale checkout totals?',
+    'noise-session': 'Which database stores Alpha session data?',
+  };
+  if (values.tasks)
+    for (const q of corpus.queries) if (taskQueries[q.id]) q.search.text = taskQueries[q.id];
   // Workflow acceptance is orthogonal to raw-search fixtures. Set only this metadata bit;
   // original source files, texts, queries, expected ids/revisions and lifecycle steps stay intact.
   for (const memory of corpus.memories)
@@ -68,7 +108,9 @@ try {
   for (const step of corpus.steps)
     if (step.replacement)
       step.replacement.metadata = { ...step.replacement.metadata, status: 'accepted' };
-  const built = await buildStore(work, corpus);
+  const built = await buildStore(work, corpus, 0, {
+    provider: values.storage as 'sqlite' | 'markdown',
+  });
   const client = await openStore({ path: work, history: { provider: 'none' } });
   const custom = new Map<string, string>();
   for (const [key, content] of Object.entries({
@@ -229,6 +271,10 @@ try {
     version: 1,
     provider: config.id,
     discovery: config.discovery === true,
+    storage: values.storage,
+    taskQueries: values.tasks,
+    queryOverrides: values.tasks ? taskQueries : {},
+    verification: config.verification === true,
     cases: cases ? [...cases] : 'all',
     fillerNewerThanFacts: filler,
     transformations: [
@@ -246,6 +292,20 @@ try {
     rows,
   };
   writeFileSync(resolve(values.report), JSON.stringify(report, null, 2) + '\n');
+  if (values.assert) {
+    const measuredRows = rows.filter((r) => !r.skipped);
+    const failures = measuredRows.filter(
+      (r) =>
+        r.error ||
+        r.passed === false ||
+        Number(r.falseInjections ?? 0) > 0 ||
+        (r.noAnswer
+          ? Number(r.actual instanceof Array ? r.actual.length : 0) > 0
+          : Number(r.recall ?? 1) < 0.9)
+    );
+    if (failures.length)
+      throw new Error(`Recall gate failed: ${failures.map((r) => r.id).join(', ')}`);
+  }
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

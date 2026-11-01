@@ -1,0 +1,52 @@
+{
+  "exportedAt": "2026-11-01T00:00:00.000Z",
+  "exportedAtEpoch": 1793491200000,
+  "query": "Cobalt",
+  "project": "synthetic-alpha",
+  "totalObservations": 1,
+  "totalSessions": 1,
+  "totalSummaries": 1,
+  "totalPrompts": 1,
+  "observations": [
+    {
+      "id": 1,
+      "memory_session_id": "synthetic-memory",
+      "project": "synthetic-alpha",
+      "title": "Cobalt deployment",
+      "narrative": "The Cobalt deployment code is SYNTHETIC-42.",
+      "facts": [
+        "Review before deployment"
+      ],
+      "files_read": [
+        "synthetic.ts"
+      ]
+    }
+  ],
+  "sessions": [
+    {
+      "id": 10,
+      "memory_session_id": "synthetic-memory",
+      "content_session_id": "synthetic-content",
+      "project": "synthetic-alpha",
+      "platform": "claude-code"
+    }
+  ],
+  "summaries": [
+    {
+      "id": 2,
+      "memory_session_id": "synthetic-memory",
+      "project": "synthetic-alpha",
+      "completed": "Synthetic deployment configured",
+      "next_steps": "Run synthetic checks"
+    }
+  ],
+  "prompts": [
+    {
+      "id": 3,
+      "session_db_id": 10,
+      "content_session_id": "synthetic-content",
+      "memory_session_id": "synthetic-memory",
+      "prompt_text": "Use two spaces for indentation in the synthetic example."
+    }
+  ]
+}

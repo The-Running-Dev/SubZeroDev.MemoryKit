@@ -160,7 +160,15 @@ export interface StorageTransaction {
     expected: { id: MemoryId; revision: number | null }[]
   ): Promise<{ seqs: number[] }>;
 }
+// Optional offline portability extension. Credentials and operation replay caches are excluded.
+export interface StorageSnapshot {
+  records: StoredRow['record'][];
+  namespaces: NamespaceInfo[];
+  anchor: { entry: OutboxEntry; ref: string } | null;
+}
 export interface StorageProvider {
+  snapshot?(): Promise<StorageSnapshot>;
+  restoreSnapshot?(snapshot: StorageSnapshot): Promise<void>;
   readonly descriptor: ProviderDescriptor;
   open(): Promise<void>;
   close(): Promise<void>;

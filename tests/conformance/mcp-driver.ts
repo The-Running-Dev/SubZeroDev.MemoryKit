@@ -1,3 +1,4 @@
+import { storeConfig, storeArgs } from './storage.ts';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { PERMISSIONS, type Grant } from '../../src/access/index.ts';
@@ -27,7 +28,11 @@ function pinned(): Client {
 async function startStdio(store: string): Promise<Running> {
   const client = pinned();
   await client.connect(
-    new StdioClientTransport({ command: process.execPath, args: [CLI, 'mcp', '--store', store] })
+    new StdioClientTransport({
+      command: process.execPath,
+      args: [CLI, 'mcp', '--store', store, ...storeArgs(store)],
+      env: { ...process.env } as Record<string, string>,
+    })
   );
   return { client, close: () => client.close() };
 }
@@ -48,7 +53,7 @@ async function startHttp(store: string): Promise<Running> {
     { pattern: '*', permissions: [...PERMISSIONS] },
   ]);
   const server = await serve({
-    store: { path: store },
+    store: storeConfig(store),
     listen: { host: '127.0.0.1', port: 0 },
     auth: { profile: 'local' },
   });

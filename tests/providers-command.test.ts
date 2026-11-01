@@ -132,6 +132,38 @@ describe('optional command providers', () => {
       /return selections/
     );
   });
+  it('uses a separate opt-in verification protocol and allows abstention', async () => {
+    const input = {
+      query: 'bicycle',
+      limit: 1,
+      passages: [
+        {
+          id: 'one',
+          revision: 2,
+          namespace: 'demo',
+          content: 'Bicycle in shed.',
+          truncated: false,
+        },
+      ],
+    };
+    const proposals = [{ id: 'one', revision: 2, quote: 'Bicycle' }];
+    const config = provider(
+      read +
+        'if(request.task!=="verify" || request.selections[0].quote!=="Bicycle" || request.passages.length!==1) process.exit(1); console.log(JSON.stringify({selections:[]}));'
+    );
+    assert.equal(new CommandRecallSelector('off', config).verify, undefined);
+    assert.deepEqual(
+      await new CommandRecallSelector('on', config, false, true).verify!(input, proposals),
+      []
+    );
+    await assert.rejects(
+      new CommandRecallSelector('bad', provider(read + 'console.log("{}");'), false, true).verify!(
+        input,
+        proposals
+      ),
+      /return selections/
+    );
+  });
   it('bounds execution and output, and does not expose provider errors or invalid output', async () => {
     await assert.rejects(
       commandJson({ ...provider('setInterval(() => {}, 1000);'), timeoutMs: 100 }, {}),

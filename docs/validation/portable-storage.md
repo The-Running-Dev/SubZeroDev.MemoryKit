@@ -1,5 +1,9 @@
 # Portable storage and task discovery validation
 
+This report records the earlier SQLite/Markdown implementation. See
+[verified portability](verified-portability.md) for the subsequent PostgreSQL plugin,
+portable archives, captured-memory lifecycle and audited task-retrieval results.
+
 This change separates current storage from retained history. SQLite and managed Markdown
 implement the same storage/token contracts; explicit external modules can supply another
 implementation through SDK, CLI and server startup configuration. Git remains an independent
@@ -97,6 +101,7 @@ Markdown is a managed local directory with linear scans and exclusive locks. It 
 edits and needs manual lock recovery after a process crash. It is not a general Markdown editor
 sync engine or a network/share backend. SQLite remains the throughput-oriented default.
 Discovery and provider disclosure are bounded and can omit facts. Ollama has an adapter but no
-installed local model was evaluated here. No PostgreSQL, object-store or remote filesystem
-plugin is claimed as implemented. See [storage plugins](../storage-plugins.md) for contracts,
+installed local model was evaluated here. The subsequent PostgreSQL implementation is covered
+in [verified portability](verified-portability.md); object-store and remote filesystem plugins
+remain future work. See [storage plugins](../storage-plugins.md) for contracts,
 backup/recovery and repeatable installation.

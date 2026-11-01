@@ -65,6 +65,37 @@ jobs:
         # verification: true
         run: npm run check:package
 
+  postgres:
+    name: PostgreSQL conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: memorykit
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      MEMORYKIT_TEST_POSTGRES_URL: postgresql://postgres@127.0.0.1:5432/memorykit
+      MEMORYKIT_ONLY_POSTGRES: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Shared contract, transactions and migrations
+        run: node --test tests/conformance.test.ts tests/storage-postgres.test.ts tests/portable.test.ts
+
   # The baseline benchmark and the retrieval evaluation, run by hand: their reports go to the job
   # summary.
   bench:

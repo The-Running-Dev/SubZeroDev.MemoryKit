@@ -29,7 +29,9 @@ corrections, claude-mem migration and optional model providers. Default retrieva
 lexical; semantic expansion is experimental and requires an explicit provider. The earlier
 retrieval quality gates remain failed, as recorded in [design decisions](design/90-decisions.md).
 
-Choose Markdown with `setup --storage markdown`; Git history works with either storage.
+Choose Markdown with `setup --storage markdown`, or the optional PostgreSQL plugin; Git history
+composes with every backend. `export-store` / `import-store` migrate into a new backend while
+preserving IDs, acceptance, provenance, revisions and retained Git history.
 External modules use `--storage-plugin /absolute/plugin.mjs --storage-options '{...}'` and
 implement the public `StoragePlugin` contract. See [storage plugins](docs/storage-plugins.md)
 for the contract, local-file limits and upgrade procedure. `upgrade --profile ... --output

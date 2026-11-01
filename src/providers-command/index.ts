@@ -114,9 +114,30 @@ export class CommandRecallSelector implements RecallSelector {
   readonly id: string;
   readonly options: CommandProviderOptions;
   readonly expand?: (query: string) => Promise<string[]>;
-  constructor(id: string, options: CommandProviderOptions, discovery = false) {
+  readonly verify?: (
+    input: RecallRequest,
+    selections: RecallSelection[]
+  ) => Promise<RecallSelection[]>;
+  constructor(
+    id: string,
+    options: CommandProviderOptions,
+    discovery = false,
+    verification = false
+  ) {
     this.id = id;
     this.options = options;
+    if (verification)
+      this.verify = async (input, selections) => {
+        const result = await commandJson(this.options, {
+          version: 1,
+          task: 'verify',
+          ...input,
+          selections,
+        });
+        if (!isPlainObject(result) || !Array.isArray(result.selections))
+          throw new ValidationFailedError('Recall verifier must return selections');
+        return result.selections as RecallSelection[];
+      };
     if (discovery)
       this.expand = async (query) => {
         const result = await commandJson(this.options, { version: 1, task: 'expand', query });

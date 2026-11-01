@@ -76,6 +76,8 @@ export interface RecallSelector {
   expand?(query: string): Promise<string[]>;
   // Return only passages useful for this task, with verbatim evidence; [] means abstain.
   select(input: RecallRequest): Promise<RecallSelection[]>;
+  // A second pass may remove proposals or repair their exact quotes, never add records.
+  verify?(input: RecallRequest, selections: RecallSelection[]): Promise<RecallSelection[]>;
 }
 
 export function fields(
@@ -430,11 +432,35 @@ export async function context(
         }
         request.passages.push(passage);
       }
-      const selected = request.passages.length
-        ? await selector.select(structuredClone(request))
-        : [];
+      let selected = request.passages.length ? await selector.select(structuredClone(request)) : [];
       if (!Array.isArray(selected) || selected.length > limit)
         throw new ValidationFailedError('Invalid recall selections');
+      if (selector.verify && selected.length) {
+        // Check identity before disclosure; malformed quotes can be repaired in this pass.
+        const ids = new Set<string>();
+        for (const proposal of selected) {
+          fields(proposal, ['id', 'revision', 'quote'], ['id', 'revision', 'quote']);
+          if (
+            ids.has(proposal.id) ||
+            typeof proposal.quote !== 'string' ||
+            proposal.quote.length > maxBytes ||
+            !request.passages.some((p) => p.id === proposal.id && p.revision === proposal.revision)
+          )
+            throw new ValidationFailedError('Invalid recall proposal');
+          ids.add(proposal.id);
+        }
+        const verification = {
+          ...request,
+          passages: request.passages.filter((p) => ids.has(p.id)),
+        };
+        selected = await selector.verify(structuredClone(verification), structuredClone(selected));
+        if (
+          !Array.isArray(selected) ||
+          selected.length > ids.size ||
+          selected.some((p) => !ids.has(p?.id))
+        )
+          throw new ValidationFailedError('Recall verifier cannot add passages');
+      }
       const seen = new Set<string>();
       for (const selection of selected) {
         fields(selection, ['id', 'revision', 'quote'], ['id', 'revision', 'quote']);
@@ -452,7 +478,11 @@ export async function context(
         const current = await client.get(selection.id);
         if (eligible(current) && current.revision === selection.revision) {
           records.push(current);
-          selectedPassages.set(current.id, passage);
+          selectedPassages.set(current.id, {
+            ...passage,
+            content: selection.quote,
+            truncated: selection.quote !== current.content,
+          });
         } else reasons.add('records_changed');
       }
     } else if (embedding !== undefined && candidates.length > 0) {

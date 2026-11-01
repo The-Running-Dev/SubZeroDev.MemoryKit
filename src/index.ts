@@ -56,3 +56,5 @@ export {
   type ClaudeMemImportOptions,
   type ClaudeMemImportPlan,
 } from './workflow/import.ts';
+
+export { exportStore, importStore, type PortableArchive } from './sdk/portable.ts';

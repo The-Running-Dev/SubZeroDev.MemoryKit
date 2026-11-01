@@ -1,3 +1,4 @@
+import { storeConfig, storeArgs } from './storage.ts';
 import type { Problem } from '../../src/model/index.ts';
 import { serve } from '../../src/server/index.ts';
 import { CLI, runCli, runNodeAsync, type Exec } from '../helpers.ts';
@@ -16,7 +17,7 @@ function writeArgs(
   input: Record<string, unknown>,
   operationId: string | undefined
 ): string[] {
-  const args = [...head, '--store', store, '--json'];
+  const args = [...head, '--store', store, ...storeArgs(store), '--json'];
   if (operationId !== undefined) args.push('--operation-id', operationId);
   if (input.expectedRevision !== undefined) {
     args.push('--expected-revision', String(input.expectedRevision));
@@ -69,7 +70,7 @@ function json(stdout: string): Record<string, unknown> {
 
 export const cliDriver: Driver = {
   name: 'cli',
-  init: async (store) => parse(runCli(['init', store, '--json']), () => null),
+  init: async (store) => parse(runCli(['init', store, '--json', ...storeArgs(store)]), () => null),
   create: async (store, input, operationId) =>
     parse(
       runCli(writeArgs(['create'], store, input, operationId)),
@@ -96,17 +97,18 @@ export const cliDriver: Driver = {
     ),
   purge: async (store, { id, ...input }, operationId) =>
     parse(runCli(writeArgs(['purge', String(id)], store, input, operationId)), json),
-  get: async (store, id) => parse(runCli(['get', id, '--store', store, '--json']), json),
+  get: async (store, id) =>
+    parse(runCli(['get', id, '--store', store, ...storeArgs(store), '--json']), json),
   search: async (store, query) =>
-    parse(runCli(searchArgs(query, ['search'], ['--store', store])), json),
+    parse(runCli(searchArgs(query, ['search'], ['--store', store, ...storeArgs(store)])), json),
   retrieve: async (store, query) =>
-    parse(runCli(searchArgs(query, ['retrieve'], ['--store', store])), json),
+    parse(runCli(searchArgs(query, ['retrieve'], ['--store', store, ...storeArgs(store)])), json),
   // The CLI reaches a restricted caller only through --url, so this serves the store with a
   // reader's token. The child runs asynchronously, since this process serves its requests.
   retrieveAs: async (store, grants, query) => {
     const secret = await localToken(store, 'reader', grants);
     const server = await serve({
-      store: { path: store },
+      store: storeConfig(store),
       listen: { host: '127.0.0.1', port: 0 },
       auth: { profile: 'local' },
     });
@@ -118,15 +120,30 @@ export const cliDriver: Driver = {
       await server.close();
     }
   },
-  history: async (store, id) => parse(runCli(['history', id, '--store', store, '--json']), json),
+  history: async (store, id) =>
+    parse(runCli(['history', id, '--store', store, ...storeArgs(store), '--json']), json),
   operation: async (store, operationId) =>
-    parse(runCli(['operation', operationId, '--store', store, '--json']), json),
-  status: async (store) => parse(runCli(['status', '--store', store, '--json']), json),
+    parse(
+      runCli(['operation', operationId, '--store', store, ...storeArgs(store), '--json']),
+      json
+    ),
+  status: async (store) =>
+    parse(runCli(['status', '--store', store, ...storeArgs(store), '--json']), json),
   getNamespace: async (store, ns) =>
-    parse(runCli(['namespace', 'get', ns, '--store', store, '--json']), json),
+    parse(runCli(['namespace', 'get', ns, '--store', store, ...storeArgs(store), '--json']), json),
   setNamespacePolicy: async (store, ns, policy) =>
     parse(
-      runCli(['namespace', 'set', ns, '--history-policy', policy, '--store', store, '--json']),
+      runCli([
+        'namespace',
+        'set',
+        ns,
+        '--history-policy',
+        policy,
+        '--store',
+        store,
+        ...storeArgs(store),
+        '--json',
+      ]),
       json
     ),
 };
