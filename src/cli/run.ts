@@ -38,6 +38,7 @@ import type {
   WriteOutcome,
 } from '../service/index.ts';
 import type { MemoryRecord } from '../model/index.ts';
+import { runWorkflow, WORKFLOW_COMMANDS } from './workflow.ts';
 
 export interface CliIo {
   stdout(text: string): void;
@@ -67,6 +68,8 @@ Every command except init, serve, mcp and token takes either --store <dir> or
 --url <url> [--token-env <VAR>], where <VAR> names the variable holding the token.
 
 Commands:
+  setup, capture, context, accept, import-claude-mem, hook
+    Portable memory workflows; run memorykit setup --help for usage.
   init <dir>                       Create a store in <dir>
   create --store <dir> --namespace <ns> --kind <kind> --content <text>
          [--content-type <type>] [--key <key>] [--metadata <json>]
@@ -120,6 +123,7 @@ Options:
 
 const OPTIONS = {
   store: { type: 'string' },
+  history: { type: 'string' },
   json: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
   namespace: { type: 'string', multiple: true },
@@ -404,7 +408,13 @@ function formatStatus(status: StoreStatus): string {
 }
 
 function storeConfig(values: Values): StoreConfig {
-  return { path: resolve(required(values, 'store')) };
+  if (values.history !== undefined && values.history !== 'git' && values.history !== 'none') {
+    throw new UsageError('--history must be git or none');
+  }
+  return {
+    path: resolve(required(values, 'store')),
+    ...(values.history === undefined ? {} : { history: { provider: values.history } }),
+  };
 }
 
 // A store opened in this process, or a service reached over HTTP.
@@ -545,6 +555,7 @@ export async function run(
   io: CliIo,
   deps: CliDeps = { openStore }
 ): Promise<number> {
+  if (WORKFLOW_COMMANDS.includes(argv[0] ?? '')) return runWorkflow(argv, io, deps);
   let parsed: ReturnType<typeof parse>;
   try {
     parsed = parse(argv);

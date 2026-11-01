@@ -30,7 +30,7 @@ export function inspectArchive(archive: Buffer, expected: Record<string, unknown
     assert.ok(header[156] === 0 || header[156] === 48, `not a regular file: ${name}`);
     assert.ok(!files.has(name), `duplicate tar entry: ${name}`);
     assert.ok(
-      /^package\/(?:package\.json|README\.md|LICENSE|dist\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.(?:js|d\.ts))$/.test(
+      /^package\/(?:package\.json|README\.md|LICENSE|docs\/portable-memory\.md|examples\/[a-zA-Z0-9_-]+\.mjs|dist\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.(?:js|d\.ts))$/.test(
         name
       ),
       `unexpected package file: ${name}`

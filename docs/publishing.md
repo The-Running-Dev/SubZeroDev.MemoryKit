@@ -129,8 +129,10 @@ fallback occurs automatically. Later retries must not reuse an already published
 actual tar entries, rejects unexpected files and credential signatures, hashes the bytes,
 and passes that exact archive to `npm run check:package -- /absolute/path/to/candidate.tgz`.
 The installed consumer exercises CLI init/create/get, declaration resolution, public SDK,
-blocked deep imports, memory/none isolation, Git composition and supersede retry/recovery.
-Only `dist` JavaScript/declarations, README, manifest and LICENSE may ship; source, tests,
+blocked deep imports, memory/none isolation, Git composition and supersede retry/recovery,
+and the portable setup/capture/context workflow. Only `dist` JavaScript/declarations,
+README, manifest, LICENSE, `docs/portable-memory.md` and top-level `examples/*.mjs` may
+ship; source, tests,
 fixtures (including TLS keys), evaluation models, `.env`, `.npmrc`, `.git` and local stores
 are excluded. Signature checks are a focused check, not proof that arbitrary secrets cannot
 exist in program text. The file allowlist and clean build are the primary controls.

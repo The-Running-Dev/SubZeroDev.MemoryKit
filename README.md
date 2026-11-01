@@ -5,6 +5,29 @@ identity, namespaces, a lifecycle and provenance; SQLite keeps the current state
 repository keeps every revision. The same service is reached embedded in a process, from the
 command line, over HTTP and over MCP. No database server and no AI service are needed.
 
+## One memory store across projects and models
+
+The portable capture and context workflow works independently of AgentKit. Claude Code
+and Codex hooks can share one store; other hosts use CLI, MCP, HTTP or the SDK. Projects
+have separate namespaces; shared knowledge is read only from namespaces you select.
+
+After installing the packed package, generate a profile and reviewable host fragments:
+
+```bash
+npx memorykit setup --store /absolute/path/store --output /absolute/path/config --capture --include-candidates
+```
+
+Use absolute paths appropriate to your OS. Merge the generated fragments as described in
+their README. `--capture` opts in to transcript capture; `--include-candidates` opts in to
+recalling unreviewed observations. Omit both for accepted memory only. Setup does not edit
+host settings. An unpinned profile follows the current Git origin; projects without a
+supported origin require `--namespace`.
+
+[Portable memory guide](docs/portable-memory.md) covers any-LLM usage, hooks, shared scopes,
+corrections, claude-mem migration and optional model providers. Default retrieval remains
+lexical; semantic expansion is experimental and requires an explicit provider. The earlier
+retrieval quality gates remain failed, as recorded in [design decisions](design/90-decisions.md).
+
 ## Prerequisites
 
 - Node.js 22.18 or later (24 recommended)

@@ -2,6 +2,7 @@
 // the caller, and maps errors to problem+json. Transport-free, so the server owns sockets.
 
 import type { HistoryPolicy } from '../contracts/index.ts';
+import { capture, context, type CaptureInput, type ContextInput } from '../workflow/index.ts';
 import {
   NotFoundError,
   ValidationFailedError,
@@ -101,6 +102,17 @@ async function route(client: MemoryClient, request: HttpRequest): Promise<HttpRe
   if (parts === null || parts[0] !== 'v1') return null;
   const [, resource, ...rest] = parts;
   const opts = writeOptions(request.headers);
+
+  if (rest.length === 0 && method === 'POST' && resource === 'capture') {
+    const result = await capture(client, object(body) as unknown as CaptureInput);
+    const pending = result.items.some((item) =>
+      ['pending', 'blocked'].includes(item.outcome.history)
+    );
+    return json(result.completeness === 'partial' ? 207 : pending ? 202 : 200, result);
+  }
+  if (rest.length === 0 && method === 'POST' && resource === 'context') {
+    return json(200, await context(client, object(body) as unknown as ContextInput));
+  }
 
   if (resource === 'memories') {
     const [id, action, revision] = rest;

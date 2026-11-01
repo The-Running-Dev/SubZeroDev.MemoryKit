@@ -119,10 +119,14 @@ const entries = {
   'package/package.json': JSON.stringify(manifest),
   'package/README.md': 'MemoryKit',
   'package/LICENSE': 'MIT',
+  'package/docs/portable-memory.md': '# Portable memory',
+  'package/examples/ollama-provider.mjs': 'export {};',
   'package/dist/index.js': 'export {};',
   'package/dist/index.d.ts': 'export {};',
   'package/dist/history-git/index.js': 'export {};',
   'package/dist/history-git/index.d.ts': 'export {};',
+  'package/dist/providers-command/index.js': 'export {};',
+  'package/dist/providers-command/index.d.ts': 'export {};',
   'package/dist/cli/main.js': '#!/usr/bin/env node\n',
 };
 
@@ -140,6 +144,8 @@ describe('release archive inspection', () => {
       'package/tests/key.pem',
       'package/dist/../.env',
       'package/dist/old.test.js',
+      'package/docs/publishing.md',
+      'package/examples/nested/provider.mjs',
     ]) {
       const content = path.endsWith('.test.js') ? 'test' : 'secret';
       // Tests cannot ship even if a stale compiled test has a JS extension.

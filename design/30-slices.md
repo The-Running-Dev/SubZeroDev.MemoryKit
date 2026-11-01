@@ -1,5 +1,8 @@
 # Slices — SubZeroDev.MemoryKit
 
+S22 adds the owner-authorized portable workflow extension after the completed/retired
+stages below: [contract, adapters and acceptance](40-portable-workflows.md).
+
 Ordered riskiest assumption first. Each slice is one reviewable PR and leaves the system runnable. Each slice adds its scenarios to the shared conformance suite, and that suite runs against every adapter that exists at the time. Criterion ids are stable.
 
 > S19 and S20 were retired unbuilt on 2026-10-28, when Stage 5 closed with S17's `retrieve` after S21's gate failed (90-decisions). Their text is in `git show 7366e48:design/30-slices.md`. Their ids are not reused.

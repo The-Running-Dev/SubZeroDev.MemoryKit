@@ -1,5 +1,10 @@
 # Brief — SubZeroDev.MemoryKit
 
+2026-11-01 owner clarification: the intended product is a general-purpose memory repository
+usable across projects and LLMs, including replacing claude-mem. The owner authorized closing
+the portable capture/context gap. This extends earlier capture deferrals; see
+[S22](40-portable-workflows.md) and [ADR-0002](../docs/decisions/0002-portable-memory-workflows.md).
+
 > The problem, the non-goals and the definition of done are mine. A model may interrogate this
 > file (`/brief`) or type it from my answers (`/interview`). It may not originate it from an idea.
 
