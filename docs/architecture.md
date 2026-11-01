@@ -1,50 +1,48 @@
-# SubZeroDev.MemoryKit Architecture
+# MemoryKit architecture
 
-**Last Updated:** 2026-10-25
+MemoryKit separates durable memory semantics from consumers and optional model runtimes.
+SDK, CLI, HTTP and MCP expose the same authorized memory service. SQLite owns current
+records, links, indexes, operation outcomes and the history outbox. History providers
+implement revision retention; Git is the default, with memory and none also available.
 
-## Overview
-
-[Provide a high-level overview of the system's purpose and main responsibilities]
-
-## System Architecture Diagram
-
+```text
+Claude/Codex transcript hooks       Any application/model
+              |                     SDK / CLI / HTTP / MCP
+              +----------------------------+
+                                           |
+                            portable application workflows
+                            capture / context / accept / import
+                               |                      |
+                      authorized MemoryClient     optional ports
+                               |             Distiller / EmbeddingProvider
+                           MemoryService              |
+                    validation + authorization   trusted command adapter
+                    lifecycle + revision checks  e.g. local Ollama example
+                         /                \
+                StorageProvider        HistoryProvider
+                   SQLite             Git / memory / none
 ```
-[Add ASCII diagram or describe the component relationships]
-```
 
-## Core Components
+The workflow layer imports domain types and the authorized client contract only. It never
+opens stores, discovers private sources, launches models or grants access. Host adapters
+parse bounded transcript text. CLI selects explicit configuration, connections and optional
+providers. HTTP/MCP invoke workflows without request-selected executables. Conventional
+applications use the raw memory service without any capture/model dependency.
 
-### Component 1: [Name]
-- **Purpose:** [What does it do?]
-- **Responsibilities:** [Key duties]
-- **Dependencies:** [What does it depend on?]
-- **Technology:** [Tech stack]
+Capture validates a full batch, derives stable operation identities, writes attributed
+candidates and reports per-item failures. Context selects exact project/shared namespaces,
+filters lifecycle and acceptance, and renders a UTF-8-bounded data envelope. Optional
+semantic expansion scans authorized candidates and holds vectors only in memory. Corrections
+and acceptance use the existing optimistic revision model. Import is planned/validated before
+writes, then reuses capture rather than bypassing lifecycle semantics.
 
-[Add more components as needed]
+Authentication belongs to the server boundary. Namespace grants are enforced by the service;
+scope selection is not authorization. Embedded access intentionally has full authority.
+Remote service access uses the existing token/OIDC and TLS mechanisms. Captured provenance
+is asserted data, not authenticated identity. Retrieved content is untrusted evidence, not
+privileged instructions. Context is not a transactional snapshot of concurrent writes.
 
-## Data Flow
-
-[Describe how data flows through the system]
-
-## External Integrations
-
-- [Service 1]: [Purpose and API details]
-
-## Deployment Architecture
-
-[Describe how the system is deployed in production]
-
-## Technology Stack
-
-- **Language:** [e.g., Node.js, Python]
-- **Framework:** [e.g., Express, FastAPI]
-- **Database:** [e.g., PostgreSQL]
-- **Hosting:** [e.g., Docker, Kubernetes, serverless]
-
-## Security Considerations
-
-[Key security measures and threat model]
-
-## Design Decisions
-
-See [decisions/](decisions/) for Architecture Decision Records (ADRs) documenting major design choices.
+Default retrieval remains lexical. Optional model ports do not alter the failed S18/S21
+quality gates or claim answerability. See [portable memory](portable-memory.md) for usage
+and limits, [the contract](../design/20-contract.md) for semantics, and
+[ADR-0002](decisions/0002-portable-memory-workflows.md) for the extension decision.

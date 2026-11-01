@@ -4,6 +4,9 @@ Built on [00-brief.md](00-brief.md). Every choice here is recorded in [90-decisi
 
 ## Data model
 
+The additive [S22 portable workflow design](40-portable-workflows.md) sits above the
+authorized client. It does not change the persisted model or core lifecycle below.
+
 ### Memory (persisted; owned by the storage provider)
 
 | Field | Type | Rules |

@@ -22,10 +22,13 @@ const newClient = () =>
     { versionNegotiation: { mode: { pin: MCP_PROTOCOL_VERSION } } }
   );
 
-async function overStdio(store: string): Promise<Client> {
+async function overStdio(store: string, history?: 'none'): Promise<Client> {
   const client = newClient();
   await client.connect(
-    new StdioClientTransport({ command: process.execPath, args: [CLI, 'mcp', '--store', store] })
+    new StdioClientTransport({
+      command: process.execPath,
+      args: [CLI, 'mcp', '--store', store, ...(history ? ['--history', history] : [])],
+    })
   );
   closers.push(() => client.close());
   return client;
@@ -90,6 +93,37 @@ describe('S10 MCP', () => {
   after(async () => {
     for (const close of closers.reverse()) await close();
     await issuer.close();
+  });
+
+  it('captures and builds bounded candidate context over the real stdio protocol', async () => {
+    const store = tempDir();
+    await initStore({ path: store, history: { provider: 'none' } });
+    const client = await overStdio(store, 'none');
+    const input = {
+      namespace: 'demo/notes',
+      source: { host: 'test', sessionId: 's', eventId: 'e', ref: 'test:s' },
+      observations: [{ id: 'one', role: 'user', content: 'Use SQLite WAL.' }],
+    };
+    const result = await client.callTool({ name: 'memory_capture', arguments: input });
+    assert.equal(result.isError, undefined);
+    assert.equal((result.structuredContent as Structured).completeness, 'complete');
+    const candidate = await client.callTool({
+      name: 'memory_context',
+      arguments: { namespace: 'demo/notes', includeCandidates: true, maxBytes: 1024 },
+    });
+    const body = candidate.structuredContent as Structured;
+    assert.match(body.text as string, /SQLite WAL/);
+    assert.ok((body.bytes as number) <= 1024);
+    const curated = await client.callTool({
+      name: 'memory_context',
+      arguments: { namespace: 'demo/notes' },
+    });
+    assert.equal((curated.structuredContent as Structured).text, '');
+    const bad = await client.callTool({
+      name: 'memory_context',
+      arguments: { namespace: 'demo/*' },
+    });
+    assert.equal(bad.isError, true);
   });
 
   it('S10.1 a stdio create is read back by another process over Streamable HTTP', async () => {
@@ -217,14 +251,14 @@ describe('S10 MCP', () => {
     assert.equal(typeof structured.details, 'object');
   });
 
-  it('S10.4 only the eleven memory tools are listed', async () => {
+  it('S10.4 the supported memory tools are listed', async () => {
     const store = tempDir();
     await initStore({ path: store });
     const client = await overStdio(store);
     const { tools } = await client.listTools();
     const names = tools.map((tool) => tool.name).sort();
     assert.deepEqual(names, [...MCP_TOOLS].sort());
-    assert.equal(names.length, 12);
+    assert.equal(names.length, 14);
     for (const name of names) assert.doesNotMatch(name, /purge|namespace|sync/);
     for (const tool of tools) assert.equal(tool.inputSchema.type, 'object');
   });

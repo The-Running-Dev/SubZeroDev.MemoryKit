@@ -14,13 +14,19 @@
     "./history-git": {
       "types": "./dist/history-git/index.d.ts",
       "default": "./dist/history-git/index.js"
+    },
+    "./providers-command": {
+      "types": "./dist/providers-command/index.d.ts",
+      "default": "./dist/providers-command/index.js"
     }
   },
   "bin": {
     "memorykit": "dist/cli/main.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "examples",
+    "docs/portable-memory.md"
   ],
   "engines": {
     "node": ">=22.18.0"

@@ -25,3 +25,25 @@ export { handle, problemResponse, type HttpRequest, type HttpResponse } from './
 export { isLoopback, serve, type ServeOptions } from './server/index.ts';
 export { SqliteStorage, type SqliteStorageOptions } from './storage-sqlite/index.ts';
 export { MemoryHistory } from './history-memory/index.ts';
+export {
+  capture,
+  planCapture,
+  context,
+  accept,
+  type Scope,
+  type CaptureSource,
+  type Observation,
+  type CaptureInput,
+  type CaptureResult,
+  type Distiller,
+  type EmbeddingProvider,
+  type ContextInput,
+  type ContextItem,
+  type ContextResult,
+} from './workflow/index.ts';
+export {
+  planClaudeMemImport,
+  importClaudeMem,
+  type ClaudeMemImportOptions,
+  type ClaudeMemImportPlan,
+} from './workflow/import.ts';

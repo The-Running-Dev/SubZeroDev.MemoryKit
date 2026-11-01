@@ -15,6 +15,7 @@ import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import type { Principal } from '../access/index.ts';
 import { CONTENT_TYPES, InternalError, MEMORY_STATES, toProblem } from '../model/index.ts';
 import type { MemoryClient, MemoryService, WriteOptions } from '../service/index.ts';
+import { capture, context, type CaptureInput, type ContextInput } from '../workflow/index.ts';
 
 export const MCP_PROTOCOL_VERSION = '2026-07-28';
 const SERVER_INFO = { name: 'memorykit', version: '0.1.0' };
@@ -84,6 +85,56 @@ interface ToolSpec {
 // Inputs are passed through untyped: the service checks every field.
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const TOOLS: Record<string, ToolSpec> = {
+  memory_capture: {
+    description:
+      'Capture attributed candidate observations in one explicit namespace. Retry identical host/session/event/observation identities safely. Does not accept or promote facts.',
+    inputSchema: object(
+      {
+        namespace: string,
+        source: object({ host: string, sessionId: string, eventId: string, ref: string }, [
+          'host',
+          'sessionId',
+          'eventId',
+          'ref',
+        ]),
+        observations: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 100,
+          items: object(
+            {
+              id: string,
+              content: string,
+              kind: string,
+              role: { type: 'string', enum: ['user', 'assistant', 'tool', 'system'] },
+              generated: { type: 'boolean' },
+              evidence: { type: 'array', items: string, maxItems: 32 },
+            },
+            ['id', 'content', 'role']
+          ),
+        },
+      },
+      ['namespace', 'source', 'observations']
+    ),
+    call: (client, args) => capture(client, args as unknown as CaptureInput),
+  },
+  memory_context: {
+    description:
+      'Build bounded untrusted context for a project and explicitly selected shared namespaces. Defaults to accepted active memories. Candidate observations require includeCandidates. No wildcard or automatic cross-project discovery.',
+    inputSchema: object(
+      {
+        namespace: string,
+        sharedNamespaces: { type: 'array', items: string, maxItems: 16 },
+        text: string,
+        includeCandidates: { type: 'boolean' },
+        limit: { type: 'integer', minimum: 1, maximum: 50 },
+        maxBytes: { type: 'integer', minimum: 512, maximum: 65536 },
+        candidateLimit: { type: 'integer', minimum: 1, maximum: 1000 },
+      },
+      ['namespace']
+    ),
+    call: (client, args) => context(client, args as unknown as ContextInput),
+  },
   memory_create: {
     description: 'Create a memory in a namespace.',
     inputSchema: object({ namespace: string, key: string, ...record, ...writeOptions }, [
