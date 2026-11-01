@@ -52,6 +52,28 @@ export interface EmbeddingProvider {
   readonly id: string;
   embed(texts: string[], role: 'query' | 'document'): Promise<number[][]>;
 }
+export interface RecallPassage {
+  id: string;
+  revision: number;
+  namespace: string;
+  content: string;
+  truncated: boolean;
+}
+export interface RecallRequest {
+  query: string;
+  passages: RecallPassage[];
+  limit: number;
+}
+export interface RecallSelection {
+  id: string;
+  revision: number;
+  quote: string;
+}
+export interface RecallSelector {
+  readonly id: string;
+  // Return only passages useful for this task, with verbatim evidence; [] means abstain.
+  select(input: RecallRequest): Promise<RecallSelection[]>;
+}
 
 export function fields(
   value: unknown,
@@ -231,7 +253,11 @@ export interface ContextResult {
   namespaces: string[];
   completeness: 'complete' | 'partial';
   reasons: string[];
-  retrieval: { mode: 'recent' | 'lexical' | 'hybrid'; provider: string | null; candidates: number };
+  retrieval: {
+    mode: 'recent' | 'lexical' | 'hybrid' | 'selected';
+    provider: string | null;
+    candidates: number;
+  };
 }
 
 // JSON escapes angle brackets too, so stored text cannot close the data envelope.
@@ -292,7 +318,8 @@ function vectors(value: number[][], count: number, dimensions?: number): number[
 export async function context(
   client: MemoryClient,
   input: ContextInput,
-  embedding?: EmbeddingProvider
+  embedding?: EmbeddingProvider,
+  selector?: RecallSelector
 ): Promise<ContextResult> {
   fields(
     input,
@@ -331,7 +358,7 @@ export async function context(
     r.supersededBy.length === 0 &&
     (r.metadata.status === 'accepted' ||
       (input.includeCandidates === true && r.metadata.status === 'candidate'));
-  if (input.text !== undefined) {
+  if (input.text !== undefined && selector === undefined) {
     const found = await client.retrieve({ ...query, text: input.text, limit: 50 });
     if (found.completeness === 'partial' || found.nextCursor !== null)
       reasons.add('lexical_candidates_limited');
@@ -343,7 +370,7 @@ export async function context(
     }
   }
   let scanned = 0;
-  if (input.text === undefined || embedding !== undefined) {
+  if (input.text === undefined || embedding !== undefined || selector !== undefined) {
     const candidates: MemoryRecord[] = [];
     let cursor: string | undefined;
     do {
@@ -362,7 +389,56 @@ export async function context(
       }
     } while (cursor !== undefined);
     if (input.text === undefined) records = candidates;
-    else if (embedding !== undefined && candidates.length > 0) {
+    else if (selector !== undefined) {
+      nonempty(selector.id, 'selector.id', 256);
+      mode = 'selected';
+      // Provider disclosure budget includes the query and serialized passage metadata.
+      const request: RecallRequest = { query: input.text, passages: [], limit };
+      for (const record of candidates) {
+        const chars = Array.from(record.content);
+        const passage: RecallPassage = {
+          id: record.id,
+          revision: record.revision,
+          namespace: record.namespace,
+          content: chars.slice(0, 2048).join(''),
+          truncated: chars.length > 2048,
+        };
+        if (passage.truncated) reasons.add('selection_content_limited');
+        if (
+          request.passages.length >= 32 ||
+          Buffer.byteLength(
+            JSON.stringify({ ...request, passages: [...request.passages, passage] })
+          ) > 65536
+        ) {
+          reasons.add('selection_input_limited');
+          continue;
+        }
+        request.passages.push(passage);
+      }
+      const selected = request.passages.length
+        ? await selector.select(structuredClone(request))
+        : [];
+      if (!Array.isArray(selected) || selected.length > limit)
+        throw new ValidationFailedError('Invalid recall selections');
+      const seen = new Set<string>();
+      for (const selection of selected) {
+        fields(selection, ['id', 'revision', 'quote'], ['id', 'revision', 'quote']);
+        const passage = request.passages.find((p) => p.id === selection.id);
+        if (
+          !passage ||
+          seen.has(selection.id) ||
+          selection.revision !== passage.revision ||
+          typeof selection.quote !== 'string' ||
+          selection.quote.trim() === '' ||
+          !passage.content.includes(selection.quote)
+        )
+          throw new ValidationFailedError('Recall selection must cite a supplied passage');
+        seen.add(selection.id);
+        const current = await client.get(selection.id);
+        if (eligible(current) && current.revision === selection.revision) records.push(current);
+        else reasons.add('records_changed');
+      }
+    } else if (embedding !== undefined && candidates.length > 0) {
       // No persistent vector copy: purging a record leaves no second on-disk content store.
       // Optional semantic expansion is bounded and does not assert that a question has an answer.
       const q = vectors(await embedding.embed([input.text], 'query'), 1)[0]!;
@@ -426,7 +502,7 @@ export async function context(
     reasons: [...reasons],
     retrieval: {
       mode,
-      provider: mode === 'hybrid' ? embedding!.id : null,
+      provider: mode === 'selected' ? selector!.id : mode === 'hybrid' ? embedding!.id : null,
       candidates: scanned || records.length,
     },
   };

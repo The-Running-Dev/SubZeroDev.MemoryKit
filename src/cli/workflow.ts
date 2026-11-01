@@ -13,6 +13,7 @@ import { sha256Hex, toProblem, ValidationFailedError } from '../model/index.ts';
 import {
   CommandDistiller,
   CommandEmbeddings,
+  CommandRecallSelector,
   type CommandProviderOptions,
 } from '../providers-command/index.ts';
 import { connect, initStore, openStore } from '../sdk/index.ts';
@@ -78,6 +79,7 @@ interface Profile {
   limit?: number;
   distiller?: CommandProviderOptions;
   embedding?: { id: string; command: CommandProviderOptions };
+  recall?: { id: string; command: CommandProviderOptions };
 }
 function readBounded(fd: number, max: number): string {
   const chunks: Buffer[] = [];
@@ -127,6 +129,7 @@ function profile(value: unknown): Profile {
       'limit',
       'distiller',
       'embedding',
+      'recall',
     ],
     ['version']
   );
@@ -152,11 +155,12 @@ function profile(value: unknown): Profile {
   integer(p.maxBytes, 'maxBytes', 8192, 512, 65536);
   integer(p.limit, 'limit', 10, 1, 50);
   if (p.distiller !== undefined) validateCommand(p.distiller);
-  if (p.embedding !== undefined) {
-    fields(p.embedding, ['id', 'command'], ['id', 'command']);
-    if (typeof p.embedding.id !== 'string' || p.embedding.id === '')
-      throw new ValidationFailedError('Embedding provider needs an id');
-    validateCommand(p.embedding.command);
+  for (const provider of [p.embedding, p.recall]) {
+    if (provider === undefined) continue;
+    fields(provider, ['id', 'command'], ['id', 'command']);
+    if (typeof provider.id !== 'string' || provider.id.trim() === '' || provider.id.length > 256)
+      throw new ValidationFailedError('Provider needs an id');
+    validateCommand(provider.command);
   }
   return p;
 }
@@ -220,7 +224,7 @@ async function setup(p: Profile, output: string): Promise<object> {
       null,
       2
     ),
-    'README.md': `# MemoryKit host setup\n\nProfile: ${config}\n\nMerge the Claude fragment's event groups into ~/.claude/settings.json and the Codex fragment's groups into ~/.codex/hooks.json. Preserve existing groups. In Codex, use /hooks to review and trust the new hooks. Remove these groups to uninstall. The MCP fragment uses the common JSON server format; adapt it to your host's server configuration.\n\nCapture is ${p.capture ? 'enabled in this profile' : 'off'}. Context ${p.includeCandidates ? 'includes visibly attributed, unverified candidates' : 'includes accepted records only'}. UserPromptSubmit queries with the submitted prompt and emits additionalContext only for matching memories. Recent context at SessionStart is ${p.startupContext ? 'enabled' : 'off; opt in with --startup-context'}. Set context:false in the profile to disable both recall hooks. Stop and PreCompact capture bounded user/assistant transcript text when enabled. Tools, system messages, sidechains, private-marked messages and injected MemoryKit context are excluded. No background observer runs.\n\nKeep this profile outside untrusted repositories: configured distiller/embedding commands execute as you. Namespace derives from the current Git origin unless explicitly pinned. Shared scopes are read only by these workflows; capture writes only the current project namespace. Use the raw create/supersede API to deliberately curate shared knowledge.\n`,
+    'README.md': `# MemoryKit host setup\n\nProfile: ${config}\n\nMerge the Claude fragment's event groups into ~/.claude/settings.json and the Codex fragment's groups into ~/.codex/hooks.json. Preserve existing groups. In Codex, use /hooks to review and trust the new hooks. Remove these groups to uninstall. The MCP fragment uses the common JSON server format; adapt it to your host's server configuration.\n\nCapture is ${p.capture ? 'enabled in this profile' : 'off'}. Context ${p.includeCandidates ? 'includes visibly attributed, unverified candidates' : 'includes accepted records only'}. UserPromptSubmit queries with the submitted prompt and emits additionalContext only for matching memories. Recent context at SessionStart is ${p.startupContext ? 'enabled' : 'off; opt in with --startup-context'}. Set context:false in the profile to disable both recall hooks. Stop and PreCompact capture bounded user/assistant transcript text when enabled. Tools, system messages, sidechains, private-marked messages and injected MemoryKit context are excluded. No background observer runs.\n\nKeep this profile outside untrusted repositories: configured distiller/embedding/recall commands execute as you. Namespace derives from the current Git origin unless explicitly pinned. Shared scopes are read only by these workflows; capture writes only the current project namespace. Use the raw create/supersede API to deliberately curate shared knowledge.\n`,
   };
   for (const name of Object.keys(files))
     if (existsSync(join(output, name)))
@@ -375,7 +379,11 @@ export async function runWorkflow(
         (command === 'hook' &&
           ['SessionStart', 'UserPromptSubmit'].includes(event!.hook_event_name))
       ) {
-        const result = await context(client, contextInput, embedding);
+        const selector =
+          p.recall === undefined
+            ? undefined
+            : new CommandRecallSelector(p.recall.id, p.recall.command);
+        const result = await context(client, contextInput, embedding, selector);
         if (command === 'hook') {
           if (result.text)
             print({

@@ -2,7 +2,15 @@
 // memories or tool arguments. No shell, no model SDK, no inherited stdout/stderr protocol.
 import { spawn } from 'node:child_process';
 import { isPlainObject, StoreUnavailableError, ValidationFailedError } from '../model/index.ts';
-import type { CaptureInput, Distiller, EmbeddingProvider, Observation } from '../workflow/index.ts';
+import type {
+  CaptureInput,
+  Distiller,
+  EmbeddingProvider,
+  Observation,
+  RecallRequest,
+  RecallSelection,
+  RecallSelector,
+} from '../workflow/index.ts';
 
 export interface CommandProviderOptions {
   command: string;
@@ -100,5 +108,19 @@ export class CommandEmbeddings implements EmbeddingProvider {
     if (!isPlainObject(result) || !Array.isArray(result.vectors))
       throw new ValidationFailedError('Embedder must return vectors');
     return result.vectors as number[][];
+  }
+}
+export class CommandRecallSelector implements RecallSelector {
+  readonly id: string;
+  readonly options: CommandProviderOptions;
+  constructor(id: string, options: CommandProviderOptions) {
+    this.id = id;
+    this.options = options;
+  }
+  async select(input: RecallRequest): Promise<RecallSelection[]> {
+    const result = await commandJson(this.options, { version: 1, task: 'select', ...input });
+    if (!isPlainObject(result) || !Array.isArray(result.selections))
+      throw new ValidationFailedError('Recall selector must return selections');
+    return result.selections as RecallSelection[];
   }
 }

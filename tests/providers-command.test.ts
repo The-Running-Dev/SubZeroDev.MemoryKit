@@ -7,6 +7,7 @@ import { describe, it } from 'node:test';
 import {
   CommandDistiller,
   CommandEmbeddings,
+  CommandRecallSelector,
   commandJson,
 } from '../src/providers-command/index.ts';
 import { tempDir } from './helpers.ts';
@@ -33,9 +34,13 @@ describe('optional command providers', () => {
             ? { embeddings: [[1, 0]] }
             : {
                 message: {
-                  content: JSON.stringify({
-                    observations: [{ sourceId: 'one', content: 'Use SQLite.' }],
-                  }),
+                  content: JSON.stringify(
+                    typeof body.format === 'object'
+                      ? { selections: [{ id: 'one', revision: 1, quote: 'Use SQLite.' }] }
+                      : {
+                          observations: [{ sourceId: 'one', content: 'Use SQLite.' }],
+                        }
+                  ),
                 },
               }
         )
@@ -70,6 +75,18 @@ describe('optional command providers', () => {
       assert.equal(requests[0]!.body.truncate, false);
       assert.equal(requests[1]!.path, '/api/chat');
       assert.equal(requests[1]!.body.stream, false);
+      assert.deepEqual(
+        await new CommandRecallSelector('ollama-test', config).select({
+          query: 'database',
+          limit: 1,
+          passages: [
+            { id: 'one', revision: 1, namespace: 'demo', content: 'Use SQLite.', truncated: false },
+          ],
+        }),
+        [{ id: 'one', revision: 1, quote: 'Use SQLite.' }]
+      );
+      assert.equal(requests[2]!.path, '/api/chat');
+      assert.equal(typeof requests[2]!.body.format, 'object');
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve()))
@@ -85,6 +102,35 @@ describe('optional command providers', () => {
       request: { text: '😀\nquotes " and <data>' },
       arg: '$(echo secret) & literal',
     });
+  });
+  it('passes the recall selection protocol and requires a selections array', async () => {
+    const input = {
+      query: 'cycling equipment',
+      limit: 1,
+      passages: [
+        {
+          id: 'one',
+          revision: 3,
+          namespace: 'demo',
+          content: 'Bicycle in shed.',
+          truncated: false,
+        },
+      ],
+    };
+    const selector = new CommandRecallSelector(
+      'test',
+      provider(
+        read +
+          'if(request.version !== 1 || request.task !== "select" || request.query !== "cycling equipment") process.exit(1); console.log(JSON.stringify({selections:[{id:request.passages[0].id,revision:request.passages[0].revision,quote:request.passages[0].content}]}));'
+      )
+    );
+    assert.deepEqual(await selector.select(input), [
+      { id: 'one', revision: 3, quote: 'Bicycle in shed.' },
+    ]);
+    await assert.rejects(
+      new CommandRecallSelector('bad', provider(read + 'console.log("{}");')).select(input),
+      /return selections/
+    );
   });
   it('bounds execution and output, and does not expose provider errors or invalid output', async () => {
     await assert.rejects(

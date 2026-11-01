@@ -47,6 +47,64 @@ const row = (uuid: string, role: string, text: string) =>
   JSON.stringify({ uuid, type: role, message: { role, content: [{ type: 'text', text }] } }) + '\n';
 
 describe('portable host integration', () => {
+  it('uses a configured selector for both prompt hooks and fails closed on invalid output', async () => {
+    const f = setup(['--namespace', 'project/acme/alpha']);
+    const client = await openStore({ path: f.store, history: { provider: 'none' } });
+    try {
+      await client.create({
+        namespace: 'project/acme/alpha',
+        kind: 'note',
+        content: 'The bicycle is in the shed.',
+        metadata: { status: 'accepted' },
+      });
+      await client.create({
+        namespace: 'private/other',
+        kind: 'note',
+        content: 'Private bicycle location.',
+        metadata: { status: 'accepted' },
+      });
+    } finally {
+      await client.close();
+    }
+    const provider = join(f.dir, 'selector with spaces.mjs');
+    writeFileSync(
+      provider,
+      `let raw=''; for await(const chunk of process.stdin) raw+=chunk;
+const r=JSON.parse(raw); if(r.task!=='select'||r.query!=='Where is my cycling equipment?'||r.passages.length!==1)process.exit(1);
+const p=r.passages[0]; console.log(JSON.stringify({selections:[{id:p.id,revision:p.revision,quote:p.content}]}));`
+    );
+    const profile = JSON.parse(readFileSync(f.profile, 'utf8'));
+    profile.recall = {
+      id: 'test-selector',
+      command: { command: process.execPath, args: [provider] },
+    };
+    writeFileSync(f.profile, JSON.stringify(profile));
+    for (const host of ['claude-code', 'codex']) {
+      const result = cli(['hook', '--profile', f.profile, '--host', host], {
+        hook_event_name: 'UserPromptSubmit',
+        cwd: f.dir,
+        prompt: 'Where is my cycling equipment?',
+      });
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(
+        JSON.parse(result.stdout).hookSpecificOutput.additionalContext,
+        /bicycle is in the shed/
+      );
+      assert.doesNotMatch(result.stdout, /Private bicycle/);
+    }
+    writeFileSync(
+      provider,
+      'console.log(JSON.stringify({selections:[{id:"outside",revision:1,quote:"fabrication"}]}));'
+    );
+    const invalid = cli(['hook', '--profile', f.profile, '--host', 'codex'], {
+      hook_event_name: 'UserPromptSubmit',
+      cwd: f.dir,
+      prompt: 'Where is my cycling equipment?',
+    });
+    assert.equal(invalid.status, 1);
+    assert.equal(invalid.stdout, '');
+    assert.match(invalid.stderr, /ValidationFailed/);
+  });
   it('creates reviewable fragments, leaves capture off and preserves existing files', () => {
     const f = setup(['--namespace', 'project/acme/alpha']);
     const settings = JSON.parse(

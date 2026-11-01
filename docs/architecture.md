@@ -14,7 +14,7 @@ Claude/Codex transcript hooks       Any application/model
                             capture / context / accept / import
                                |                      |
                       authorized MemoryClient     optional ports
-                               |             Distiller / EmbeddingProvider
+                               |             Distiller / EmbeddingProvider / RecallSelector
                            MemoryService              |
                     validation + authorization   trusted command adapter
                     lifecycle + revision checks  e.g. local Ollama example
@@ -33,8 +33,10 @@ applications use the raw memory service without any capture/model dependency.
 Capture validates a full batch, derives stable operation identities, writes attributed
 candidates and reports per-item failures. Context selects exact project/shared namespaces,
 filters lifecycle and acceptance, and renders a UTF-8-bounded data envelope. Optional
-semantic expansion scans authorized candidates and holds vectors only in memory. Corrections
-and acceptance use the existing optimistic revision model. Import is planned/validated before
+semantic expansion scans authorized candidates and holds vectors only in memory. Optional
+extractive task selection uses bounded authorized passages; provider abstention
+does not fall back to recent or lexical context. Selected revisions are checked again before output.
+Corrections and acceptance use the existing optimistic revision model. Import is planned/validated before
 writes, then reuses capture rather than bypassing lifecycle semantics.
 
 Authentication belongs to the server boundary. Namespace grants are enforced by the service;
@@ -49,3 +51,5 @@ and limits, [the contract](../design/20-contract.md) for semantics, and
 [ADR-0002](decisions/0002-portable-memory-workflows.md) for the extension decision.
 Task-aware host timing and upgrade behavior are recorded in
 [ADR-0003](decisions/0003-task-aware-host-recall.md).
+Optional provider-neutral selection and native Codex acceptance are recorded in
+[ADR-0004](decisions/0004-evidence-based-recall-selection.md).

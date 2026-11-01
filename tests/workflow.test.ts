@@ -14,6 +14,8 @@ import {
   context,
   type CaptureInput,
   type EmbeddingProvider,
+  type RecallRequest,
+  type RecallSelector,
 } from '../src/workflow/index.ts';
 import { importClaudeMem, planClaudeMemImport } from '../src/workflow/import.ts';
 import { tempDir } from './helpers.ts';
@@ -289,6 +291,171 @@ describe('portable memory workflows', () => {
     );
     await client.purge({ id: target.id, expectedRevision: 1 });
     assert.equal((await context(client, query, provider)).items.length, 0);
+  });
+
+  it('selects scoped current passages without lexical overlap and preserves abstention', async () => {
+    const client = await fixture();
+    const old = await accepted(client, input().namespace, 'The bicycle is in the attic.');
+    const target = (
+      await client.supersede({
+        id: old.id,
+        expectedRevision: old.revision,
+        replacement: {
+          kind: 'note',
+          content: 'The bicycle stays in the shed.',
+          metadata: { status: 'accepted' },
+        },
+      })
+    ).memory;
+    await accepted(client, 'shared/team', 'Use the blue lock.');
+    await accepted(client, 'project/acme/beta', 'Secret cycling equipment.');
+    await capture(client, input('Unaccepted equipment advice.'));
+    client.retrieve = async () => {
+      throw new Error('Selection must not require lexical matches');
+    };
+    const query = {
+      namespace: input().namespace,
+      sharedNamespaces: ['shared/team'],
+      text: 'Please check the inventory, add tests and explain where my cycling equipment is.',
+    };
+    const provider: RecallSelector = {
+      id: 'test-selection',
+      async select(request) {
+        assert.equal(request.query, query.text);
+        assert.deepEqual(request.passages.map((p) => p.content).sort(), [
+          'The bicycle stays in the shed.',
+          'Use the blue lock.',
+        ]);
+        return [{ id: target.id, revision: target.revision, quote: 'bicycle stays in the shed' }];
+      },
+    };
+    const result = await context(client, query, undefined, provider);
+    assert.deepEqual(
+      result.items.map((r) => r.id),
+      [target.id]
+    );
+    assert.equal(result.retrieval.mode, 'selected');
+    assert.equal(result.retrieval.provider, provider.id);
+    assert.equal(
+      (
+        await context(client, query, undefined, {
+          id: 'abstain',
+          async select() {
+            return [];
+          },
+        })
+      ).text,
+      ''
+    );
+    await assert.rejects(
+      context(client, query, undefined, {
+        id: 'fail',
+        async select() {
+          throw new Error('provider failed');
+        },
+      }),
+      /provider failed/
+    );
+    // Recent browsing stays deterministic and never sends data to the provider.
+    assert.equal(
+      (
+        await context(client, { namespace: input().namespace }, undefined, {
+          id: 'unused',
+          async select() {
+            throw new Error('unexpected');
+          },
+        })
+      ).items.length,
+      1
+    );
+  });
+
+  it('rejects fabricated selections and drops records changed during selection', async () => {
+    const client = await fixture();
+    const target = await accepted(client, input().namespace, 'Bicycle in shed.');
+    const query = { namespace: input().namespace, text: 'cycling equipment', limit: 1 };
+    const good = { id: target.id, revision: target.revision, quote: 'Bicycle' };
+    for (const bad of [
+      [{ ...good, id: 'outside' }],
+      [{ ...good, revision: 9 }],
+      [{ ...good, quote: '' }],
+      [{ ...good, quote: 'invented fact' }],
+      [good, good],
+      [{ ...good, score: 1 }],
+    ]) {
+      await assert.rejects(
+        context(client, query, undefined, {
+          id: 'bad',
+          async select() {
+            return bad;
+          },
+        }),
+        ValidationFailedError
+      );
+    }
+    const result = await context(client, query, undefined, {
+      id: 'race',
+      async select() {
+        await client.update({
+          id: target.id,
+          expectedRevision: target.revision,
+          content: 'Bicycle moved.',
+        });
+        return [good];
+      },
+    });
+    assert.equal(result.text, '');
+    assert.ok(result.reasons.includes('records_changed'));
+  });
+
+  it('bounds provider disclosure, reports omissions and authorizes before calling it', async () => {
+    const client = await fixture();
+    for (let i = 0; i < 34; i++)
+      await accepted(client, input().namespace, `${i} ` + '😀'.repeat(3000));
+    let supplied: RecallRequest | undefined;
+    const selector: RecallSelector = {
+      id: 'bounded',
+      async select(request) {
+        supplied = request;
+        return [];
+      },
+    };
+    const result = await context(
+      client,
+      { namespace: input().namespace, text: 'question' },
+      undefined,
+      selector
+    );
+    assert.ok(supplied);
+    assert.ok(Buffer.byteLength(JSON.stringify(supplied)) <= 65536);
+    assert.ok(supplied.passages.length <= 32);
+    assert.ok(
+      supplied.passages.every(
+        (p) => p.truncated && Array.from(p.content).length <= 2048 && !/\p{Cs}/u.test(p.content)
+      )
+    );
+    assert.ok(result.reasons.includes('selection_input_limited'));
+    assert.ok(result.reasons.includes('selection_content_limited'));
+    const principal: Principal = {
+      id: 'reader',
+      profile: 'local',
+      grants: [{ pattern: input().namespace, permissions: ['read'] }],
+    };
+    const restricted = await fixture(principal);
+    await assert.rejects(
+      context(
+        restricted,
+        { namespace: input().namespace, sharedNamespaces: ['private/team'], text: 'question' },
+        undefined,
+        {
+          id: 'never',
+          async select() {
+            assert.fail('Unauthorized data reached provider');
+          },
+        }
+      ),
+      ForbiddenError
+    );
   });
 
   it('exposes identical capture/context behavior over HTTP and preserves failures', async () => {

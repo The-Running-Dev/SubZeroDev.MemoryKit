@@ -91,7 +91,7 @@ memorykit context --profile /absolute/path/config/memorykit.profile.json --names
 
 `--input -` reads stdin. `context --text-output` emits just the context envelope. No query
 selects recent eligible records; a query uses lexical retrieval and optional semantic expansion.
-SDK exports: `capture(client,input,distiller?)`, `context(client,input,embedding?)`,
+SDK exports: `capture(client,input,distiller?)`, `context(client,input,embedding?,selector?)`,
 `accept(client,id,expectedRevision)`, `planClaudeMemImport` and `importClaudeMem`.
 Use `connect(url,{token})` for a remote authorized client. HTTP exposes `POST /v1/capture`
 and `POST /v1/context`; MCP exposes `memory_capture` and `memory_context`. Server requests
@@ -111,9 +111,10 @@ UserPromptSubmit injects matching context through `additionalContext`. Empty, wh
 and punctuation-only prompts inject nothing; no match also produces no stdout. It never falls
 back to recent memories. Prompt whitespace/control characters are normalized, then a prefix
 of at most 1024 UTF-16 code units is used, without splitting a surrogate pair. A truncated
-query is reported on stderr. Hook input is bounded to 64 KiB. This is deterministic lexical
-querying, not task summarization: paraphrases and verbose prompts can miss relevant records.
-Optional embedding behavior remains experimental, including its answerability limitations.
+query is reported on stderr. Hook input is bounded to 64 KiB. Default retrieval is lexical;
+paraphrases and verbose prompts can miss relevant records. Configure the optional `recall`
+selector below to evaluate task relevance without requiring overlapping terms. Optional
+embedding behavior remains experimental, including its answerability limitations.
 
 To upgrade fragments generated before task-aware recall, run setup into a new output directory
 using the existing store, preserve profile provider/shared-scope options, then replace the old
@@ -173,7 +174,7 @@ curation. Imports remain candidates. Unexported attachments are not migrated.
 
 ## Optional model providers
 
-No model is required. Implement SDK `Distiller`/`EmbeddingProvider`, or configure a trusted
+No model is required. Implement SDK `Distiller`/`EmbeddingProvider`/`RecallSelector`, or configure a trusted
 executable and argument array in a CLI profile. `subzerodev-memorykit/providers-command`
 runs without a shell and exchanges one JSON request/response through stdin/stdout. Commands
 inherit the environment; do not let untrusted repositories supply profile commands.
@@ -183,6 +184,62 @@ inherit the environment; do not let untrusted repositories supply profile comman
   validated before writes and forced to generated/candidate status; it cannot widen scope.
 - Embedding request: `{version:1,task:"embed",role:"query"|"document",texts:[...]}`; response:
   `{vectors:[[...],...]}`. Finite, consistently dimensioned vectors must share a compatible space.
+- Recall request: `{version:1,task:"select",query,limit,passages:[{id,revision,namespace,content,truncated}]}`;
+  response: `{selections:[{id,revision,quote}]}`. Return useful passages ordered by relevance or
+  `{selections:[]}` to abstain. Each quote must be an exact, nonempty substring of the supplied passage.
+  `CommandRecallSelector` implements this protocol; the workflow checks membership, uniqueness,
+  revision and quote, then re-reads the selected current records before rendering context.
+
+### Task-aware selection for paraphrases and longer prompts
+
+Add `recall` to the generated profile to enable model-assisted selection. The caller can be
+Codex, Claude, another LLM or an ordinary application. Selection replaces lexical/embedding
+ranking for queries; an abstention stays empty. No query still uses recent browsing without
+calling a model. Provider errors fail explicitly (nonblocking exit 1 in a hook), with no fallback.
+
+Example using an existing Claude Code login, independent of the calling host:
+
+```json
+{
+  "recall": {
+    "id": "claude-haiku-selector-v1",
+    "command": {
+      "command": "node",
+      "args": [
+        "/absolute/package/path/examples/claude-recall.mjs",
+        "--claude",
+        "/absolute/path/to/claude-executable",
+        "--model",
+        "haiku"
+      ],
+      "timeoutMs": 28000
+    }
+  }
+}
+```
+
+Use a native executable on Windows, not a `.cmd`/`.ps1` shim. This example creates a temporary
+working directory, disables settings sources, hooks, tools, MCP and session persistence, and
+uses structured output. It uses the existing login, makes a billable/plan-accounted model call,
+and never installs a model or edits host settings. Its own call timeout is 25 seconds, inside
+the generated hook's 30-second budget. Slower calls fail without injecting context.
+
+For local selection use the same `recall` entry with `examples/ollama-provider.mjs --model
+YOUR_INSTALLED_CHAT_MODEL` instead, or supply any trusted executable implementing the protocol.
+The Ollama adapter supports selection as well as distillation/embedding; model quality is the
+operator's choice. No particular local model has passed a native quality evaluation here.
+
+Selection scans at most 200 records by default, then sends at most 32 passages of 2048 code
+points each, with a total serialized input budget of 64 KiB. Only explicit namespaces and
+eligible statuses reach the provider; candidate opt-in still applies. Newest scan order and
+these bounds can omit older facts or answers near the end of long records. Omission reasons
+`selection_input_limited`/`selection_content_limited` are visible as partial completeness.
+Quotes check provenance, not truth or semantic correctness. Model mistakes and prompt injection
+remain possible; returned content stays untrusted data. Selection is bounded retrieval,
+not a persistent semantic index. See [native acceptance](validation/native-recall.md) for
+the exact fixture results and their limits.
+
+### Distillation and embedding
 
 Distillers should return stable IDs/content for identical inputs. Changed output conflicts
 instead of replacing prior memory. Host distillation hashes the selected transcript snapshot
