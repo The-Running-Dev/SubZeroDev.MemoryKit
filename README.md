@@ -1,8 +1,9 @@
 # SubZeroDev.MemoryKit
 
 Durable, inspectable memory for applications and AI agents. One store holds memories with
-identity, namespaces, a lifecycle and provenance; SQLite keeps the current state and a Git
-repository keeps every revision. The same service is reached embedded in a process, from the
+identity, namespaces, a lifecycle and provenance. SQLite (default), managed Markdown, or an
+explicit storage plugin keeps current state; a separate Git history provider retains revisions.
+The same service is reached embedded in a process, from the
 command line, over HTTP and over MCP. No database server and no AI service are needed.
 
 ## One memory store across projects and models
@@ -27,6 +28,12 @@ supported origin require `--namespace`.
 corrections, claude-mem migration and optional model providers. Default retrieval remains
 lexical; semantic expansion is experimental and requires an explicit provider. The earlier
 retrieval quality gates remain failed, as recorded in [design decisions](design/90-decisions.md).
+
+Choose Markdown with `setup --storage markdown`; Git history works with either storage.
+External modules use `--storage-plugin /absolute/plugin.mjs --storage-options '{...}'` and
+implement the public `StoragePlugin` contract. See [storage plugins](docs/storage-plugins.md)
+for the contract, local-file limits and upgrade procedure. `upgrade --profile ... --output
+...` regenerates host fragments; `doctor --profile ...` verifies the configured store.
 
 ## Prerequisites
 

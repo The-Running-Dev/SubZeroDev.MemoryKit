@@ -113,9 +113,17 @@ export class CommandEmbeddings implements EmbeddingProvider {
 export class CommandRecallSelector implements RecallSelector {
   readonly id: string;
   readonly options: CommandProviderOptions;
-  constructor(id: string, options: CommandProviderOptions) {
+  readonly expand?: (query: string) => Promise<string[]>;
+  constructor(id: string, options: CommandProviderOptions, discovery = false) {
     this.id = id;
     this.options = options;
+    if (discovery)
+      this.expand = async (query) => {
+        const result = await commandJson(this.options, { version: 1, task: 'expand', query });
+        if (!isPlainObject(result) || !Array.isArray(result.queries))
+          throw new ValidationFailedError('Recall discovery must return queries');
+        return result.queries as string[];
+      };
   }
   async select(input: RecallRequest): Promise<RecallSelection[]> {
     const result = await commandJson(this.options, { version: 1, task: 'select', ...input });

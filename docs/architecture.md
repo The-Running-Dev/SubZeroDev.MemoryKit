@@ -1,8 +1,10 @@
 # MemoryKit architecture
 
 MemoryKit separates durable memory semantics from consumers and optional model runtimes.
-SDK, CLI, HTTP and MCP expose the same authorized memory service. SQLite owns current
-records, links, indexes, operation outcomes and the history outbox. History providers
+SDK, CLI, HTTP and MCP expose the same authorized memory service. The selected storage
+provider owns current records, links, indexes, operation outcomes and the history outbox.
+Built-ins are SQLite and managed Markdown; explicitly configured external modules implement
+the same public contract and token-store lifecycle. History providers
 implement revision retention; Git is the default, with memory and none also available.
 
 ```text
@@ -20,7 +22,7 @@ Claude/Codex transcript hooks       Any application/model
                     lifecycle + revision checks  e.g. local Ollama example
                          /                \
                 StorageProvider        HistoryProvider
-                   SQLite             Git / memory / none
+             SQLite / Markdown / plugin   Git / memory / none
 ```
 
 The workflow layer imports domain types and the authorized client contract only. It never
@@ -36,6 +38,9 @@ filters lifecycle and acceptance, and renders a UTF-8-bounded data envelope. Opt
 semantic expansion scans authorized candidates and holds vectors only in memory. Optional
 extractive task selection uses bounded authorized passages; provider abstention
 does not fall back to recent or lexical context. Selected revisions are checked again before output.
+Task discovery searches the full authorized lexical index using bounded task terms and optional
+query-only expansion before passage selection. Long passages use a query-centered window.
+Discovery preserves scope/eligibility and reports bounded omissions; it is not a semantic index.
 Corrections and acceptance use the existing optimistic revision model. Import is planned/validated before
 writes, then reuses capture rather than bypassing lifecycle semantics.
 
@@ -53,3 +58,5 @@ Task-aware host timing and upgrade behavior are recorded in
 [ADR-0003](decisions/0003-task-aware-host-recall.md).
 Optional provider-neutral selection and native Codex acceptance are recorded in
 [ADR-0004](decisions/0004-evidence-based-recall-selection.md).
+Storage composition, query discovery and upgrade behavior are recorded in
+[ADR-0005](decisions/0005-portable-storage-and-discovery.md).

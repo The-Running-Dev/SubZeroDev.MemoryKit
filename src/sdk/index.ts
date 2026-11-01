@@ -1,13 +1,20 @@
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { EMBEDDED_PRINCIPAL, type Principal } from '../access/index.ts';
 import type { HistoryPolicy, HistoryProvider, TokenStore } from '../contracts/index.ts';
 import { StoreUnavailableError, UnsupportedError, ValidationFailedError } from '../model/index.ts';
 import { MemoryService, type MemoryClient, type ServiceConfig } from '../service/index.ts';
-import { SqliteStorage } from '../storage-sqlite/index.ts';
+import { createStorage, storeExists, STORE_MARKER, type StorageConfig } from './storage.ts';
+export {
+  storeExists,
+  type StorageConfig,
+  type StoragePlugin,
+  type StoragePluginContext,
+} from './storage.ts';
 
 export interface StoreConfig {
   path: string;
+  storage?: StorageConfig;
   history?:
     { provider: 'git'; repository?: string } | { provider: 'memory' } | { provider: 'none' };
   defaultHistoryPolicy?: HistoryPolicy;
@@ -54,7 +61,7 @@ async function historyProvider(config: StoreConfig): Promise<HistoryProvider | n
 export async function initStore(config: StoreConfig): Promise<void> {
   const file = databasePath(config);
   const history = await historyProvider(config);
-  if (existsSync(file)) {
+  if (storeExists(config.path)) {
     throw new StoreUnavailableError('The directory is already a store', {
       reason: 'already_a_store',
     });
@@ -66,15 +73,22 @@ export async function initStore(config: StoreConfig): Promise<void> {
       reason: 'open_failed',
     });
   }
-  const storage = new SqliteStorage({ path: file });
+  const { storage, config: selected } = await createStorage(config.path, config.storage, true);
   try {
     await storage.open();
   } catch (error) {
     // Leave nothing behind that a later init would mistake for a store.
-    for (const suffix of ['', '-wal', '-shm']) rmSync(file + suffix, { force: true });
+    if (selected.provider === 'sqlite')
+      for (const suffix of ['', '-wal', '-shm']) rmSync(file + suffix, { force: true });
     throw error;
   }
   await storage.close();
+  if (selected.provider !== 'sqlite')
+    writeFileSync(
+      join(config.path, STORE_MARKER),
+      JSON.stringify({ version: 1, provider: selected.provider }) + '\n',
+      { flag: 'wx' }
+    );
   // Creates the history repository; without git it is created on a later open.
   await history?.open();
   await history?.close();
@@ -82,7 +96,7 @@ export async function initStore(config: StoreConfig): Promise<void> {
 
 function existingDatabase(config: StoreConfig): string {
   const file = databasePath(config);
-  if (!existsSync(file)) {
+  if (!storeExists(config.path)) {
     throw new StoreUnavailableError('The directory is not a store', { reason: 'not_a_store' });
   }
   return file;
@@ -96,15 +110,15 @@ export interface OpenService {
 
 // The service with its token store, for hosts that serve several principals.
 export async function openService(config: StoreConfig): Promise<OpenService> {
-  const file = existingDatabase(config);
+  existingDatabase(config);
   const history = await historyProvider(config);
-  const storage = new SqliteStorage({ path: file });
+  const { storage, tokens } = await createStorage(config.path, config.storage, false);
   const service = new MemoryService(storage, history, {
     ...config.service,
     defaultHistoryPolicy: config.defaultHistoryPolicy ?? config.service?.defaultHistoryPolicy,
   });
   await service.open();
-  return { service, tokens: storage, close: () => service.close() };
+  return { service, tokens, close: () => service.close() };
 }
 
 export async function openStore(
@@ -126,13 +140,14 @@ export async function openStore(
 export async function openTokenStore(
   config: StoreConfig
 ): Promise<TokenStore & { close(): Promise<void> }> {
-  const storage = new SqliteStorage({ path: existingDatabase(config) });
+  existingDatabase(config);
+  const { storage, tokens } = await createStorage(config.path, config.storage, false);
   await storage.open();
   return {
-    issue: (principalId, grants) => storage.issue(principalId, grants),
-    verify: (secret) => storage.verify(secret),
-    revoke: (tokenId) => storage.revoke(tokenId),
-    list: () => storage.list(),
+    issue: (principalId, grants) => tokens.issue(principalId, grants),
+    verify: (secret) => tokens.verify(secret),
+    revoke: (tokenId) => tokens.revoke(tokenId),
+    list: () => tokens.list(),
     close: () => storage.close(),
   };
 }

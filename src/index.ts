@@ -13,6 +13,10 @@ export {
   type ConnectOptions,
   type OpenService,
   type StoreConfig,
+  storeExists,
+  type StorageConfig,
+  type StoragePlugin,
+  type StoragePluginContext,
 } from './sdk/index.ts';
 export {
   LocalTokenAuthenticator,
@@ -24,6 +28,7 @@ export {
 export { handle, problemResponse, type HttpRequest, type HttpResponse } from './http/index.ts';
 export { isLoopback, serve, type ServeOptions } from './server/index.ts';
 export { SqliteStorage, type SqliteStorageOptions } from './storage-sqlite/index.ts';
+export { MarkdownStorage } from './storage-markdown/index.ts';
 export { MemoryHistory } from './history-memory/index.ts';
 export {
   capture,

@@ -135,7 +135,10 @@ export const SCENARIOS: Scenario[] = [
 
       const status = value(await driver.status(store));
       assert.equal(status.contractVersion, 1);
-      assert.equal((status.storage as Record<string, unknown>).id, 'storage-sqlite');
+      assert.equal(
+        (status.storage as Record<string, unknown>).id,
+        driver.storageId ?? 'storage-sqlite'
+      );
       assert.equal((status.history as Record<string, unknown>).id, 'history-git');
       assert.deepEqual(status.historyQueue, { pending: 0, blocked: null, lastError: null });
 

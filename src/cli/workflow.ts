@@ -16,7 +16,9 @@ import {
   CommandRecallSelector,
   type CommandProviderOptions,
 } from '../providers-command/index.ts';
-import { connect, initStore, openStore } from '../sdk/index.ts';
+import { connect, initStore, openStore, storeExists, type StorageConfig } from '../sdk/index.ts';
+import { STORAGE_OPTIONS, storageOptions, storageArgs } from './storage.ts';
+import { validateStorageConfig } from '../sdk/storage.ts';
 import {
   accept,
   capture,
@@ -37,6 +39,8 @@ import type { CliDeps, CliIo } from './run.ts';
 
 export const WORKFLOW_COMMANDS = [
   'setup',
+  'upgrade',
+  'doctor',
   'capture',
   'context',
   'accept',
@@ -46,8 +50,13 @@ export const WORKFLOW_COMMANDS = [
 const HELP = `MemoryKit portable workflows:
   setup --store <dir> --output <dir> [--namespace <ns>] [--shared-namespace <ns>]...
         [--capture] [--include-candidates] [--startup-context] [--history git|none]
+        [--storage sqlite|markdown | --storage-plugin <absolute-module> [--storage-options <json>]]
     Creates a new store if absent and writes a profile plus host configuration fragments.
     Merge fragments into host settings to activate; existing host settings are untouched.
+  upgrade --profile <json> --output <new-dir>
+    Regenerates the profile and host fragments using this installed CLI.
+  doctor --profile <json>
+    Opens the configured store and reports provider, history queue and workflow status.
   capture --profile <json> --input <json|->
   context --profile <json> [--text <query>] [--text-output] [--include-candidates]
   accept <id> --profile <json> --expected-revision <n>
@@ -66,6 +75,7 @@ Context defaults to accepted active records. Capture creates candidates only.
 interface Profile {
   version: 1;
   store?: string;
+  storage?: StorageConfig;
   url?: string;
   tokenEnv?: string;
   namespace?: string;
@@ -79,7 +89,7 @@ interface Profile {
   limit?: number;
   distiller?: CommandProviderOptions;
   embedding?: { id: string; command: CommandProviderOptions };
-  recall?: { id: string; command: CommandProviderOptions };
+  recall?: { id: string; command: CommandProviderOptions; discovery?: boolean };
 }
 function readBounded(fd: number, max: number): string {
   const chunks: Buffer[] = [];
@@ -116,6 +126,7 @@ function profile(value: unknown): Profile {
     [
       'version',
       'store',
+      'storage',
       'url',
       'tokenEnv',
       'namespace',
@@ -148,6 +159,10 @@ function profile(value: unknown): Profile {
     throw new ValidationFailedError('Invalid workflow profile');
   }
   const p = value as unknown as Profile;
+  if (p.storage !== undefined) {
+    validateStorageConfig(p.storage);
+    if (!p.store) throw new ValidationFailedError('Storage configuration requires a local store');
+  }
   scopes({
     namespace: p.namespace ?? 'project/placeholder/repo',
     sharedNamespaces: p.sharedNamespaces,
@@ -157,11 +172,17 @@ function profile(value: unknown): Profile {
   if (p.distiller !== undefined) validateCommand(p.distiller);
   for (const provider of [p.embedding, p.recall]) {
     if (provider === undefined) continue;
-    fields(provider, ['id', 'command'], ['id', 'command']);
+    fields(
+      provider,
+      ['id', 'command', ...(provider === p.recall ? ['discovery'] : [])],
+      ['id', 'command']
+    );
     if (typeof provider.id !== 'string' || provider.id.trim() === '' || provider.id.length > 256)
       throw new ValidationFailedError('Provider needs an id');
     validateCommand(provider.command);
   }
+  if (p.recall?.discovery !== undefined && typeof p.recall.discovery !== 'boolean')
+    throw new ValidationFailedError('Invalid recall discovery option');
   return p;
 }
 function validateCommand(value: unknown): void {
@@ -202,7 +223,17 @@ async function setup(p: Profile, output: string): Promise<object> {
     });
     return {
       hooks: {
-        ...(p.context === false ? {} : { UserPromptSubmit: [group(30)] }),
+        ...(p.context === false
+          ? {}
+          : {
+              UserPromptSubmit: [
+                group(
+                  Math.ceil(
+                    ((p.recall?.command.timeoutMs ?? 30000) * (p.recall?.discovery ? 2 : 1)) / 1000
+                  ) + 10
+                ),
+              ],
+            }),
         ...(p.context !== false && p.startupContext === true ? { SessionStart: [group(30)] } : {}),
         ...(p.capture ? { Stop: [group(60)], PreCompact: [group(60)] } : {}),
       },
@@ -217,7 +248,15 @@ async function setup(p: Profile, output: string): Promise<object> {
         mcpServers: {
           memorykit: {
             command: process.execPath,
-            args: [cli, 'mcp', '--store', p.store, '--history', p.history ?? 'git'],
+            args: [
+              cli,
+              'mcp',
+              '--store',
+              p.store,
+              '--history',
+              p.history ?? 'git',
+              ...storageArgs(p.storage),
+            ],
           },
         },
       },
@@ -230,8 +269,20 @@ async function setup(p: Profile, output: string): Promise<object> {
     if (existsSync(join(output, name)))
       throw new ValidationFailedError('Setup output already exists; choose a new output directory');
   // Preflight every output and generated command before creating the store.
-  if (!existsSync(join(p.store!, 'memory.db')))
-    await initStore({ path: p.store!, history: { provider: p.history ?? 'git' } });
+  if (!storeExists(p.store!))
+    await initStore({
+      path: p.store!,
+      storage: p.storage,
+      history: { provider: p.history ?? 'git' },
+    });
+  else {
+    const client = await openStore({
+      path: p.store!,
+      storage: p.storage,
+      history: { provider: p.history ?? 'git' },
+    });
+    await client.close();
+  }
   mkdirSync(output, { recursive: true });
   for (const [name, content] of Object.entries(files))
     writeFileSync(join(output, name), content + '\n', { flag: 'wx' });
@@ -253,6 +304,7 @@ export async function runWorkflow(
       args: argv.slice(1),
       allowPositionals: true,
       options: {
+        ...STORAGE_OPTIONS,
         profile: { type: 'string' },
         store: { type: 'string' },
         url: { type: 'string' },
@@ -290,12 +342,21 @@ export async function runWorkflow(
     if (
       (v.store !== undefined && v.url !== undefined) ||
       (v.profile !== undefined &&
-        [v.store, v.url, v['token-env'], v.history].some((value) => value !== undefined))
+        [
+          v.store,
+          v.url,
+          v['token-env'],
+          v.history,
+          v.storage,
+          v['storage-plugin'],
+          v['storage-options'],
+        ].some((value) => value !== undefined))
     ) {
       throw new ValidationFailedError('Use a profile or connection flags, not both');
     }
     const p = profile({
       ...base,
+      ...(storageOptions(v) === undefined ? {} : { storage: storageOptions(v) }),
       ...(v.store === undefined ? {} : { store: resolve(v.store) }),
       ...(v.url === undefined ? {} : { url: v.url }),
       ...(v['token-env'] === undefined ? {} : { tokenEnv: v['token-env'] }),
@@ -311,10 +372,17 @@ export async function runWorkflow(
       ...(v.limit === undefined ? {} : { limit: Number(v.limit) }),
     });
     const print = (value: unknown): void => io.stdout(JSON.stringify(value) + '\n');
-    if (command === 'setup') {
-      if (!p.store || p.url || !v.output || v.profile)
+    if (command === 'setup' || command === 'upgrade') {
+      if (
+        !p.store ||
+        p.url ||
+        !v.output ||
+        (command === 'setup'
+          ? v.profile !== undefined
+          : v.profile === undefined || !storeExists(p.store))
+      )
         throw new ValidationFailedError(
-          'setup needs --store and --output, without --profile or --url'
+          'setup needs --store and --output; upgrade needs an existing --profile and a new --output'
         );
       const output = resolve(v.output);
       quoted(output);
@@ -364,11 +432,30 @@ export async function runWorkflow(
         throw new ValidationFailedError('The configured token environment variable is not set');
     }
     const client = local
-      ? await deps.openStore({ path: p.store!, history: { provider: p.history ?? 'git' } })
+      ? await deps.openStore({
+          path: p.store!,
+          storage: p.storage,
+          history: { provider: p.history ?? 'git' },
+        })
       : Object.assign((deps.connect ?? connect)(p.url!, token === undefined ? {} : { token }), {
           close: async () => {},
         });
     try {
+      if (command === 'doctor') {
+        print({
+          ok: true,
+          status: await client.status(),
+          profile: {
+            local,
+            namespace,
+            capture: p.capture === true,
+            recall: p.recall?.id ?? null,
+            discovery: p.recall?.discovery === true,
+          },
+          runtime: { node: process.version, cli: fileURLToPath(import.meta.url) },
+        });
+        return 0;
+      }
       const distiller = p.distiller === undefined ? undefined : new CommandDistiller(p.distiller);
       const embedding =
         p.embedding === undefined
@@ -382,7 +469,7 @@ export async function runWorkflow(
         const selector =
           p.recall === undefined
             ? undefined
-            : new CommandRecallSelector(p.recall.id, p.recall.command);
+            : new CommandRecallSelector(p.recall.id, p.recall.command, p.recall.discovery);
         const result = await context(client, contextInput, embedding, selector);
         if (command === 'hook') {
           if (result.text)

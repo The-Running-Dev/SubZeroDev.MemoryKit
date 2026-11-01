@@ -203,6 +203,7 @@ Example using an existing Claude Code login, independent of the calling host:
 {
   "recall": {
     "id": "claude-haiku-selector-v1",
+    "discovery": true,
     "command": {
       "command": "node",
       "args": [
@@ -221,23 +222,48 @@ Example using an existing Claude Code login, independent of the calling host:
 Use a native executable on Windows, not a `.cmd`/`.ps1` shim. This example creates a temporary
 working directory, disables settings sources, hooks, tools, MCP and session persistence, and
 uses structured output. It uses the existing login, makes a billable/plan-accounted model call,
-and never installs a model or edits host settings. Its own call timeout is 25 seconds, inside
-the generated hook's 30-second budget. Slower calls fail without injecting context.
+and never installs a model or edits host settings. Its own call timeout is 25 seconds.
+Discovery makes an additional query-expansion call. Regenerate fragments with `upgrade` after
+changing recall configuration: the prompt hook budget is one command timeout (two with
+discovery) plus ten seconds. Slower calls fail without injecting context.
 
 For local selection use the same `recall` entry with `examples/ollama-provider.mjs --model
 YOUR_INSTALLED_CHAT_MODEL` instead, or supply any trusted executable implementing the protocol.
 The Ollama adapter supports selection as well as distillation/embedding; model quality is the
 operator's choice. No particular local model has passed a native quality evaluation here.
 
-Selection scans at most 200 records by default, then sends at most 32 passages of 2048 code
-points each, with a total serialized input budget of 64 KiB. Only explicit namespaces and
-eligible statuses reach the provider; candidate opt-in still applies. Newest scan order and
-these bounds can omit older facts or answers near the end of long records. Omission reasons
+Selection starts with at most 200 recent records by default and searches the full scoped
+lexical index with up to sixteen task terms. `discovery:true` additionally sends the query
+alone to the provider for up to eight bounded search queries. Search ranks are fused; older
+indexed hits receive disclosure slots alongside recent candidates. Long records use a window
+around query terms. The provider receives at most 32 passages of 2048 code points each with
+a total serialized input budget of 64 KiB. Only explicit namespaces and eligible statuses
+reach it; candidate opt-in still applies. These bounds can still omit older or clipped facts.
+Discovery truncation and candidate bounds are reported, alongside omission reasons
 `selection_input_limited`/`selection_content_limited` are visible as partial completeness.
 Quotes check provenance, not truth or semantic correctness. Model mistakes and prompt injection
 remain possible; returned content stays untrusted data. Selection is bounded retrieval,
 not a persistent semantic index. See [native acceptance](validation/native-recall.md) for
 the exact fixture results and their limits.
+
+An independent second selector uses an existing Codex login: configure the same command
+shape with `examples/codex-recall.mjs --codex /absolute/native/codex-executable` and
+`timeoutMs:65000`. It copies only existing authentication into an isolated temporary home,
+disables tools, rules and web access, and uses structured output. Its internal timeout is
+55 seconds per call. On Windows use the native `codex.exe`, rather than npm's `.cmd` shim.
+Optional `--model` chooses an explicitly available model. It does not install models or
+change global configuration. Query expansion uses `{version:1,task:'expand',query}` and
+returns `{queries:[...]}`; selection retains the existing `select` protocol. Expansion is
+optional for other adapters and receives no memory passages.
+
+Run `node scripts/verify-recall-quality.ts --selector /absolute/recall.json --report
+/absolute/report.json` to measure a recall-profile object against existing eligible corpus
+and heldout queries plus facts behind 1,000 newer notes and adversarial no-answer cases.
+This is opt-in and makes real provider calls. It reports skipped raw-search-only features,
+recall, false injections, provider errors, latency and payload bytes (not billing tokens).
+See [portable storage and discovery validation](validation/portable-storage.md) for native
+Markdown results and the preserved initial quality reports.
+Storage configuration and repeatable installation are described in [storage plugins](storage-plugins.md).
 
 ### Distillation and embedding
 

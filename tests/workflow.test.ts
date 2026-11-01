@@ -310,8 +310,11 @@ describe('portable memory workflows', () => {
     await accepted(client, 'shared/team', 'Use the blue lock.');
     await accepted(client, 'project/acme/beta', 'Secret cycling equipment.');
     await capture(client, input('Unaccepted equipment advice.'));
-    client.retrieve = async () => {
-      throw new Error('Selection must not require lexical matches');
+    const retrieve = client.retrieve.bind(client);
+    client.retrieve = async (query) => {
+      const result = await retrieve(query);
+      assert.equal(result.items.length, 0, 'The fixture must have no lexical matches');
+      return result;
     };
     const query = {
       namespace: input().namespace,
