@@ -261,6 +261,8 @@ Run `node scripts/verify-recall-quality.ts --selector /absolute/recall.json --re
 and heldout queries plus facts behind 1,000 newer notes and adversarial no-answer cases.
 This is opt-in and makes real provider calls. It reports skipped raw-search-only features,
 recall, false injections, provider errors, latency and payload bytes (not billing tokens).
+See [portable storage and discovery validation](validation/portable-storage.md) for native
+Markdown results and the preserved initial quality reports.
 Storage configuration and repeatable installation are described in [storage plugins](storage-plugins.md).
 
 ### Distillation and embedding
