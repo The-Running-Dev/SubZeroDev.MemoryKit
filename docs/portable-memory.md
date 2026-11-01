@@ -30,10 +30,6 @@ Install merges owned groups into `~/.claude/settings.json` or `~/.codex/hooks.js
 other settings. A manifest next to the profile records exact group ownership. Repeat install
 after changing a profile or upgrading the package. Edited/missing owned groups and matching
 unowned groups require manual reconciliation; install never guesses ownership by command name.
-Codex transcript capture now binds observation identity to timestamp, role and full message
-text, with an occurrence counter, so resumed/compacted transcripts can move messages without
-offset collisions. Upgrading from the earlier offset-based identity can capture existing
-transcript messages again as candidates; review those before acceptance. Capture stays opt-in.
 Remove old manually merged MemoryKit fragments before adopting managed installation.
 `--settings /absolute/settings.json` selects an isolated/custom host configuration; repeat the
 same override for doctor and uninstall. `--manifest` optionally relocates the ownership record.
@@ -139,6 +135,12 @@ Identity is independent of content: changed content with the same identity cause
 the original write outcome; read the current record for current status. CLI exit 1 denotes
 errors/partial capture; HTTP returns 207 for partial capture and 202 for complete writes
 with pending history. Inspect individual write history status.
+
+Codex transcript capture uses timestamp, role, full content and an occurrence counter
+for observation identity. Evidence uses `codex:session:SESSION_ID`, so moving or rewriting
+a resumed transcript preserves the idempotent request. Profiles created before this change
+used byte offsets and file references; retained messages can be recaptured as candidates
+after upgrading. Review these candidates before accepting them.
 
 ## Capture, review and correction
 
