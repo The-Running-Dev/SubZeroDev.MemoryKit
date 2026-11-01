@@ -1,0 +1,141 @@
+name: Release package
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: memorykit-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    name: Release quality (Node ${{ matrix.node }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ['22.18', '24']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run check:package
+
+  candidate:
+    name: Verify release candidate
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      sha256: ${{ steps.archive.outputs.sha256 }}
+      integrity: ${{ steps.archive.outputs.integrity }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: npm ci
+      - name: Validate release identity
+        env:
+          RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+        run: npm run check:release
+      - name: Build candidate tarball
+        run: |
+          mkdir -p "$RUNNER_TEMP/memorykit-release"
+          npm pack --pack-destination "$RUNNER_TEMP/memorykit-release"
+          node --input-type=module -e "import { readdirSync } from 'node:fs'; const dir = process.env.RUNNER_TEMP + '/memorykit-release'; const files = readdirSync(dir); if (files.length !== 1 || !files[0].endsWith('.tgz')) throw Error('expected one tarball'); console.log('TARBALL=' + dir + '/' + files[0]);" >> "$GITHUB_ENV"
+      - name: Inspect candidate archive
+        id: archive
+        run: |
+          node scripts/verify-release.ts archive "$TARBALL" > "$RUNNER_TEMP/memorykit-release-report.json"
+          node --input-type=module -e "import { readFileSync } from 'node:fs'; const report = JSON.parse(readFileSync(process.env.RUNNER_TEMP + '/memorykit-release-report.json')); console.log('sha256=' + report.sha256); console.log('integrity=' + report.integrity);" >> "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/memorykit-release-report.json" >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify installed consumer against this archive
+        run: npm run check:package -- "$TARBALL"
+      - name: Confirm archive unchanged
+        env:
+          EXPECTED_DIGEST: ${{ steps.archive.outputs.sha256 }}
+        run: node scripts/verify-release.ts archive "$TARBALL" "$EXPECTED_DIGEST"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: memorykit-release-candidate
+          path: ${{ runner.temp }}/memorykit-release/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish approved npm identity
+    needs: candidate
+    # Dispatch and pull requests only validate; an owner-created release tag is required.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.repository == 'The-Running-Dev/SubZeroDev.MemoryKit'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Check owner approval, release tag and main ancestry
+        env:
+          APPROVED_PACKAGE: ${{ vars.MEMORYKIT_NPM_PACKAGE }}
+          APPROVED_REGISTRY: ${{ vars.MEMORYKIT_NPM_REGISTRY }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: npm run check:release -- publish
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: memorykit-release-candidate
+          path: ${{ runner.temp }}/memorykit-release
+      - name: Resolve and recheck the tested artifact
+        env:
+          EXPECTED_DIGEST: ${{ needs.candidate.outputs.sha256 }}
+        run: |
+          node --input-type=module -e "import { readdirSync } from 'node:fs'; const dir = process.env.RUNNER_TEMP + '/memorykit-release'; const files = readdirSync(dir); if (files.length !== 1 || !files[0].endsWith('.tgz')) throw Error('expected one tarball'); console.log('TARBALL=' + dir + '/' + files[0]);" >> "$GITHUB_ENV"
+          archive=("$RUNNER_TEMP"/memorykit-release/*.tgz)
+          node scripts/verify-release.ts archive "${archive[0]}" "$EXPECTED_DIGEST"
+      - name: Refuse duplicate versions and registry failures
+        run: npm run check:release -- registry
+      - name: Verify npm supports trusted publishing
+        run: |
+          node --input-type=module -e "import { execFileSync } from 'node:child_process'; const [major, minor, patch] = execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim().split('.').map(Number); if (major < 11 || (major === 11 && (minor < 5 || (minor === 5 && patch < 1)))) throw Error('npm >=11.5.1 required');"
+      - name: Publish exactly the tested archive with provenance
+        # Prefer npm trusted publishing. NPM_TOKEN is only for an approved bootstrap or fallback.
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish "$TARBALL" --ignore-scripts --access public --registry=https://registry.npmjs.org --provenance
+      - name: Verify public registry identity and exact bytes
+        env:
+          EXPECTED_INTEGRITY: ${{ needs.candidate.outputs.integrity }}
+        run: node scripts/verify-published.ts
