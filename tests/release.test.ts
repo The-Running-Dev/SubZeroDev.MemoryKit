@@ -129,6 +129,8 @@ const entries = {
   'package/dist/providers-command/index.d.ts': 'export {};',
   'package/dist/storage-postgres/index.js': 'export {};',
   'package/dist/storage-postgres/index.d.ts': 'export {};',
+  'package/dist/index-sqlite/index.js': 'export {};',
+  'package/dist/index-sqlite/index.d.ts': 'export {};',
   'package/dist/cli/main.js': '#!/usr/bin/env node\n',
 };
 

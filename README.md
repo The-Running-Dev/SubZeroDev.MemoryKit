@@ -18,8 +18,10 @@ After installing the packed package, generate a profile and reviewable host frag
 npx memorykit setup --store /absolute/path/store --output /absolute/path/config --capture --include-candidates
 ```
 
-Use absolute paths appropriate to your OS. Merge the generated fragments as described in
-their README. `--capture` opts in to transcript capture; `--include-candidates` opts in to
+Use absolute paths appropriate to your OS. Activate owned hooks with
+`memorykit install --profile /absolute/path/config/memorykit.profile.json --host codex`
+(or `claude-code`); review Codex trust through `/hooks`. Repeat install after upgrades and use
+`uninstall` with the same profile to remove owned groups. `--capture` opts in to transcript capture; `--include-candidates` opts in to
 recalling unreviewed observations. Omit both for accepted memory only. Setup does not edit
 host settings. An unpinned profile follows the current Git origin; projects without a
 supported origin require `--namespace`.
@@ -36,6 +38,10 @@ External modules use `--storage-plugin /absolute/plugin.mjs --storage-options '{
 implement the public `StoragePlugin` contract. See [storage plugins](docs/storage-plugins.md)
 for the contract, local-file limits and upgrade procedure. `upgrade --profile ... --output
 ...` regenerates host fragments; `doctor --profile ...` verifies the configured store.
+
+`review` displays attributed candidates; revision-guarded accept/reject/correct/duplicate actions
+preserve original sources. `reconcile-claude-mem` audits selected export coverage without changing
+reviewed records. Optional embedding caches and execution probes are described in the guide.
 
 ## Prerequisites
 

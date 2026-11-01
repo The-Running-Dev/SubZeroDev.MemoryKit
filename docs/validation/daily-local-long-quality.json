@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "provider": "ollama-qwen2.5-1.5b",
+  "discovery": true,
+  "storage": "sqlite",
+  "taskQueries": true,
+  "queryOverrides": {
+    "exact-error-code": "What does error E4012 mean in the Alpha billing worker?",
+    "noise-tokens": "When do Alpha API tokens expire?",
+    "noise-release": "When do Alpha releases ship?",
+    "noise-backup": "When do Alpha database backups run and how long are they retained?",
+    "noise-stale-cache": "How long does Alpha cache product prices to avoid stale checkout totals?",
+    "noise-session": "Which database stores Alpha session data?"
+  },
+  "verification": true,
+  "cases": [
+    "old-paraphrase",
+    "old-verbose",
+    "deep-passage",
+    "no-answer-adversarial"
+  ],
+  "fillerNewerThanFacts": 1000,
+  "transformations": [
+    "Set metadata.status=accepted on raw corpus records and replacements for workflow eligibility",
+    "Only active accepted exact-scope task recall; raw-search-only scenarios classified as skipped",
+    "Implicit namespace enumeration intersects the principal read grants; explicit scopes remain unchanged"
+  ],
+  "cost": {
+    "calls": 8,
+    "processAttempts": 8,
+    "retries": 0,
+    "inputBytes": 20937,
+    "outputBytes": 321,
+    "note": "Logical calls and process attempts including retries; payload bytes count completed logical calls, not token accounting or billing"
+  },
+  "latencyMs": {
+    "p50": 103362.4581,
+    "p95": 103875.63659999997
+  },
+  "rows": [
+    {
+      "set": "scale-adversarial",
+      "id": "old-paraphrase",
+      "ms": 103440.4619,
+      "error": {
+        "type": "urn:memorykit:error:StoreUnavailable",
+        "title": "Command provider failed",
+        "status": 503,
+        "code": "StoreUnavailable",
+        "retryable": false,
+        "details": {
+          "reason": "timeout"
+        }
+      }
+    },
+    {
+      "set": "scale-adversarial",
+      "id": "old-verbose",
+      "ms": 103362.4581,
+      "error": {
+        "type": "urn:memorykit:error:StoreUnavailable",
+        "title": "Command provider failed",
+        "status": 503,
+        "code": "StoreUnavailable",
+        "retryable": false,
+        "details": {
+          "reason": "timeout"
+        }
+      }
+    },
+    {
+      "set": "scale-adversarial",
+      "id": "deep-passage",
+      "ms": 103875.63659999997,
+      "error": {
+        "type": "urn:memorykit:error:StoreUnavailable",
+        "title": "Command provider failed",
+        "status": 503,
+        "code": "StoreUnavailable",
+        "retryable": false,
+        "details": {
+          "reason": "timeout"
+        }
+      }
+    },
+    {
+      "set": "scale-adversarial",
+      "id": "no-answer-adversarial",
+      "ms": 101494.84749999997,
+      "error": {
+        "type": "urn:memorykit:error:StoreUnavailable",
+        "title": "Command provider failed",
+        "status": 503,
+        "code": "StoreUnavailable",
+        "retryable": false,
+        "details": {
+          "reason": "timeout"
+        }
+      }
+    }
+  ]
+}

@@ -10,6 +10,7 @@ import {
   validateCreate,
   validateSearch,
   toProblem,
+  NotFoundError,
   type MemoryRecord,
   type Problem,
   type SearchQuery,
@@ -52,6 +53,13 @@ export interface Distiller {
 export interface EmbeddingProvider {
   readonly id: string;
   embed(texts: string[], role: 'query' | 'document'): Promise<number[][]>;
+}
+// Implementations persist derived vectors only. Caller binds each instance to one data source,
+// authorization identity and exact namespace set. Keys include model, revision and content hash.
+export interface EmbeddingIndex {
+  get(keys: string[]): Promise<(number[] | null)[]>;
+  put(entries: { key: string; vector: number[] }[]): Promise<void>;
+  retain(keys: string[]): Promise<void>;
 }
 export interface RecallPassage {
   id: string;
@@ -324,7 +332,8 @@ export async function context(
   client: MemoryClient,
   input: ContextInput,
   embedding?: EmbeddingProvider,
-  selector?: RecallSelector
+  selector?: RecallSelector,
+  index?: EmbeddingIndex
 ): Promise<ContextResult> {
   fields(
     input,
@@ -379,6 +388,7 @@ export async function context(
   if (input.text === undefined || embedding !== undefined || selector !== undefined) {
     const candidates: MemoryRecord[] = [];
     let cursor: string | undefined;
+    let scanComplete = true;
     do {
       const page = await client.search({
         ...query,
@@ -387,7 +397,10 @@ export async function context(
       });
       scanned += page.items.length;
       candidates.push(...page.items.filter(eligible));
-      if (page.completeness === 'partial') reasons.add('storage_scan_limited');
+      if (page.completeness === 'partial') {
+        reasons.add('storage_scan_limited');
+        scanComplete = false;
+      }
       cursor = page.nextCursor ?? undefined;
       if (cursor !== undefined && scanned >= candidateLimit) {
         reasons.add('candidate_limit');
@@ -486,17 +499,38 @@ export async function context(
         } else reasons.add('records_changed');
       }
     } else if (embedding !== undefined && candidates.length > 0) {
-      // No persistent vector copy: purging a record leaves no second on-disk content store.
       // Optional semantic expansion is bounded and does not assert that a question has an answer.
       const q = vectors(await embedding.embed([input.text], 'query'), 1)[0]!;
-      const docs: number[][] = [];
-      for (let start = 0; start < candidates.length; start += 32) {
-        const texts = candidates.slice(start, start + 32).map((record) => {
-          if (record.content.length > 8192) reasons.add('embedding_content_limited');
-          return Array.from(record.content).slice(0, 8192).join('');
+      const texts = candidates.map((record) => {
+        if (record.content.length > 8192) reasons.add('embedding_content_limited');
+        return Array.from(record.content).slice(0, 8192).join('');
+      });
+      const keys = candidates.map((r, i) =>
+        sha256Hex(
+          canonicalJson([embedding.id, r.namespace, r.id, r.revision, sha256Hex(texts[i]!)])
+        )
+      );
+      const cached = index ? await index.get(keys) : keys.map(() => null);
+      if (cached.length !== keys.length)
+        throw new ValidationFailedError('Invalid embedding index result');
+      const docs: number[][] = cached.map((v) => (v === null ? [] : vectors([v], 1, q.length)[0]!));
+      const missing = docs.flatMap((v, i) => (v.length ? [] : [i]));
+      for (let start = 0; start < missing.length; start += 32) {
+        const batch = missing.slice(start, start + 32);
+        const fresh = vectors(
+          await embedding.embed(
+            batch.map((i) => texts[i]!),
+            'document'
+          ),
+          batch.length,
+          q.length
+        );
+        batch.forEach((i, j) => {
+          docs[i] = fresh[j]!;
         });
-        docs.push(...vectors(await embedding.embed(texts, 'document'), texts.length, q.length));
+        if (index) await index.put(batch.map((i) => ({ key: keys[i]!, vector: docs[i]! })));
       }
+      if (index && scanComplete && cursor === undefined) await index.retain(keys);
       const semantic = candidates
         .map((record, i) => ({ record, score: cosine(q, docs[i]!) }))
         .filter((r) => r.score > 0)
@@ -512,9 +546,25 @@ export async function context(
         .map((r) => r.record);
       mode = 'hybrid';
     }
+    if (index && embedding && candidates.length === 0 && scanComplete && cursor === undefined)
+      await index.retain([]);
   }
   const items: ContextItem[] = [];
-  for (const record of records) {
+  for (const prior of records) {
+    let record: MemoryRecord;
+    try {
+      record = await client.get(prior.id);
+    } catch (error) {
+      if (error instanceof NotFoundError) {
+        reasons.add('records_changed');
+        continue;
+      }
+      throw error;
+    }
+    if (!eligible(record) || record.revision !== prior.revision) {
+      reasons.add('records_changed');
+      continue;
+    }
     if (items.length >= limit) {
       reasons.add('item_limit');
       break;

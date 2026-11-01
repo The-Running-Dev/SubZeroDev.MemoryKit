@@ -182,6 +182,23 @@ describe('optional command providers', () => {
       /provider failed/
     );
   });
+  it('retries one timeout only and counts actual process attempts', async () => {
+    const flag = join(tempDir(), 'first-attempt');
+    const config = provider(
+      `import { existsSync, writeFileSync } from 'node:fs'; ${read} if(!existsSync(process.argv[2])) { writeFileSync(process.argv[2], '1'); process.exit(75); } console.log(JSON.stringify({selections:[]}));`,
+      [flag]
+    );
+    const input = { query: 'test', limit: 1, passages: [] };
+    const selector = new CommandRecallSelector('retry', config, false, false, 1);
+    assert.deepEqual(await selector.select(input), []);
+    assert.equal(selector.attempts, 2);
+    for (const code of ['console.log("invalid");', 'process.exit(1);', 'console.log("{}");']) {
+      const invalid = new CommandRecallSelector('invalid', provider(read + code), false, false, 1);
+      await assert.rejects(invalid.select(input));
+      assert.equal(invalid.attempts, 1);
+    }
+    assert.throws(() => new CommandRecallSelector('bad', config, false, false, 2));
+  });
   it('implements model-independent distillation and embedding protocols', async () => {
     const distiller = new CommandDistiller(
       provider(read + 'console.log(JSON.stringify({ observations: request.input.observations }));')

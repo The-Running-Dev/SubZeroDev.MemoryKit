@@ -13,7 +13,7 @@ Claude/Codex transcript hooks       Any application/model
               +----------------------------+
                                            |
                             portable application workflows
-                            capture / context / accept / import
+                            capture / context / review / import / reconcile
                                |                      |
                       authorized MemoryClient     optional ports
                                |             Distiller / EmbeddingProvider / RecallSelector
@@ -35,7 +35,9 @@ applications use the raw memory service without any capture/model dependency.
 Capture validates a full batch, derives stable operation identities, writes attributed
 candidates and reports per-item failures. Context selects exact project/shared namespaces,
 filters lifecycle and acceptance, and renders a UTF-8-bounded data envelope. Optional
-semantic expansion scans authorized candidates and holds vectors only in memory. Optional
+semantic expansion scans authorized candidates and holds vectors in memory unless an optional
+EmbeddingIndex is supplied. The SQLite cache is derived infrastructure, separate from storage
+plugins and retained history. Optional
 extractive task selection uses bounded authorized passages; provider abstention
 does not fall back to recent or lexical context. Selected revisions are checked again before output.
 Task discovery searches the full authorized lexical index using bounded task terms and optional
@@ -60,3 +62,6 @@ Optional provider-neutral selection and native Codex acceptance are recorded in
 [ADR-0004](decisions/0004-evidence-based-recall-selection.md).
 Storage composition, query discovery and upgrade behavior are recorded in
 [ADR-0005](decisions/0005-portable-storage-and-discovery.md).
+Portable archives/PostgreSQL are recorded in [ADR-0006](decisions/0006-verified-portable-memory.md).
+Managed installation, review and derived caches are recorded in
+[ADR-0007](decisions/0007-managed-memory-replacement.md).

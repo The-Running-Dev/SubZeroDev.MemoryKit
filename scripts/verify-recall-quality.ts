@@ -34,12 +34,14 @@ const config = JSON.parse(readFileSync(resolve(values.selector), 'utf8')) as {
   command: CommandProviderOptions;
   discovery?: boolean;
   verification?: boolean;
+  retries?: number;
 };
 const provider = new CommandRecallSelector(
   config.id,
   config.command,
   config.discovery,
-  config.verification
+  config.verification,
+  config.retries
 );
 const cases = values.cases ? new Set(values.cases.split(',')) : undefined;
 let generatedQueries: string[];
@@ -284,9 +286,12 @@ try {
     ],
     cost: {
       calls,
+      processAttempts: provider.attempts,
+      configuredRetries: config.retries ?? 0,
+      retries: provider.attempts - calls,
       inputBytes,
       outputBytes,
-      note: 'Payload bytes, not provider token accounting or billing',
+      note: 'Logical calls and process attempts including retries; input bytes count logical request data, output bytes count completed logical calls, not token accounting or billing',
     },
     latencyMs: percentiles(rows.flatMap((r) => (typeof r.ms === 'number' ? [r.ms] : []))),
     rows,

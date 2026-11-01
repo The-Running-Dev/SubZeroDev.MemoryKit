@@ -15,8 +15,15 @@ import {
 let work;
 try {
   const { values } = parseArgs({
-    options: { codex: { type: 'string', default: 'codex' }, model: { type: 'string' } },
+    options: {
+      codex: { type: 'string', default: 'codex' },
+      model: { type: 'string' },
+      'timeout-ms': { type: 'string', default: '90000' },
+    },
   });
+  const timeout = Number(values['timeout-ms']);
+  if (!Number.isSafeInteger(timeout) || timeout < 1000 || timeout > 110000)
+    throw new Error('Invalid timeout');
   let raw = '';
   for await (const chunk of process.stdin) {
     raw += chunk;
@@ -67,10 +74,14 @@ try {
       env: { ...process.env, CODEX_HOME: work },
       encoding: 'utf8',
       windowsHide: true,
-      timeout: 55000,
+      timeout,
       maxBuffer: 1024 * 1024,
     }
   );
+  if (result.error?.code === 'ETIMEDOUT') {
+    process.exitCode = 75;
+    throw new Error('Selector timed out');
+  }
   if (result.status !== 0) throw new Error('Selector failed');
   const events = result.stdout
     .trim()
@@ -86,7 +97,7 @@ try {
   process.stdout.write(JSON.stringify(JSON.parse(readFileSync(join(work, 'answer.json'), 'utf8'))));
 } catch {
   console.error('MemoryKit Codex recall failed; check executable, login, model and timeout.');
-  process.exitCode = 1;
+  process.exitCode ??= 1;
 } finally {
   if (work) rmSync(work, { recursive: true, force: true });
 }

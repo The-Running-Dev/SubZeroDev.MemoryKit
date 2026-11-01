@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "installedPackage": true,
+  "provider": "ollama-qwen2.5-1.5b",
+  "discovery": false,
+  "verification": true,
+  "checks": [
+    {
+      "name": "exact answer with candidate and foreign-project exclusion",
+      "ms": 43057.8212,
+      "passed": true
+    },
+    {
+      "name": "unsupported question abstention",
+      "ms": 22343.614899999993,
+      "passed": true
+    },
+    {
+      "name": "reviewed correction after reopening the store",
+      "ms": 25484.781300000002,
+      "passed": true
+    }
+  ],
+  "limitations": "Small synthetic local-model smoke test only; not the 58-case task quality gate or a broad answerability claim."
+}
