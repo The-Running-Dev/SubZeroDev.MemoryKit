@@ -57,7 +57,7 @@ export function commandJson(options: CommandProviderOptions, request: unknown): 
       } else resolve(result);
     };
     const timer = setTimeout(
-      () => finish(new StoreUnavailableError('Command provider timed out')),
+      () => finish(new StoreUnavailableError('Command provider timed out', { reason: 'timeout' })),
       timeoutMs
     );
     child.on('error', () => finish(new StoreUnavailableError('Command provider could not start')));
@@ -72,7 +72,12 @@ export function commandJson(options: CommandProviderOptions, request: unknown): 
     });
     child.on('close', (code) => {
       if (code !== 0) {
-        finish(new StoreUnavailableError('Command provider failed'));
+        finish(
+          new StoreUnavailableError(
+            'Command provider failed',
+            code === 75 ? { reason: 'timeout' } : {}
+          )
+        );
         return;
       }
       try {
@@ -111,6 +116,7 @@ export class CommandEmbeddings implements EmbeddingProvider {
   }
 }
 export class CommandRecallSelector implements RecallSelector {
+  attempts = 0;
   readonly id: string;
   readonly options: CommandProviderOptions;
   readonly expand?: (query: string) => Promise<string[]>;
@@ -122,13 +128,32 @@ export class CommandRecallSelector implements RecallSelector {
     id: string,
     options: CommandProviderOptions,
     discovery = false,
-    verification = false
+    verification = false,
+    retries = 0
   ) {
     this.id = id;
     this.options = options;
+    if (!Number.isInteger(retries) || retries < 0 || retries > 1)
+      throw new ValidationFailedError('Recall retries must be 0 or 1');
+    const invoke = async (request: unknown) => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          this.attempts++;
+          return await commandJson(this.options, request);
+        } catch (error) {
+          if (
+            attempt >= retries ||
+            !(error instanceof StoreUnavailableError) ||
+            error.details.reason !== 'timeout'
+          )
+            throw error;
+        }
+      }
+    };
+    this.invoke = invoke;
     if (verification)
       this.verify = async (input, selections) => {
-        const result = await commandJson(this.options, {
+        const result = await invoke({
           version: 1,
           task: 'verify',
           ...input,
@@ -140,14 +165,15 @@ export class CommandRecallSelector implements RecallSelector {
       };
     if (discovery)
       this.expand = async (query) => {
-        const result = await commandJson(this.options, { version: 1, task: 'expand', query });
+        const result = await invoke({ version: 1, task: 'expand', query });
         if (!isPlainObject(result) || !Array.isArray(result.queries))
           throw new ValidationFailedError('Recall discovery must return queries');
         return result.queries as string[];
       };
   }
+  private readonly invoke: (request: unknown) => Promise<unknown>;
   async select(input: RecallRequest): Promise<RecallSelection[]> {
-    const result = await commandJson(this.options, { version: 1, task: 'select', ...input });
+    const result = await this.invoke({ version: 1, task: 'select', ...input });
     if (!isPlainObject(result) || !Array.isArray(result.selections))
       throw new ValidationFailedError('Recall selector must return selections');
     return result.selections as RecallSelection[];

@@ -1,7 +1,21 @@
-import { closeSync, existsSync, mkdirSync, openSync, readSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readSync,
+  writeFileSync,
+  renameSync,
+  unlinkSync,
+} from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { homedir } from 'node:os';
+import { spawnSync } from 'node:child_process';
+import { installationPaths, installHooks, inspectInstallation } from '../hosts/installation.ts';
+import { reviewMemory, reviewQueue } from '../workflow/review.ts';
 import {
   parseHookEvent,
   projectNamespace,
@@ -9,7 +23,7 @@ import {
   readTranscript,
   type Host,
 } from '../hosts/index.ts';
-import { sha256Hex, toProblem, ValidationFailedError } from '../model/index.ts';
+import { canonicalJson, sha256Hex, toProblem, ValidationFailedError } from '../model/index.ts';
 import {
   CommandDistiller,
   CommandEmbeddings,
@@ -32,6 +46,7 @@ import {
 } from '../workflow/index.ts';
 import {
   importClaudeMem,
+  reconcileClaudeMem,
   planClaudeMemImport,
   type ClaudeMemImportOptions,
 } from '../workflow/import.ts';
@@ -41,10 +56,15 @@ export const WORKFLOW_COMMANDS = [
   'setup',
   'upgrade',
   'doctor',
+  'install',
+  'uninstall',
+  'review',
+  'index-clear',
   'capture',
   'context',
   'accept',
   'import-claude-mem',
+  'reconcile-claude-mem',
   'hook',
 ];
 const HELP = `MemoryKit portable workflows:
@@ -52,16 +72,28 @@ const HELP = `MemoryKit portable workflows:
         [--capture] [--include-candidates] [--startup-context] [--history git|none]
         [--storage sqlite|markdown | --storage-plugin <absolute-module> [--storage-options <json>]]
     Creates a new store if absent and writes a profile plus host configuration fragments.
-    Merge fragments into host settings to activate; existing host settings are untouched.
+    Use install to activate owned hooks; setup leaves existing host settings untouched.
   upgrade --profile <json> --output <new-dir>
     Regenerates the profile and host fragments using this installed CLI.
   doctor --profile <json>
     Opens the configured store and reports provider, history queue and workflow status.
+  install|uninstall --profile <json> --host claude-code|codex [--settings <json>] [--manifest <json>]
+    Installs or replaces owned hook groups; uninstall removes only owned groups.
+  doctor --profile <json> --host claude-code|codex [--settings <json>] [--probe]
+    Checks installed groups, last hook invocation receipt and optional execution probe.
+  review [accept|reject|correct|duplicate <id>] --profile <json> [--cursor <cursor>] [--limit <n>]
+    Queue includes content, provenance and duplicate suggestions. Actions need --expected-revision.
+    correct needs --text; duplicate needs --duplicate-of <accepted-id>.
+  index-clear --profile <json>
+    Clears this profile scope's optional derived vector index.
   capture --profile <json> --input <json|->
   context --profile <json> [--text <query>] [--text-output] [--include-candidates]
   accept <id> --profile <json> --expected-revision <n>
   import-claude-mem --profile <json> --input <json|-> --mapping <json>
         --source-id <stable-installation-id> [--project <source-project>]... [--dry-run]
+  reconcile-claude-mem --profile <json> --input <json|-> --mapping <json>
+        --source-id <stable-installation-id> [--project <source-project>]...
+    Audits selected source coverage without changing reviewed records.
   hook --profile <json> --host claude-code|codex  (host event JSON on stdin)
 
 Instead of --profile, capture/context/accept/import accept --store <dir> or --url <url>
@@ -88,12 +120,13 @@ interface Profile {
   maxBytes?: number;
   limit?: number;
   distiller?: CommandProviderOptions;
-  embedding?: { id: string; command: CommandProviderOptions };
+  embedding?: { id: string; command: CommandProviderOptions; index?: string };
   recall?: {
     id: string;
     command: CommandProviderOptions;
     discovery?: boolean;
     verification?: boolean;
+    retries?: number;
   };
 }
 function readBounded(fd: number, max: number): string {
@@ -179,13 +212,24 @@ function profile(value: unknown): Profile {
     if (provider === undefined) continue;
     fields(
       provider,
-      ['id', 'command', ...(provider === p.recall ? ['discovery', 'verification'] : [])],
+      [
+        'id',
+        'command',
+        ...(provider === p.recall ? ['discovery', 'verification', 'retries'] : ['index']),
+      ],
       ['id', 'command']
     );
     if (typeof provider.id !== 'string' || provider.id.trim() === '' || provider.id.length > 256)
       throw new ValidationFailedError('Provider needs an id');
     validateCommand(provider.command);
   }
+  if (
+    p.embedding?.index !== undefined &&
+    (typeof p.embedding.index !== 'string' || !isAbsolute(p.embedding.index))
+  )
+    throw new ValidationFailedError('Embedding index needs an absolute path');
+  if (p.recall?.retries !== undefined && ![0, 1].includes(p.recall.retries))
+    throw new ValidationFailedError('Recall retries must be 0 or 1');
   if (p.recall?.verification !== undefined && typeof p.recall.verification !== 'boolean')
     throw new ValidationFailedError('Invalid recall verification option');
   if (p.recall?.discovery !== undefined && typeof p.recall.discovery !== 'boolean')
@@ -218,38 +262,7 @@ async function setup(p: Profile, output: string): Promise<object> {
     new URL('./main' + (import.meta.url.endsWith('.ts') ? '.ts' : '.js'), import.meta.url)
   );
   const config = join(output, 'memorykit.profile.json');
-  const hook = (host: Host): object => {
-    const args = [cli, 'hook', '--profile', config, '--host', host];
-    const command =
-      host === 'claude-code'
-        ? { command: process.execPath, args }
-        : { command: 'node ' + args.map(quoted).join(' ') };
-    const group = (timeout: number) => ({
-      matcher: '',
-      hooks: [{ type: 'command', ...command, timeout }],
-    });
-    return {
-      hooks: {
-        ...(p.context === false
-          ? {}
-          : {
-              UserPromptSubmit: [
-                group(
-                  Math.ceil(
-                    ((p.recall?.command.timeoutMs ?? 30000) *
-                      (1 +
-                        Number(p.recall?.discovery === true) +
-                        Number(p.recall?.verification === true))) /
-                      1000
-                  ) + 10
-                ),
-              ],
-            }),
-        ...(p.context !== false && p.startupContext === true ? { SessionStart: [group(30)] } : {}),
-        ...(p.capture ? { Stop: [group(60)], PreCompact: [group(60)] } : {}),
-      },
-    };
-  };
+  const hook = (host: Host): object => hostHooks(p, config, host);
   const files = {
     'memorykit.profile.json': JSON.stringify(p, null, 2),
     'claude.settings.fragment.json': JSON.stringify(hook('claude-code'), null, 2),
@@ -274,12 +287,11 @@ async function setup(p: Profile, output: string): Promise<object> {
       null,
       2
     ),
-    'README.md': `# MemoryKit host setup\n\nProfile: ${config}\n\nMerge the Claude fragment's event groups into ~/.claude/settings.json and the Codex fragment's groups into ~/.codex/hooks.json. Preserve existing groups. In Codex, use /hooks to review and trust the new hooks. Remove these groups to uninstall. The MCP fragment uses the common JSON server format; adapt it to your host's server configuration.\n\nCapture is ${p.capture ? 'enabled in this profile' : 'off'}. Context ${p.includeCandidates ? 'includes visibly attributed, unverified candidates' : 'includes accepted records only'}. UserPromptSubmit queries with the submitted prompt and emits additionalContext only for matching memories. Recent context at SessionStart is ${p.startupContext ? 'enabled' : 'off; opt in with --startup-context'}. Set context:false in the profile to disable both recall hooks. Stop and PreCompact capture bounded user/assistant transcript text when enabled. Tools, system messages, sidechains, private-marked messages and injected MemoryKit context are excluded. No background observer runs.\n\nKeep this profile outside untrusted repositories: configured distiller/embedding/recall commands execute as you. Namespace derives from the current Git origin unless explicitly pinned. Shared scopes are read only by these workflows; capture writes only the current project namespace. Use the raw create/supersede API to deliberately curate shared knowledge.\n`,
+    'README.md': `# MemoryKit host setup\n\nProfile: ${config}\n\nRun memorykit install --profile "${config}" --host claude-code or codex to merge owned hook groups, preserving other settings. In Codex, review and trust hooks through /hooks. Regenerate owned hooks with install after package/profile changes. Use uninstall with the same profile and host to remove them. MCP fragments use the common JSON server format; adapt to your host. Capture is ${p.capture ? 'enabled' : 'off'}; candidates are ${p.includeCandidates ? 'included as unverified' : 'excluded'}. Keep configuration outside untrusted repositories.\n`,
   };
   for (const name of Object.keys(files))
     if (existsSync(join(output, name)))
       throw new ValidationFailedError('Setup output already exists; choose a new output directory');
-  // Preflight every output and generated command before creating the store.
   if (!storeExists(p.store!))
     await initStore({
       path: p.store!,
@@ -296,11 +308,47 @@ async function setup(p: Profile, output: string): Promise<object> {
   }
   mkdirSync(output, { recursive: true });
   for (const [name, content] of Object.entries(files))
-    writeFileSync(join(output, name), content + '\n', { flag: 'wx' });
+    writeFileSync(join(output, name), content + '\n', { flag: 'wx', mode: 0o600 });
   return {
     profile: config,
     files: Object.keys(files).map((name) => join(output, name)),
     installed: false,
+  };
+}
+function hostHooks(p: Profile, config: string, host: Host): { hooks: Record<string, unknown[]> } {
+  const cli = fileURLToPath(
+    new URL('./main' + (import.meta.url.endsWith('.ts') ? '.ts' : '.js'), import.meta.url)
+  );
+  const args = [cli, 'hook', '--profile', config, '--host', host];
+  const command =
+    host === 'claude-code'
+      ? { command: process.execPath, args }
+      : { command: 'node ' + args.map(quoted).join(' ') };
+  const group = (timeout: number) => ({
+    matcher: '',
+    hooks: [{ type: 'command', ...command, timeout }],
+  });
+  return {
+    hooks: {
+      ...(p.context === false
+        ? {}
+        : {
+            UserPromptSubmit: [
+              group(
+                Math.ceil(
+                  ((p.recall?.command.timeoutMs ?? 30000) *
+                    (1 +
+                      Number(p.recall?.discovery === true) +
+                      Number(p.recall?.verification === true)) *
+                    (1 + (p.recall?.retries ?? 0))) /
+                    1000
+                ) + 10
+              ),
+            ],
+          }),
+      ...(p.context !== false && p.startupContext === true ? { SessionStart: [group(30)] } : {}),
+      ...(p.capture ? { Stop: [group(60)], PreCompact: [group(60)] } : {}),
+    },
   };
 }
 
@@ -339,6 +387,11 @@ export async function runWorkflow(
         'dry-run': { type: 'boolean' },
         'text-output': { type: 'boolean' },
         json: { type: 'boolean' },
+        settings: { type: 'string' },
+        manifest: { type: 'string' },
+        probe: { type: 'boolean' },
+        cursor: { type: 'string' },
+        'duplicate-of': { type: 'string' },
         help: { type: 'boolean' },
       },
     });
@@ -346,7 +399,10 @@ export async function runWorkflow(
       io.stdout(HELP);
       return 0;
     }
-    if (positionals.length !== (command === 'accept' ? 1 : 0))
+    if (
+      positionals.length !==
+      (command === 'accept' ? 1 : command === 'review' ? (positionals.length ? 2 : 0) : 0)
+    )
       throw new ValidationFailedError('Unexpected positional arguments');
     const base =
       v.profile === undefined ? { version: 1 as const } : profile(jsonFile(v.profile, 65536));
@@ -380,9 +436,33 @@ export async function runWorkflow(
         ? {}
         : { includeCandidates: v['include-candidates'] }),
       ...(v['max-bytes'] === undefined ? {} : { maxBytes: Number(v['max-bytes']) }),
-      ...(v.limit === undefined ? {} : { limit: Number(v.limit) }),
+      ...(v.limit === undefined || command === 'review' ? {} : { limit: Number(v.limit) }),
     });
     const print = (value: unknown): void => io.stdout(JSON.stringify(value) + '\n');
+    const hostPaths = () => {
+      if (!v.profile || !['claude-code', 'codex'].includes(v.host ?? ''))
+        throw new ValidationFailedError(
+          'Host administration needs --profile and --host claude-code|codex'
+        );
+      return installationPaths(
+        v.profile,
+        v.host!,
+        v.settings ??
+          join(homedir(), v.host === 'codex' ? '.codex/hooks.json' : '.claude/settings.json'),
+        v.manifest
+      );
+    };
+    if (command === 'install' || command === 'uninstall') {
+      const paths = hostPaths();
+      print(
+        installHooks(
+          paths,
+          hostHooks(p, paths.profile, v.host as Host).hooks,
+          command === 'uninstall'
+        )
+      );
+      return 0;
+    }
     if (command === 'setup' || command === 'upgrade') {
       if (
         !p.store ||
@@ -408,6 +488,37 @@ export async function runWorkflow(
         throw new ValidationFailedError('Hooks require an explicit profile');
       if (v.host !== 'claude-code' && v.host !== 'codex')
         throw new ValidationFailedError('Unsupported hook host');
+      const probe = process.env.MEMORYKIT_HOOK_PROBE;
+      if (probe && /^[a-f0-9]{64}$/.test(probe)) {
+        print({ memorykitProbe: probe });
+        return 0;
+      }
+      // Local diagnostic receipt contains no prompts, content, namespaces or credentials.
+      // It records invocation, not host trust or successful retrieval.
+      const receiptPath = v.profile + '.' + v.host + '.receipt.json';
+      const receiptStaging = receiptPath + '.' + randomUUID() + '.tmp';
+      try {
+        writeFileSync(
+          receiptStaging,
+          JSON.stringify({
+            version: 1,
+            host: v.host,
+            event: event!.hook_event_name,
+            at: new Date().toISOString(),
+            cli: fileURLToPath(import.meta.url),
+          }) + '\n',
+          { mode: 0o600, flag: 'wx' }
+        );
+        renameSync(receiptStaging, receiptPath);
+      } catch {
+        /* Host operation remains nonblocking. */
+      } finally {
+        try {
+          unlinkSync(receiptStaging);
+        } catch {
+          /* Absent after successful replacement. */
+        }
+      }
       if (
         event!.hook_event_name === 'SessionStart' || event!.hook_event_name === 'UserPromptSubmit'
           ? p.context === false ||
@@ -423,7 +534,9 @@ export async function runWorkflow(
     }
     const namespace =
       p.namespace ??
-      (command === 'import-claude-mem' ? 'import' : projectNamespace(event?.cwd ?? process.cwd()));
+      (['import-claude-mem', 'reconcile-claude-mem'].includes(command ?? '')
+        ? 'import'
+        : projectNamespace(event?.cwd ?? process.cwd()));
     const contextInput: ContextInput = {
       namespace,
       sharedNamespaces: p.sharedNamespaces,
@@ -453,8 +566,52 @@ export async function runWorkflow(
         });
     try {
       if (command === 'doctor') {
+        let installation: object | undefined;
+        let ok = true;
+        if (v.host !== undefined) {
+          const paths = hostPaths();
+          const inspected = inspectInstallation(paths);
+          const current =
+            canonicalJson(inspected.groups) ===
+            canonicalJson(hostHooks(p, paths.profile, v.host as Host).hooks);
+          const receiptPath = paths.profile + '.' + paths.host + '.receipt.json';
+          let probe: boolean | null = null;
+          if (v.probe) {
+            if (!inspected.configured || !current)
+              throw new ValidationFailedError('Probe requires current, installed owned hooks');
+            const nonce = sha256Hex(String(Date.now()) + process.pid);
+            const first = Object.values(inspected.groups).flat()[0] as {
+              hooks: { command: string; args?: string[] }[];
+            };
+            const hook = first.hooks[0]!;
+            const executed = spawnSync(hook.command, hook.args ?? [], {
+              shell: hook.args === undefined,
+              windowsHide: true,
+              timeout: 10000,
+              encoding: 'utf8',
+              input: JSON.stringify({
+                hook_event_name: 'UserPromptSubmit',
+                cwd: process.cwd(),
+                session_id: 'memorykit-doctor',
+                prompt: 'diagnostic',
+              }),
+              env: { ...process.env, MEMORYKIT_HOOK_PROBE: nonce },
+            });
+            probe =
+              executed.status === 0 &&
+              executed.stdout.includes(JSON.stringify({ memorykitProbe: nonce }));
+          }
+          installation = {
+            configured: inspected.configured,
+            current,
+            executionProbe: probe,
+            lastInvocation: existsSync(receiptPath) ? jsonFile(receiptPath, 4096) : null,
+            trust: 'Review in host; a command probe does not establish host trust.',
+          };
+          ok = inspected.configured && current && probe !== false;
+        }
         print({
-          ok: true,
+          ok,
           status: await client.status(),
           profile: {
             local,
@@ -465,14 +622,82 @@ export async function runWorkflow(
             verification: p.recall?.verification === true,
           },
           runtime: { node: process.version, cli: fileURLToPath(import.meta.url) },
+          ...(installation ? { installation } : {}),
         });
-        return 0;
+        return ok ? 0 : 1;
       }
       const distiller = p.distiller === undefined ? undefined : new CommandDistiller(p.distiller);
       const embedding =
         p.embedding === undefined
           ? undefined
           : new CommandEmbeddings(p.embedding.id, p.embedding.command);
+      if (command === 'review') {
+        if (!positionals.length) {
+          const queue = await reviewQueue(client, {
+            namespace,
+            ...(v.cursor ? { cursor: v.cursor } : {}),
+            limit: integer(
+              v.limit === undefined ? undefined : Number(v.limit),
+              'limit',
+              20,
+              1,
+              100
+            ),
+          });
+          if (v.json) print(queue);
+          else {
+            for (const { memory, duplicateIds } of queue.items)
+              io.stdout(
+                `${memory.id} r${memory.revision} [${memory.metadata.status}] ${memory.metadata.sourceRole ?? 'unspecified'} / ${memory.metadata.statement ?? 'unspecified'}\n${memory.content}\nSources: ${memory.provenance.evidence.map((e) => e.ref).join(', ') || '(none)'}\nDuplicates: ${duplicateIds.join(', ') || '(none in bounded scan)'}\n\n`
+              );
+            io.stdout(
+              JSON.stringify({
+                nextCursor: queue.nextCursor,
+                duplicateScanLimited: queue.duplicateScanLimited,
+              }) + '\n'
+            );
+          }
+        } else
+          print(
+            await reviewMemory(client, {
+              namespace,
+              action: positionals[0] as 'accept' | 'reject' | 'correct' | 'duplicate',
+              id: positionals[1]!,
+              expectedRevision: Number(v['expected-revision']),
+              ...(v.text === undefined ? {} : { content: v.text }),
+              ...(v['duplicate-of'] === undefined ? {} : { duplicateOf: v['duplicate-of'] }),
+            })
+          );
+        return 0;
+      }
+      const openIndex = async () => {
+        if (!p.embedding?.index) throw new ValidationFailedError('Profile has no embedding index');
+        const { SqliteEmbeddingIndex } = await import('../index-sqlite/index.ts');
+        return new SqliteEmbeddingIndex(
+          p.embedding.index,
+          sha256Hex(
+            canonicalJson([
+              p.store ?? p.url,
+              p.storage ?? null,
+              token ? sha256Hex(token) : 'embedded',
+              namespace,
+              p.sharedNamespaces ?? [],
+              p.includeCandidates === true,
+              p.embedding.id,
+            ])
+          )
+        );
+      };
+      if (command === 'index-clear') {
+        const index = await openIndex();
+        try {
+          await index.retain([]);
+        } finally {
+          index.close();
+        }
+        print({ cleared: true });
+        return 0;
+      }
       if (
         command === 'context' ||
         (command === 'hook' &&
@@ -485,9 +710,17 @@ export async function runWorkflow(
                 p.recall.id,
                 p.recall.command,
                 p.recall.discovery,
-                p.recall.verification
+                p.recall.verification,
+                p.recall.retries
               );
-        const result = await context(client, contextInput, embedding, selector);
+        const index = p.embedding?.index ? await openIndex() : undefined;
+        const result = await (async () => {
+          try {
+            return await context(client, contextInput, embedding, selector, index);
+          } finally {
+            index?.close();
+          }
+        })();
         if (command === 'hook') {
           if (result.text)
             print({
@@ -547,7 +780,7 @@ export async function runWorkflow(
         print(await accept(client, record.id, revision));
         return 0;
       }
-      if (command === 'import-claude-mem') {
+      if (command === 'import-claude-mem' || command === 'reconcile-claude-mem') {
         if (!v.input || !v.mapping || !v['source-id'])
           throw new ValidationFailedError('Import needs --input, --mapping and --source-id');
         const options: ClaudeMemImportOptions = {
@@ -556,6 +789,11 @@ export async function runWorkflow(
           projects: v.project,
         };
         const data = jsonFile(v.input);
+        if (command === 'reconcile-claude-mem') {
+          const result = await reconcileClaudeMem(client, data, options);
+          print(result);
+          return result.ready ? 0 : 1;
+        }
         if (v['dry-run']) {
           const plan = planClaudeMemImport(data, options);
           print({

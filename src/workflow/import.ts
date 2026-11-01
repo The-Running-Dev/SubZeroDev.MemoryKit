@@ -3,6 +3,7 @@ import {
   isPlainObject,
   parseNamespace,
   ValidationFailedError,
+  type MemoryRecord,
 } from '../model/index.ts';
 import type { MemoryClient } from '../service/index.ts';
 import { capture, nonempty, planCapture, type CaptureInput, type CaptureResult } from './index.ts';
@@ -12,6 +13,76 @@ export interface ClaudeMemImportOptions {
   sourceId: string;
   projectNamespaces: Record<string, string>;
   projects?: string[];
+}
+
+// Read-only source coverage audit. Never overwrite reviewed records to match a later export.
+export async function reconcileClaudeMem(
+  client: MemoryClient,
+  data: unknown,
+  options: ClaudeMemImportOptions
+) {
+  const plan = planClaudeMemImport(data, options);
+  const expected = plan.captures.flatMap(planCapture);
+  const found: MemoryRecord[] = [];
+  let complete = true;
+  for (const namespace of new Set(expected.map((r) => r.namespace))) {
+    let cursor: string | undefined;
+    let scanned = 0;
+    do {
+      const page = await client.search({
+        namespaces: [namespace],
+        states: ['active', 'superseded', 'archived', 'tombstoned'],
+        metadata: { sourceHost: 'claude-mem', sourceSession: options.sourceId },
+        limit: 100,
+        ...(cursor ? { cursor } : {}),
+      });
+      found.push(...page.items);
+      scanned += page.items.length;
+      complete &&= page.completeness === 'complete';
+      cursor = page.nextCursor ?? undefined;
+      if (cursor && scanned >= 10000) {
+        complete = false;
+        break;
+      }
+    } while (cursor);
+  }
+  const rows = expected.map((row) => {
+    const matches = found.filter((r) => r.namespace === row.namespace && r.key === row.key);
+    const record = matches[0];
+    const status = !record
+      ? complete
+        ? 'missing'
+        : 'unknown'
+      : matches.length !== 1
+        ? 'ambiguous'
+        : record.content !== row.content ||
+            canonicalJson(record.provenance.evidence) !== canonicalJson(row.provenance!.evidence)
+          ? 'changed'
+          : 'matched';
+    return {
+      source: row.provenance!.evidence[0]!.ref,
+      namespace: row.namespace,
+      status,
+      ...(record
+        ? {
+            id: record.id,
+            revision: record.revision,
+            state: record.state,
+            reviewStatus: record.metadata.status,
+            supersededBy: record.supersededBy,
+          }
+        : {}),
+    };
+  });
+  return {
+    complete,
+    counts: plan.counts,
+    rows,
+    extraRecords: found.filter(
+      (r) => !expected.some((e) => e.namespace === r.namespace && e.key === r.key)
+    ).length,
+    ready: complete && rows.every((r) => r.status === 'matched'),
+  };
 }
 export interface ClaudeMemImportPlan {
   format: 'claude-mem-json';

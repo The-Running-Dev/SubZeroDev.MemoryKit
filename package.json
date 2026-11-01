@@ -19,6 +19,10 @@
       "types": "./dist/providers-command/index.d.ts",
       "default": "./dist/providers-command/index.js"
     },
+    "./index-sqlite": {
+      "types": "./dist/index-sqlite/index.d.ts",
+      "default": "./dist/index-sqlite/index.js"
+    },
     "./storage-postgres": {
       "types": "./dist/storage-postgres/index.d.ts",
       "default": "./dist/storage-postgres/index.js"

@@ -10,7 +10,16 @@ import {
 } from './recall-prompt.mjs';
 
 try {
-  const { values } = parseArgs({ options: { model: { type: 'string' }, url: { type: 'string' } } });
+  const { values } = parseArgs({
+    options: {
+      model: { type: 'string' },
+      url: { type: 'string' },
+      'timeout-ms': { type: 'string', default: '25000' },
+    },
+  });
+  const timeout = Number(values['timeout-ms']);
+  if (!Number.isInteger(timeout) || timeout < 1000 || timeout > 110000)
+    throw new Error('Timeout must be 1000..110000 milliseconds');
   if (!values.model) throw new Error('Supply --model with an installed model name');
   const base = new URL(values.url ?? 'http://127.0.0.1:11434');
   if (!['http:', 'https:'].includes(base.protocol)) throw new Error('Unsupported provider URL');
@@ -26,7 +35,7 @@ try {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(25000),
+      signal: AbortSignal.timeout(timeout),
     });
     if (!response.ok) throw new Error('Ollama request failed');
     const chunks = [];
@@ -100,8 +109,8 @@ try {
     });
     console.log(JSON.stringify({ observations }));
   } else throw new Error('Unsupported task');
-} catch {
+} catch (error) {
   // Provider prompts, model output and server diagnostics may contain private content.
   console.error('MemoryKit Ollama provider failed; check model, endpoint and protocol.');
-  process.exitCode = 1;
+  process.exitCode = error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 75 : 1;
 }

@@ -29,6 +29,7 @@ const { values } = parseArgs({
     selector: { type: 'string' },
     report: { type: 'string' },
     storage: { type: 'string', default: 'sqlite' },
+    peer: { type: 'string' },
   },
 });
 assert.ok(values.cli, 'Supply --cli /absolute/path/to/installed/dist/cli/main.js');
@@ -133,6 +134,7 @@ try {
     )
   );
   const generated = settings.hooks.UserPromptSubmit[0].hooks[0];
+  const originalSettings = structuredClone(settings);
   const originalGenerated = structuredClone(generated);
   const log = join(work, 'hook.json');
   const wrapper = join(work, 'observe-hook.cjs');
@@ -192,6 +194,21 @@ process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');process.ex
     );
   }
   const settingsPath = isCodex ? join(codexHome, 'hooks.json') : join(work, 'settings.json');
+  const managedProfile = join(config, 'memorykit.profile.json');
+  const managedFlags = [
+    '--profile',
+    managedProfile,
+    '--host',
+    values.host!,
+    '--settings',
+    settingsPath,
+  ];
+  run(process.execPath, [cli, 'install', ...managedFlags]);
+  const diagnostic = JSON.parse(
+    run(process.execPath, [cli, 'doctor', ...managedFlags, '--probe'], alpha)
+  );
+  assert.equal(diagnostic.installation.executionProbe, true);
+  checks.push({ name: 'managed installation command probe', passed: true, contextBytes: 0 });
   writeFileSync(settingsPath, JSON.stringify(settings));
   let persistent = false;
   const check = (
@@ -413,6 +430,7 @@ process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');process.ex
     process.execPath,
     [
       cli,
+      'review',
       'accept',
       captured.id,
       '--profile',
@@ -424,21 +442,22 @@ process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');process.ex
   );
   check('accepted capture after restart', capturedQuestion, alpha, capturedCode, []);
   const replacementCode = 'C-' + randomUUID();
-  client = await connect();
-  try {
-    const current = await client.get(captured.id);
-    await client.supersede({
-      id: current.id,
-      expectedRevision: current.revision,
-      replacement: {
-        kind: 'note',
-        content: `Cobalt emergency passcode is ${replacementCode}.`,
-        metadata: { status: 'accepted' },
-      },
-    });
-  } finally {
-    await client.close();
-  }
+  run(
+    process.execPath,
+    [
+      cli,
+      'review',
+      'correct',
+      captured.id,
+      '--profile',
+      managedProfile,
+      '--expected-revision',
+      String(captured.revision + 1),
+      '--text',
+      `Cobalt emergency passcode is ${replacementCode}.`,
+    ],
+    alpha
+  );
   check('captured correction after restart', capturedQuestion, alpha, replacementCode, [
     capturedCode,
   ]);
@@ -484,6 +503,94 @@ process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');process.ex
   process.stderr.write('PASS native compaction capture\n');
   check('recall after native compaction', capturedQuestion, alpha, replacementCode, [capturedCode]);
 
+  if (values.peer) {
+    const peerHost = isCodex ? 'claude-code' : 'codex';
+    const peerHome = join(work, 'peer-home');
+    mkdirSync(peerHome);
+    const peerSettings = join(peerHome, peerHost === 'codex' ? 'hooks.json' : 'settings.json');
+    run(process.execPath, [
+      cli,
+      'install',
+      '--profile',
+      managedProfile,
+      '--host',
+      peerHost,
+      '--settings',
+      peerSettings,
+    ]);
+    if (peerHost === 'codex') {
+      copyFileSync(
+        join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'auth.json'),
+        join(peerHome, 'auth.json')
+      );
+      writeFileSync(join(peerHome, 'instructions.txt'), instructions);
+      writeFileSync(
+        join(peerHome, 'config.toml'),
+        `approval_policy = "never"\nsandbox_mode = "read-only"\nweb_search = "disabled"\nmodel_reasoning_effort = "low"\nmodel_instructions_file = ${JSON.stringify(join(peerHome, 'instructions.txt').replaceAll('\\', '/'))}\n[features]\nshell_tool = false\napply_patch_freeform = false\n`
+      );
+    }
+    const previousHome = env.CODEX_HOME;
+    if (peerHost === 'codex') env.CODEX_HOME = peerHome;
+    try {
+      const peerOutput = run(
+        values.peer,
+        peerHost === 'codex'
+          ? [
+              'exec',
+              '--ephemeral',
+              '--ignore-rules',
+              '--dangerously-bypass-hook-trust',
+              '--json',
+              '--output-last-message',
+              join(peerHome, 'answer.txt'),
+              capturedQuestion,
+            ]
+          : [
+              '-p',
+              capturedQuestion,
+              '--output-format',
+              'json',
+              '--setting-sources',
+              '',
+              '--settings',
+              peerSettings,
+              '--strict-mcp-config',
+              '--mcp-config',
+              '{"mcpServers":{}}',
+              '--tools',
+              '',
+              '--no-session-persistence',
+              '--append-system-prompt',
+              instructions,
+            ],
+        alpha
+      );
+      const answer =
+        peerHost === 'codex'
+          ? readFileSync(join(peerHome, 'answer.txt'), 'utf8')
+          : JSON.parse(peerOutput).result;
+      assert.ok(
+        answer.includes(replacementCode),
+        'Peer host must recall the reviewed correction from the same store'
+      );
+      assert.ok(!answer.includes(capturedCode), 'Peer must exclude the superseded source');
+      checks.push({ name: 'cross-host corrected capture recall', passed: true, contextBytes: 0 });
+    } finally {
+      if (previousHome === undefined) delete env.CODEX_HOME;
+      else env.CODEX_HOME = previousHome;
+    }
+    run(process.execPath, [
+      cli,
+      'uninstall',
+      '--profile',
+      managedProfile,
+      '--host',
+      peerHost,
+      '--settings',
+      peerSettings,
+    ]);
+  }
+
   // Small, descriptive fixture measurement, not a replacement for S18/S21's quality gates.
   client = await connect();
   const measurements: { category: string; expected: number; returned: number; relevant: number }[] =
@@ -512,7 +619,8 @@ process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');process.ex
               profile.recall.id,
               profile.recall.command,
               profile.recall.discovery,
-              profile.recall.verification
+              profile.recall.verification,
+              profile.recall.retries
             )
           : undefined
       );
@@ -526,6 +634,13 @@ process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');process.ex
   } finally {
     await client.close();
   }
+  // Remove instrumentation before exercising ownership-aware removal.
+  writeFileSync(settingsPath, JSON.stringify(originalSettings));
+  const receipt = JSON.parse(run(process.execPath, [cli, 'doctor', ...managedFlags], alpha));
+  assert.ok(receipt.installation.lastInvocation, 'Native host must leave an invocation receipt');
+  run(process.execPath, [cli, 'uninstall', ...managedFlags]);
+  assert.deepEqual(JSON.parse(readFileSync(settingsPath, 'utf8')).hooks, {});
+  checks.push({ name: 'native receipt and managed uninstall', passed: true, contextBytes: 0 });
   const report = {
     host: values.host,
     version,

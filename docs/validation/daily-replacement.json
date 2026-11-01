@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "installedPackage": true,
+  "fixture": "claude-mem-upstream-export.json",
+  "upstreamCommit": "b80b29bc49d08a71312f44b8feacb2e7585edff4",
+  "checks": [
+    "pinned upstream export: plan, import and exact source coverage",
+    "attributed review, reject, atomic correction and current-only recall",
+    "changed-source reconciliation is read-only and preserves the correction",
+    "SQLite to Markdown: identity, review, source coverage and retained Git revisions",
+    "rollback into a fresh SQLite store preserves the reviewed correction and Git history"
+  ],
+  "limitations": "Synthetic upstream serializer fixture only. Source coverage is not acceptance or retrieval quality. No live claude-mem data/settings changed; rollback restores MemoryKit, not the upstream database. Credentials and operation replay are excluded from archives."
+}

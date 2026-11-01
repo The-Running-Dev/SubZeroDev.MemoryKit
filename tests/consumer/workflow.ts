@@ -6,12 +6,15 @@ import {
   accept,
   capture,
   context,
+  reviewQueue,
+  reviewMemory,
   initStore,
   openStore,
   type CaptureInput,
   type RecallSelector,
 } from 'subzerodev-memorykit';
 import { CommandEmbeddings, CommandRecallSelector } from 'subzerodev-memorykit/providers-command';
+import { SqliteEmbeddingIndex } from 'subzerodev-memorykit/index-sqlite';
 
 const path = mkdtempSync(join(tmpdir(), 'memorykit-workflow-consumer-'));
 try {
@@ -27,6 +30,10 @@ try {
     const result = await capture(client, input);
     assert.equal((await context(client, { namespace: input.namespace })).text, '');
     const record = result.items[0]!.outcome.memory;
+    assert.equal(
+      (await reviewQueue(client, { namespace: input.namespace })).items[0]!.memory.id,
+      record.id
+    );
     await accept(client, record.id, record.revision);
     assert.match((await context(client, { namespace: input.namespace })).text, /SQLite WAL/);
     assert.equal(typeof CommandEmbeddings, 'function');
@@ -45,6 +52,30 @@ try {
     );
     assert.equal(selected.retrieval.mode, 'selected');
     assert.match(selected.text, /SQLite WAL/);
+    const index = new SqliteEmbeddingIndex(join(path, 'derived.sqlite'), 'a'.repeat(64));
+    try {
+      await context(
+        client,
+        { namespace: input.namespace, text: 'database' },
+        {
+          id: 'consumer-vector',
+          async embed(texts) {
+            return texts.map(() => [1, 0]);
+          },
+        },
+        undefined,
+        index
+      );
+    } finally {
+      index.close();
+    }
+    await reviewMemory(client, {
+      namespace: input.namespace,
+      id: record.id,
+      expectedRevision: 2,
+      action: 'reject',
+    });
+    assert.equal((await context(client, { namespace: input.namespace })).items.length, 0);
   } finally {
     await client.close();
   }

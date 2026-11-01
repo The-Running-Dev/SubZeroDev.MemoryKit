@@ -18,11 +18,41 @@ Keep configuration outside untrusted repositories. Setup initializes a missing s
 writes a profile, Claude/Codex hook fragments, common JSON MCP fragment and instructions.
 It refuses to overwrite generated files and does not change existing host settings.
 
-Merge Claude event groups into `~/.claude/settings.json`, Codex groups into `~/.codex/hooks.json`,
-preserving existing groups. In Codex, review and trust hooks through `/hooks`. Adapt the
-MCP fragment to your host's server configuration. Remove the added groups/server to
-uninstall. Regenerate fragments after moving the installed package. Claude uses executable
-plus arguments; Codex uses a quoted command string.
+Activate each host explicitly:
+
+```bash
+memorykit install --profile /absolute/path/config/memorykit.profile.json --host claude-code
+memorykit install --profile /absolute/path/config/memorykit.profile.json --host codex
+memorykit doctor --profile /absolute/path/config/memorykit.profile.json --host codex --probe
+```
+
+Install merges owned groups into `~/.claude/settings.json` or `~/.codex/hooks.json`, preserving
+other settings. A manifest next to the profile records exact group ownership. Repeat install
+after changing a profile or upgrading the package. Edited/missing owned groups and matching
+unowned groups require manual reconciliation; install never guesses ownership by command name.
+Remove old manually merged MemoryKit fragments before adopting managed installation.
+`--settings /absolute/settings.json` selects an isolated/custom host configuration; repeat the
+same override for doctor and uninstall. `--manifest` optionally relocates the ownership record.
+
+In Codex, review and trust hooks through `/hooks` after installation or changes. Doctor's
+execution probe runs the generated command in diagnostic mode without capture or model calls.
+It verifies execution, not host trust. `lastInvocation` records the last hook entry, not retrieval
+success; receipts contain event/time/runtime paths, no prompt or memory content. Claude uses an
+executable plus arguments; Codex uses a quoted command string and requires `node` on its PATH.
+Adapt the MCP fragment to your host's server configuration separately.
+
+```bash
+memorykit uninstall --profile /absolute/path/config/memorykit.profile.json --host codex
+```
+
+Uninstall removes only exact owned groups, retaining memories and other settings. It does not
+remove MCP entries. Keep the profile/manifest until removal completes. Moving to a new profile
+path requires uninstalling the old profile first. `upgrade --profile OLD --output NEW` generates
+new configuration for review; install it after removing the old groups. Backups are retained
+beside changed settings/manifest files for recovery. Each file replacement is atomic; settings
+and manifest together are not a crash-atomic transaction. Serialize administrators. If interrupted,
+inspect both files and retained backups/lock before retrying; do not restore an entire old settings
+file over newer unrelated changes.
 
 Capture is off unless `--capture` is present. Context includes accepted records only unless
 `--include-candidates` is present. Both flags give automatic, visibly unverified observations
@@ -91,8 +121,9 @@ memorykit context --profile /absolute/path/config/memorykit.profile.json --names
 
 `--input -` reads stdin. `context --text-output` emits just the context envelope. No query
 selects recent eligible records; a query uses lexical retrieval and optional semantic expansion.
-SDK exports: `capture(client,input,distiller?)`, `context(client,input,embedding?,selector?)`,
-`accept(client,id,expectedRevision)`, `planClaudeMemImport` and `importClaudeMem`.
+SDK exports: `capture(client,input,distiller?)`, `context(client,input,embedding?,selector?,index?)`,
+`accept(client,id,expectedRevision)`, `reviewQueue`, `reviewMemory`, `planClaudeMemImport`,
+`importClaudeMem` and `reconcileClaudeMem`.
 Use `connect(url,{token})` for a remote authorized client. HTTP exposes `POST /v1/capture`
 and `POST /v1/context`; MCP exposes `memory_capture` and `memory_context`. Server requests
 cannot select executables. Custom providers over a remote store run through SDK/CLI orchestration.
@@ -107,6 +138,30 @@ with pending history. Inspect individual write history status.
 
 ## Capture, review and correction
 
+```bash
+memorykit review --profile /absolute/config/memorykit.profile.json --namespace project/acme/app
+memorykit review --profile /absolute/config/memorykit.profile.json --namespace project/acme/app --json --limit 20
+memorykit review accept RECORD_ID --profile /absolute/config/memorykit.profile.json --namespace project/acme/app --expected-revision 1
+memorykit review reject RECORD_ID --profile /absolute/config/memorykit.profile.json --namespace project/acme/app --expected-revision 1
+memorykit review correct RECORD_ID --profile /absolute/config/memorykit.profile.json --namespace project/acme/app --expected-revision 2 --text "Reviewed correction"
+memorykit review duplicate RECORD_ID --profile /absolute/config/memorykit.profile.json --namespace project/acme/app --expected-revision 1 --duplicate-of ACCEPTED_ID
+```
+
+The queue shows candidate text, source role, generated/curated status, evidence references,
+current revisions and exact normalized-text duplicate suggestions in one namespace. Follow
+`nextCursor` with `--cursor`; duplicate comparisons cover at most 100 current records and report
+when limited. Suggestions never merge automatically. Duplicate resolution rejects the selected
+candidate only after checking an active accepted identical-text target in the same namespace.
+It does not delete either source or merge semantically similar claims.
+
+All actions require the revision displayed during review. Refresh after a conflict. Correction
+atomically supersedes the original, creates an accepted replacement, retains provenance/source
+role and marks the new statement as reviewer-curated (`correctedFrom`, `correctionSource`).
+Acceptance changes workflow eligibility; it does not authenticate or independently verify a claim.
+The SDK exposes the same queue/actions through any authorized MemoryClient, including remote
+connections. Raw HTTP/MCP lifecycle operations remain available; there are no separate remote
+review endpoints. Review does not enable automatic capture or candidate injection.
+
 UserPromptSubmit injects matching context through `additionalContext`. Empty, whitespace-only
 and punctuation-only prompts inject nothing; no match also produces no stdout. It never falls
 back to recent memories. Prompt whitespace/control characters are normalized, then a prefix
@@ -116,9 +171,9 @@ paraphrases and verbose prompts can miss relevant records. Configure the optiona
 selector below to evaluate task relevance without requiring overlapping terms. Optional
 embedding behavior remains experimental, including its answerability limitations.
 
-To upgrade fragments generated before task-aware recall, run setup into a new output directory
-using the existing store, preserve profile provider/shared-scope options, then replace the old
-MemoryKit hook groups with the new ones. Old SessionStart hooks are silent unless
+To upgrade fragments generated before task-aware recall, regenerate configuration with the
+existing store and provider/shared-scope options, then use managed installation above.
+Old SessionStart hooks are silent unless
 `startupContext` is explicitly enabled. Other hosts can use `memory_context` or CLI
 `context --text` with a concise task query; installing a model alone does not register native hooks.
 
@@ -152,6 +207,26 @@ transactional snapshot across concurrent writers. The envelope marks data as unt
 escapes stored delimiters; consumers must still treat it as evidence rather than instructions.
 
 ## Import claude-mem
+
+After importing, audit the same explicitly selected export and mapping without changing records:
+
+```bash
+memorykit reconcile-claude-mem --profile /absolute/config/memorykit.profile.json --input export.json --mapping mapping.json --source-id my-installation
+```
+
+The report identifies matched, missing, changed or ambiguous selected source rows, retaining
+their current review/lifecycle state. Truncated scans report unknown coverage instead of declaring
+success. `ready` means complete coverage of the selected input, including retained superseded
+sources; it does not mean every record is accepted, all upstream data was exported, or retrieval
+quality is sufficient for cutover. `extraRecords` can include curated replacements carrying source
+metadata. Reconciliation never overwrites corrections or imports changes automatically.
+
+For cutover, retain the original export and claude-mem configuration/database privately, review
+candidates, test your own queries and confirm source coverage. Disable claude-mem hooks only
+when ready to switch; MemoryKit does not disable another tool. For rollback, uninstall MemoryKit's
+owned hooks and restore your saved upstream configuration yourself. Portable MemoryKit archives
+can also restore reviewed records/history into a fresh supported backend; they are not upstream
+database backups. Never overwrite a running store during rollback.
 
 Use JSON from [claude-mem's export script](https://github.com/thedotmack/claude-mem/blob/main/scripts/export-memories.ts).
 Observations, summaries and prompts are imported with original row fields; sessions supply
@@ -228,15 +303,18 @@ Discovery makes an additional query-expansion call. Optional `verification:true`
 separate audit call over proposed passages only, allowing abstention or exact-quote repair.
 It cannot add records, change scope or resurrect an obsolete revision. Injection contains only
 the verified contiguous quote; irrelevant text elsewhere in a record is omitted. Verification
-is opt-in and adds latency and provider cost. Regenerate fragments with `upgrade` after
-changing recall configuration: the prompt hook budget is one command timeout plus another
-for each enabled discovery/verification pass, plus ten seconds. Slower calls fail without
-injecting context.
+is opt-in and adds latency and provider cost. Run `install` again after changing recall
+configuration to update owned hooks: the prompt hook budget covers every enabled
+discovery/selection/verification stage and timeout retry, plus ten seconds. Slower calls fail
+without injecting context. The measured two-call experiment without verification failed one
+abstention case; keep verification enabled for the tested daily configuration.
 
 For local selection use the same `recall` entry with `examples/ollama-provider.mjs --model
 YOUR_INSTALLED_CHAT_MODEL` instead, or supply any trusted executable implementing the protocol.
 The Ollama adapter supports selection as well as distillation/embedding; model quality is the
-operator's choice. No particular local model has passed a native quality evaluation here.
+operator's choice. The actual Qwen2.5 7B smoke test passed three small installed-SDK checks;
+no local model has passed the full task gate here. See the
+[daily results and retained failures](validation/daily-replacement.md#actual-independent-local-model).
 
 Selection starts with at most 200 recent records by default and searches the full scoped
 lexical index with up to sixteen task terms. `discovery:true` additionally sends the query
@@ -254,9 +332,10 @@ the exact fixture results and their limits.
 
 An independent second selector uses an existing Codex login: configure the same command
 shape with `examples/codex-recall.mjs --codex /absolute/native/codex-executable` and
-`timeoutMs:65000`. It copies only existing authentication into an isolated temporary home,
+`timeoutMs:110000`. It copies only existing authentication into an isolated temporary home,
 disables tools, rules and web access, and uses structured output. Its internal timeout is
-55 seconds per call. On Windows use the native `codex.exe`, rather than npm's `.cmd` shim.
+90 seconds per call, configurable with `--timeout-ms` (1000..110000). Set the outer command
+deadline above the adapter deadline. On Windows use the native `codex.exe`, rather than npm's `.cmd` shim.
 Optional `--model` chooses an explicitly available model. It does not install models or
 change global configuration. Query expansion uses `{version:1,task:'expand',query}` and
 returns `{queries:[...]}`; selection retains the existing `select` protocol. Expansion is
@@ -273,17 +352,46 @@ Storage configuration and repeatable installation are described in [storage plug
 
 ### Distillation and embedding
 
+An optional durable embedding cache uses the public `EmbeddingIndex` port. Add an absolute
+`"index": "/private/path/vectors.sqlite"` inside the profile's `embedding` object. The bundled
+implementation is `SqliteEmbeddingIndex` from `subzerodev-memorykit/index-sqlite`; SDK callers
+pass it as the fifth `context` argument. SDK callers must choose a bucket identity scoped to
+their store, principal, exact namespaces and model/version. CLI derives this bucket from the
+store/service, credential hash, scopes, candidate eligibility and provider ID. Change the provider
+ID when changing model/version. Do not share a bucket across authorization contexts.
+
+Only document vectors and opaque hashes persist. Keys bind model ID, namespace, record ID,
+revision and clipped content hash; every emitted record is read and revision-checked again.
+Query vectors are recomputed. Stale/removed entries are pruned after the next complete candidate
+scan; bounded/partial scans preserve unseen entries. `memorykit index-clear --profile PROFILE`
+clears the current bucket explicitly. Other scopes/models/principals have separate buckets;
+administrators can remove an unused cache file while closed. Vectors can reveal sensitive
+information: protect the file and include it in deletion procedures. Source purge prevents stale
+injection immediately, but is not immediate physical erasure of cached vectors or SQLite/WAL
+pages/backups. This caches the bounded embedding candidate scan; it is not a global vector
+search engine and does not improve selector-mode discovery. No index is enabled by default.
+
 Distillers should return stable IDs/content for identical inputs. Changed output conflicts
 instead of replacing prior memory. Host distillation hashes the selected transcript snapshot
 as event identity; later snapshots can add repeated information. This is not semantic
 deduplication or incremental extraction.
 
 Document embeddings are batched by 32 and clipped to 8192 code points with visible omission
-reporting. Vectors are ephemeral; purge leaves no persistent vector copy. Providers receive
+reporting. Vectors are ephemeral unless an index is explicitly configured below. Providers receive
 selected authorized content, so choose endpoints consistent with your privacy requirements.
 Each command defaults to 30 seconds (maximum 120), input 8 MiB, output 4 MiB (maximum 16).
 Multiple batches have separate timeouts. Failures are explicit; provider diagnostics are
 suppressed because prompts/output can be private.
+
+Recall profiles optionally set `"retries": 1` (default 0). Only an outer command deadline or
+reserved adapter timeout exit code 75 triggers one retry. Invalid output, schema errors and
+other process failures are never retried, and there is no retrieval fallback. Codex and Ollama
+examples map their internal deadlines to 75. Generated hook budgets include the configured
+discovery/select/verification stages and retry allowance; worst-case waiting can be several
+minutes. Regenerate installed hooks after changing these values. Quality reports distinguish
+logical calls from process attempts/retries; payload bytes are not token or billing accounting.
+`verification:false` skips the optional audit call; validate that tradeoff with the full quality
+gate before choosing it for daily use.
 
 The packed `examples/ollama-provider.mjs` works with an already-running Ollama and explicitly
 chosen installed models; it downloads nothing. Add either/both optional profile entries:
@@ -308,20 +416,27 @@ chosen installed models; it downloads nothing. Add either/both optional profile 
 }
 ```
 
-The example defaults to loopback; `--url` explicitly chooses another endpoint. It uses
+The example defaults to loopback; `--url` explicitly chooses another endpoint. Requests default
+to 25 seconds; `--timeout-ms` selects 1000..110000 milliseconds for slower local hardware.
+Keep the outer command deadline higher. It uses
 documented Ollama [chat](https://docs.ollama.com/api/chat) and
-[embedding](https://docs.ollama.com/api/embed) APIs, preserves original message roles and
-fails instead of silently truncating model inputs. Other runtimes implement the same protocol.
+[embedding](https://docs.ollama.com/api/embed) APIs and preserves original message roles.
+Embedding requests disable input truncation. Chat context limits still depend on the chosen
+model/server configuration; size that context for the bounded recall request. Other runtimes
+implement the same protocol.
 
 Semantic expansion is experimental and opt-in. It combines lexical and positive-cosine
 semantic ranks with reciprocal-rank fusion (k=60); it does not guarantee answerability.
 S18/S21 quality/cost gates remain failed. Synthetic tests prove integration/isolation, not
-real-world relevance. Lexical retrieval remains the default. A recommended model, measured
-answerability, persistent vector indexing and further automatic host adapters remain follow-up work.
+real-world relevance. Lexical retrieval remains the default. A recommended model, broad measured
+answerability and further automatic host adapters remain follow-up work.
+
 ### Reproducing acceptance and quality checks
 
 See [verified portability results](validation/verified-portability.md) for native lifecycle,
 audited task recall, cross-backend migration and PostgreSQL evidence.
+See [daily replacement results](validation/daily-replacement.md) for managed hooks, review,
+source reconciliation, the persistent cache and actual local-model limitations.
 
 `node scripts/verify-recall-quality.ts --selector /absolute/selector.json --tasks --assert
 --storage sqlite --report /absolute/report.json` runs the full corpus, heldout and scale cases.
@@ -335,10 +450,21 @@ These workflow checks do not supersede the separate historical S18/S21 raw retri
 `node scripts/verify-native-recall.ts --cli /installed/dist/cli/main.js --host codex
 --codex /absolute/codex.exe --selector /absolute/selector.json --storage sqlite
 --report /absolute/native.json` exercises installed, regenerated native hooks. For Claude use
-`--host claude-code --claude /absolute/claude`. Runs use synthetic projects and existing host
+`--host claude-code --claude /absolute/claude`. Add `--peer /absolute/OTHER_HOST_EXECUTABLE`
+to require the other native host to recall the reviewed correction from the same store.
+Runs use synthetic projects and existing host
 logins, making real model calls. The lifecycle includes native Stop capture, candidate exclusion,
-explicit acceptance, restart recall, correction and a host-emitted PreCompact event. No global
+revision-guarded review acceptance, restart recall, correction and a host-emitted PreCompact
+event, plus managed installation, invocation receipts and uninstall. No global
 host settings are edited. Capture remains off by default outside this temporary fixture.
+
+`node scripts/verify-replacement.ts --package /installed/subzerodev-memorykit --report REPORT`
+tests the pinned synthetic upstream fixture through import, review, reconciliation, retained Git
+history, SQLite-to-Markdown migration and fresh-SQLite rollback using installed public exports.
+`node scripts/verify-local-recall.ts --package /installed/subzerodev-memorykit --selector CONFIG
+--report REPORT` makes actual provider calls for exact recall, unsupported-question abstention,
+scope/candidate exclusion and correction after reopening. This small smoke test does not establish
+full task recall quality. Both commands use temporary synthetic stores and retain no personal data.
 
 The checked-in `tests/fixtures/claude-mem-upstream-export.json` is generated by the actual pinned
 upstream exporter over synthetic worker API responses. Regenerate using

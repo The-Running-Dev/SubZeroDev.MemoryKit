@@ -1,0 +1,127 @@
+{
+  "host": "codex",
+  "version": "codex-cli 0.158.0",
+  "installedCli": true,
+  "storage": "sqlite",
+  "upgradedGeneratedConfiguration": true,
+  "checks": [
+    {
+      "name": "managed installation command probe",
+      "passed": true,
+      "contextBytes": 0
+    },
+    {
+      "name": "initial recall",
+      "passed": true,
+      "contextBytes": 494
+    },
+    {
+      "name": "fresh host process",
+      "passed": true,
+      "contextBytes": 494
+    },
+    {
+      "name": "project isolation",
+      "passed": true,
+      "contextBytes": 493
+    },
+    {
+      "name": "explicit shared scope",
+      "passed": true,
+      "contextBytes": 478
+    },
+    {
+      "name": "no answer",
+      "passed": true,
+      "contextBytes": 0
+    },
+    {
+      "name": "correction after restart",
+      "passed": true,
+      "contextBytes": 494
+    },
+    {
+      "name": "paraphrase",
+      "passed": true,
+      "contextBytes": 494
+    },
+    {
+      "name": "verbose-task",
+      "passed": true,
+      "contextBytes": 494
+    },
+    {
+      "name": "unwrapped generated command",
+      "passed": true,
+      "contextBytes": 0
+    },
+    {
+      "name": "native capture seed",
+      "passed": true,
+      "contextBytes": 0
+    },
+    {
+      "name": "unaccepted capture excluded",
+      "passed": true,
+      "contextBytes": 0
+    },
+    {
+      "name": "accepted capture after restart",
+      "passed": true,
+      "contextBytes": 683
+    },
+    {
+      "name": "captured correction after restart",
+      "passed": true,
+      "contextBytes": 674
+    },
+    {
+      "name": "native compaction capture",
+      "passed": true,
+      "contextBytes": 0
+    },
+    {
+      "name": "recall after native compaction",
+      "passed": true,
+      "contextBytes": 674
+    },
+    {
+      "name": "cross-host corrected capture recall",
+      "passed": true,
+      "contextBytes": 0
+    },
+    {
+      "name": "native receipt and managed uninstall",
+      "passed": true,
+      "contextBytes": 0
+    }
+  ],
+  "measurements": [
+    {
+      "category": "exact",
+      "expected": 1,
+      "returned": 1,
+      "relevant": 1
+    },
+    {
+      "category": "paraphrase",
+      "expected": 1,
+      "returned": 1,
+      "relevant": 1
+    },
+    {
+      "category": "no-answer",
+      "expected": 0,
+      "returned": 0,
+      "relevant": 0
+    },
+    {
+      "category": "verbose-task",
+      "expected": 1,
+      "returned": 1,
+      "relevant": 1
+    }
+  ],
+  "limitations": "Synthetic fixture only, not S18/S21 quality gates. Optional selection uses the explicitly configured provider. Codex hook trust bypass applies only to reviewed test hooks in an isolated temporary home; original user hooks/settings are never loaded. Zero contextBytes for the unwrapped command means output was not instrumented.",
+  "retrieval": "codex"
+}

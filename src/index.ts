@@ -42,6 +42,7 @@ export {
   type CaptureResult,
   type Distiller,
   type EmbeddingProvider,
+  type EmbeddingIndex,
   type RecallPassage,
   type RecallRequest,
   type RecallSelection,
@@ -53,8 +54,10 @@ export {
 export {
   planClaudeMemImport,
   importClaudeMem,
+  reconcileClaudeMem,
   type ClaudeMemImportOptions,
   type ClaudeMemImportPlan,
 } from './workflow/import.ts';
 
 export { exportStore, importStore, type PortableArchive } from './sdk/portable.ts';
+export { reviewQueue, reviewMemory, type ReviewItem } from './workflow/review.ts';
