@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { openSync, closeSync, fstatSync, readSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import {
+  canonicalJson,
   isPlainObject,
   MAX_SEARCH_TEXT_LENGTH,
   parseNamespace,
@@ -129,12 +130,19 @@ export function readTranscript(host: Host, event: HookEvent, namespace: string):
     host,
     sessionId: event.session_id,
     eventId: 'transcript',
-    ref: 'file:' + event.transcript_path,
+    // Codex relocates a resumed transcript as well as rewriting its contents.
+    // Evidence participates in the idempotent request body, so bind it to the
+    // source session rather than a mutable on-disk filename.
+    ref:
+      host === 'codex'
+        ? 'codex:session:' + encodeURIComponent(event.session_id)
+        : 'file:' + event.transcript_path,
   };
   let offset = start,
     skipped = 0,
     clipped = false;
   const observations: Observation[] = [];
+  const occurrences = new Map<string, number>();
   // A bounded tail can start inside a code point or JSON line; never interpret that fragment.
   if (start > 0) {
     const end = data.indexOf(10);
@@ -192,7 +200,21 @@ export function readTranscript(host: Host, event: HookEvent, namespace: string):
       skipped++;
       continue;
     }
-    const identity = typeof row.uuid === 'string' ? row.uuid : String(position);
+    // Codex can rewrite a resumed/compacted transcript. Byte offsets then identify
+    // different messages, while retained messages may move. Bind identity to the
+    // untruncated message instead, retaining repeated identical observations.
+    let identity = typeof row.uuid === 'string' ? row.uuid : String(position);
+    if (host === 'codex') {
+      const fingerprint = canonicalJson([
+        'codex-message-v2',
+        typeof row.timestamp === 'string' ? row.timestamp : null,
+        message.role,
+        content,
+      ]);
+      const occurrence = occurrences.get(fingerprint) ?? 0;
+      occurrences.set(fingerprint, occurrence + 1);
+      identity = canonicalJson([fingerprint, occurrence]);
+    }
     if (Buffer.byteLength(content, 'utf8') > 8192) clipped = true;
     observations.push({
       id: sha256Hex(identity),

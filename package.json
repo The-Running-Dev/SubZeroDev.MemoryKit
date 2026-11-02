@@ -1,6 +1,6 @@
 {
   "name": "subzerodev-memorykit",
-  "version": "0.1.0",
+  "version": "0.2.0-rc.1",
   "private": true,
   "description": "Durable, inspectable memory for applications and AI agents",
   "type": "module",
@@ -26,6 +26,10 @@
     "./storage-postgres": {
       "types": "./dist/storage-postgres/index.d.ts",
       "default": "./dist/storage-postgres/index.js"
+    },
+    "./conformance": {
+      "types": "./dist/conformance/index.d.ts",
+      "default": "./dist/conformance/index.js"
     }
   },
   "bin": {

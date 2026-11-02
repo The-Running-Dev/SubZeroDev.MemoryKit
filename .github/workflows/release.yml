@@ -67,7 +67,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/memorykit-release"
           npm pack --pack-destination "$RUNNER_TEMP/memorykit-release"
-          node --input-type=module -e "import { readdirSync } from 'node:fs'; const dir = process.env.RUNNER_TEMP + '/memorykit-release'; const files = readdirSync(dir); if (files.length !== 1 || !files[0].endsWith('.tgz')) throw Error('expected one tarball'); console.log('TARBALL=' + dir + '/' + files[0]);" >> "$GITHUB_ENV"
+          node --input-type=module -e "import { readdirSync } from 'node:fs'; const dir = process.env.RUNNER_TEMP + '/memorykit-release'; const files = readdirSync(dir).filter(name => name.endsWith('.tgz')); if (files.length !== 1 || !files[0].endsWith('.tgz')) throw Error('expected one tarball'); console.log('TARBALL=' + dir + '/' + files[0]);" >> "$GITHUB_ENV"
       - name: Inspect candidate archive
         id: archive
         run: |
@@ -76,6 +76,8 @@ jobs:
           cat "$RUNNER_TEMP/memorykit-release-report.json" >> "$GITHUB_STEP_SUMMARY"
       - name: Verify installed consumer against this archive
         run: npm run check:package -- "$TARBALL"
+      - name: Bind candidate to source commit
+        run: node scripts/prepare-candidate.ts --archive "$TARBALL" --output "$RUNNER_TEMP/memorykit-release/candidate.json"
       - name: Confirm archive unchanged
         env:
           EXPECTED_DIGEST: ${{ steps.archive.outputs.sha256 }}
@@ -83,7 +85,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: memorykit-release-candidate
-          path: ${{ runner.temp }}/memorykit-release/*.tgz
+          path: ${{ runner.temp }}/memorykit-release/*
           if-no-files-found: error
           retention-days: 7
 
@@ -122,7 +124,7 @@ jobs:
         env:
           EXPECTED_DIGEST: ${{ needs.candidate.outputs.sha256 }}
         run: |
-          node --input-type=module -e "import { readdirSync } from 'node:fs'; const dir = process.env.RUNNER_TEMP + '/memorykit-release'; const files = readdirSync(dir); if (files.length !== 1 || !files[0].endsWith('.tgz')) throw Error('expected one tarball'); console.log('TARBALL=' + dir + '/' + files[0]);" >> "$GITHUB_ENV"
+          node --input-type=module -e "import { readdirSync } from 'node:fs'; const dir = process.env.RUNNER_TEMP + '/memorykit-release'; const files = readdirSync(dir).filter(name => name.endsWith('.tgz')); if (files.length !== 1 || !files[0].endsWith('.tgz')) throw Error('expected one tarball'); console.log('TARBALL=' + dir + '/' + files[0]);" >> "$GITHUB_ENV"
           archive=("$RUNNER_TEMP"/memorykit-release/*.tgz)
           node scripts/verify-release.ts archive "${archive[0]}" "$EXPECTED_DIGEST"
       - name: Refuse duplicate versions and registry failures

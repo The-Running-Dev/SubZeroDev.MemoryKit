@@ -5,7 +5,22 @@ import {
   ValidationFailedError,
   type MemoryRecord,
 } from '../model/index.ts';
+import { fields, integer } from './index.ts';
 import type { MemoryClient, WriteOutcome } from '../service/index.ts';
+
+export interface ReviewQueueInput {
+  namespace: string;
+  cursor?: string;
+  limit?: number;
+}
+export interface ReviewInput {
+  namespace: string;
+  id: string;
+  expectedRevision: number;
+  action: 'accept' | 'reject' | 'correct' | 'duplicate';
+  content?: string;
+  duplicateOf?: string;
+}
 
 export interface ReviewItem {
   memory: MemoryRecord;
@@ -13,16 +28,17 @@ export interface ReviewItem {
 }
 const digest = (r: MemoryRecord) =>
   sha256Hex(r.content.normalize('NFC').trim().replace(/\s+/gu, ' '));
-export async function reviewQueue(
-  client: MemoryClient,
-  input: { namespace: string; cursor?: string; limit?: number }
-) {
+export async function reviewQueue(client: MemoryClient, input: ReviewQueueInput) {
+  fields(input, ['namespace', 'cursor', 'limit'], ['namespace']);
   parseNamespace(input.namespace);
+  const limit = integer(input.limit, 'limit', 20, 1, 100);
+  if (input.cursor !== undefined && (typeof input.cursor !== 'string' || !input.cursor))
+    throw new ValidationFailedError('Review cursor must be nonempty text');
   const page = await client.search({
     namespaces: [input.namespace],
     states: ['active'],
     metadata: { status: 'candidate' },
-    limit: input.limit ?? 20,
+    limit,
     ...(input.cursor ? { cursor: input.cursor } : {}),
   });
   // Exact normalized text only. Suggestions are bounded and never merge or accept records.
@@ -54,15 +70,20 @@ export async function reviewQueue(
 }
 export async function reviewMemory(
   client: MemoryClient,
-  input: {
-    namespace: string;
-    id: string;
-    expectedRevision: number;
-    action: 'accept' | 'reject' | 'correct' | 'duplicate';
-    content?: string;
-    duplicateOf?: string;
-  }
+  input: ReviewInput
 ): Promise<WriteOutcome> {
+  fields(
+    input,
+    ['namespace', 'id', 'expectedRevision', 'action', 'content', 'duplicateOf'],
+    ['namespace', 'id', 'expectedRevision', 'action']
+  );
+  integer(input.expectedRevision, 'expectedRevision', 1, 1, Number.MAX_SAFE_INTEGER);
+  if (!['accept', 'reject', 'correct', 'duplicate'].includes(input.action))
+    throw new ValidationFailedError('Unknown review action');
+  if (input.content !== undefined && input.action !== 'correct')
+    throw new ValidationFailedError('Content is only valid for a correction');
+  if (input.duplicateOf !== undefined && input.action !== 'duplicate')
+    throw new ValidationFailedError('Duplicate target is only valid for a duplicate decision');
   parseNamespace(input.namespace);
   const current = await client.get(input.id);
   if (

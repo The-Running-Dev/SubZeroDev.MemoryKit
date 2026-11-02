@@ -1,3 +1,4 @@
+import { CachedRecallSelector } from '../workflow/recall-cache.ts';
 import {
   closeSync,
   existsSync,
@@ -60,6 +61,7 @@ export const WORKFLOW_COMMANDS = [
   'uninstall',
   'review',
   'index-clear',
+  'recall-cache-clear',
   'capture',
   'context',
   'accept',
@@ -84,6 +86,8 @@ const HELP = `MemoryKit portable workflows:
   review [accept|reject|correct|duplicate <id>] --profile <json> [--cursor <cursor>] [--limit <n>]
     Queue includes content, provenance and duplicate suggestions. Actions need --expected-revision.
     correct needs --text; duplicate needs --duplicate-of <accepted-id>.
+  recall-cache-clear --profile <json>
+    Logically clears this profile scope's optional sensitive recall cache.
   index-clear --profile <json>
     Clears this profile scope's optional derived vector index.
   capture --profile <json> --input <json|->
@@ -127,6 +131,7 @@ interface Profile {
     discovery?: boolean;
     verification?: boolean;
     retries?: number;
+    cache?: string;
   };
 }
 function readBounded(fd: number, max: number): string {
@@ -215,7 +220,7 @@ function profile(value: unknown): Profile {
       [
         'id',
         'command',
-        ...(provider === p.recall ? ['discovery', 'verification', 'retries'] : ['index']),
+        ...(provider === p.recall ? ['discovery', 'verification', 'retries', 'cache'] : ['index']),
       ],
       ['id', 'command']
     );
@@ -228,6 +233,11 @@ function profile(value: unknown): Profile {
     (typeof p.embedding.index !== 'string' || !isAbsolute(p.embedding.index))
   )
     throw new ValidationFailedError('Embedding index needs an absolute path');
+  if (
+    p.recall?.cache !== undefined &&
+    (typeof p.recall.cache !== 'string' || !isAbsolute(p.recall.cache))
+  )
+    throw new ValidationFailedError('Recall cache needs an absolute path');
   if (p.recall?.retries !== undefined && ![0, 1].includes(p.recall.retries))
     throw new ValidationFailedError('Recall retries must be 0 or 1');
   if (p.recall?.verification !== undefined && typeof p.recall.verification !== 'boolean')
@@ -688,6 +698,35 @@ export async function runWorkflow(
           )
         );
       };
+      const openRecallCache = async () => {
+        if (!p.recall?.cache) throw new ValidationFailedError('Profile has no recall cache');
+        const { SqliteRecallCache } = await import('../index-sqlite/index.ts');
+        return new SqliteRecallCache(
+          p.recall.cache,
+          sha256Hex(
+            canonicalJson([
+              'recall-v1',
+              p.store ?? p.url,
+              p.storage ?? null,
+              token ? sha256Hex(token) : 'embedded',
+              namespace,
+              p.sharedNamespaces ?? [],
+              p.includeCandidates === true,
+              p.recall,
+            ])
+          )
+        );
+      };
+      if (command === 'recall-cache-clear') {
+        const cache = await openRecallCache();
+        try {
+          await cache.clear();
+        } finally {
+          cache.close();
+        }
+        print({ cleared: true });
+        return 0;
+      }
       if (command === 'index-clear') {
         const index = await openIndex();
         try {
@@ -703,7 +742,7 @@ export async function runWorkflow(
         (command === 'hook' &&
           ['SessionStart', 'UserPromptSubmit'].includes(event!.hook_event_name))
       ) {
-        const selector =
+        const provider =
           p.recall === undefined
             ? undefined
             : new CommandRecallSelector(
@@ -713,12 +752,16 @@ export async function runWorkflow(
                 p.recall.verification,
                 p.recall.retries
               );
-        const index = p.embedding?.index ? await openIndex() : undefined;
+        const cache = p.recall?.cache ? await openRecallCache() : undefined;
+        const selector = provider && cache ? new CachedRecallSelector(provider, cache) : provider;
+        let index: Awaited<ReturnType<typeof openIndex>> | undefined;
         const result = await (async () => {
           try {
+            index = p.embedding?.index ? await openIndex() : undefined;
             return await context(client, contextInput, embedding, selector, index);
           } finally {
             index?.close();
+            cache?.close();
           }
         })();
         if (command === 'hook') {

@@ -137,6 +137,9 @@ describe('cli', () => {
   });
 
   it('provenance on create, update, supersede and transitions, refused on purge and search', () => {
+    // Both statuses acknowledge persisted storage; Git may still be pending.
+    const written = (result: ReturnType<typeof runCli>) =>
+      assert.ok(result.status === 0 || result.status === 3, result.stderr);
     const store = tempDir();
     assert.equal(runCli(['init', store]).status, 0);
     const provenance = {
@@ -158,7 +161,7 @@ describe('cli', () => {
       JSON.stringify(provenance),
       '--json',
     ]);
-    assert.equal(created.status, 0, created.stderr);
+    written(created);
     const id = JSON.parse(created.stdout).memory.id as string;
     const read = () => JSON.parse(runCli(['get', id, '--store', store, '--json']).stdout);
     assert.deepEqual(read().provenance, provenance);
@@ -176,7 +179,7 @@ describe('cli', () => {
       '--provenance',
       JSON.stringify(updated),
     ]);
-    assert.equal(update.status, 0, update.stderr);
+    written(update);
     assert.deepEqual(read().provenance, updated);
 
     const archived = { reason: 'replaced soon', evidence: [] };
@@ -190,9 +193,9 @@ describe('cli', () => {
       '--provenance',
       JSON.stringify(archived),
     ]);
-    assert.equal(archive.status, 0, archive.stderr);
+    written(archive);
     assert.deepEqual(read().provenance, archived);
-    assert.equal(runCli(['restore', id, '--store', store, '--expected-revision', '3']).status, 0);
+    written(runCli(['restore', id, '--store', store, '--expected-revision', '3']));
 
     const correction = { reason: 'corrected', evidence: [{ ref: `memory:${id}` }] };
     const superseded = runCli([
@@ -210,7 +213,7 @@ describe('cli', () => {
       JSON.stringify(correction),
       '--json',
     ]);
-    assert.equal(superseded.status, 0, superseded.stderr);
+    written(superseded);
     assert.deepEqual(JSON.parse(superseded.stdout).memory.provenance, correction);
 
     // Bad JSON and unknown fields are domain errors; purge and search refuse the flag.

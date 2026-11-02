@@ -60,4 +60,12 @@ export {
 } from './workflow/import.ts';
 
 export { exportStore, importStore, type PortableArchive } from './sdk/portable.ts';
-export { reviewQueue, reviewMemory, type ReviewItem } from './workflow/review.ts';
+export {
+  reviewQueue,
+  reviewMemory,
+  type ReviewItem,
+  type ReviewInput,
+  type ReviewQueueInput,
+} from './workflow/review.ts';
+
+export { CachedRecallSelector, type RecallCache } from './workflow/recall-cache.ts';

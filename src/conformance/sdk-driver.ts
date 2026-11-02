@@ -1,0 +1,117 @@
+import type { StoreConfig } from '../sdk/index.ts';
+import { toProblem } from '../model/index.ts';
+import { initStore, openStore } from '../sdk/index.ts';
+import type { HistoryPolicy } from '../contracts/index.ts';
+import type { Principal } from '../access/index.ts';
+import type { RetrieveQuery, SearchQuery } from '../model/index.ts';
+import type {
+  CreateInput,
+  PurgeInput,
+  SupersedeInput,
+  TransitionInput,
+  UpdateInput,
+} from '../service/index.ts';
+import type { Driver, Result } from './driver.ts';
+
+async function capture<T>(fn: () => Promise<T>): Promise<Result<T>> {
+  try {
+    return { ok: true, value: await fn() };
+  } catch (error) {
+    return { ok: false, problem: toProblem(error) };
+  }
+}
+
+// Round-trips through JSON so both drivers compare plain wire values.
+function plain(value: unknown): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+}
+
+export function createSdkDriver(storeConfig: (path: string) => StoreConfig): Driver {
+  async function withClient<T>(
+    store: string,
+    fn: (client: Awaited<ReturnType<typeof openStore>>) => Promise<T>,
+    principal?: Principal
+  ): Promise<T> {
+    const client = await openStore(storeConfig(store), principal);
+    try {
+      return await fn(client);
+    } finally {
+      await client.close();
+    }
+  }
+
+  return {
+    name: 'sdk',
+    init: (store) => capture(async () => (await initStore(storeConfig(store)), null)),
+    create: (store, input, operationId) =>
+      capture(async () =>
+        plain(
+          await withClient(store, (c) =>
+            c.create(input as unknown as CreateInput, operationId ? { operationId } : {})
+          )
+        )
+      ),
+    update: (store, input, operationId) =>
+      capture(async () =>
+        plain(
+          await withClient(store, (c) =>
+            c.update(input as unknown as UpdateInput, operationId ? { operationId } : {})
+          )
+        )
+      ),
+    transition: (store, operation, input, operationId) =>
+      capture(async () =>
+        plain(
+          await withClient(store, (c) =>
+            c[operation](input as unknown as TransitionInput, operationId ? { operationId } : {})
+          )
+        )
+      ),
+    supersede: (store, input, operationId) =>
+      capture(async () =>
+        plain(
+          await withClient(store, (c) =>
+            c.supersede(input as unknown as SupersedeInput, operationId ? { operationId } : {})
+          )
+        )
+      ),
+    purge: (store, input, operationId) =>
+      capture(async () =>
+        plain(
+          await withClient(store, (c) =>
+            c.purge(input as unknown as PurgeInput, operationId ? { operationId } : {})
+          )
+        )
+      ),
+    get: (store, id) => capture(async () => plain(await withClient(store, (c) => c.get(id)))),
+    search: (store, query) =>
+      capture(async () =>
+        plain(await withClient(store, (c) => c.search(query as unknown as SearchQuery)))
+      ),
+    retrieve: (store, query) =>
+      capture(async () =>
+        plain(await withClient(store, (c) => c.retrieve(query as unknown as RetrieveQuery)))
+      ),
+    retrieveAs: (store, grants, query) =>
+      capture(async () =>
+        plain(
+          await withClient(store, (c) => c.retrieve(query as unknown as RetrieveQuery), {
+            id: 'reader',
+            profile: 'local',
+            grants,
+          })
+        )
+      ),
+    history: (store, id) =>
+      capture(async () => plain(await withClient(store, (c) => c.history(id)))),
+    operation: (store, operationId) =>
+      capture(async () => plain(await withClient(store, (c) => c.operation(operationId)))),
+    status: (store) => capture(async () => plain(await withClient(store, (c) => c.status()))),
+    getNamespace: (store, ns) =>
+      capture(async () => plain(await withClient(store, (c) => c.getNamespace(ns)))),
+    setNamespacePolicy: (store, ns, policy) =>
+      capture(async () =>
+        plain(await withClient(store, (c) => c.setNamespacePolicy(ns, policy as HistoryPolicy)))
+      ),
+  };
+}

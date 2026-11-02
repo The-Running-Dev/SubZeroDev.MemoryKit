@@ -1,0 +1,123 @@
+{
+  "version": 1,
+  "provider": "codex-gpt-6.1-sol-verified",
+  "discovery": true,
+  "storage": "sqlite",
+  "taskQueries": true,
+  "queryOverrides": {
+    "exact-error-code": "What does error E4012 mean in the Alpha billing worker?",
+    "noise-tokens": "When do Alpha API tokens expire?",
+    "noise-release": "When do Alpha releases ship?",
+    "noise-backup": "When do Alpha database backups run and how long are they retained?",
+    "noise-stale-cache": "How long does Alpha cache product prices to avoid stale checkout totals?",
+    "noise-session": "Which database stores Alpha session data?"
+  },
+  "verification": true,
+  "cases": [
+    "correct-release-new",
+    "state-failover-default"
+  ],
+  "fillerNewerThanFacts": 10000,
+  "transformations": [
+    "Set metadata.status=accepted on raw corpus records and replacements for workflow eligibility",
+    "Only active accepted exact-scope task recall; raw-search-only scenarios classified as skipped",
+    "Implicit namespace enumeration intersects the principal read grants; explicit scopes remain unchanged"
+  ],
+  "cost": {
+    "calls": 6,
+    "processAttempts": 6,
+    "configuredRetries": 0,
+    "retries": 0,
+    "inputBytes": 15791,
+    "outputBytes": 777,
+    "note": "Actual uncached logical calls and process attempts including retries; input bytes count logical request data, output bytes count completed logical calls, not token accounting or billing"
+  },
+  "warm": {
+    "enabled": true,
+    "latencyMs": {
+      "p50": 28.06919999999809,
+      "p95": 136.50270000001183
+    },
+    "rows": [
+      {
+        "scope": "embedded",
+        "query": "Alpha releases Thursday",
+        "ms": 136.50270000001183,
+        "passed": true,
+        "processAttempts": 0,
+        "cacheHits": 3
+      },
+      {
+        "scope": "embedded",
+        "query": "failover runbook",
+        "ms": 28.06919999999809,
+        "passed": true,
+        "processAttempts": 0,
+        "cacheHits": 3
+      }
+    ]
+  },
+  "latencyMs": {
+    "p50": 25511.437200000015,
+    "p95": 25530.03129999998
+  },
+  "rows": [
+    {
+      "set": "corpus",
+      "id": "correct-release-new",
+      "category": "correction",
+      "ms": 25530.03129999998,
+      "expected": [
+        "01M6CGF79W22MDZ0NV37D1FQTW@2"
+      ],
+      "actual": [
+        "01M6CGF79W22MDZ0NV37D1FQTW@2"
+      ],
+      "recall": 1,
+      "falseInjections": 0,
+      "noAnswer": false,
+      "reasons": [
+        "selection_content_limited",
+        "selection_input_limited"
+      ],
+      "generatedQueries": [
+        "Alpha releases",
+        "Alpha Thursday",
+        "Alpha launch",
+        "Alpha release schedule",
+        "Alpha rollout"
+      ],
+      "bytes": 484
+    },
+    {
+      "set": "corpus",
+      "id": "state-failover-default",
+      "category": "lifecycle",
+      "ms": 25511.437200000015,
+      "expected": [
+        "01M6CGF7AT6AFMBPBDQ7KZNW33@1"
+      ],
+      "actual": [
+        "01M6CGF7AT6AFMBPBDQ7KZNW33@1"
+      ],
+      "recall": 1,
+      "falseInjections": 0,
+      "noAnswer": false,
+      "reasons": [
+        "selection_content_limited",
+        "selection_input_limited"
+      ],
+      "generatedQueries": [
+        "failover runbook",
+        "failover procedure",
+        "disaster recovery",
+        "switchover",
+        "failback",
+        "recovery checklist",
+        "outage response",
+        "standby promotion"
+      ],
+      "bytes": 502
+    }
+  ]
+}

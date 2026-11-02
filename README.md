@@ -61,7 +61,7 @@ npm pack
 ```
 
 ```bash
-npm install ./subzerodev-memorykit-0.1.0.tgz
+npm install ./subzerodev-memorykit-0.2.0-rc.1.tgz
 ```
 
 ## Command line

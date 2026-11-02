@@ -65,3 +65,7 @@ Storage composition, query discovery and upgrade behavior are recorded in
 Portable archives/PostgreSQL are recorded in [ADR-0006](decisions/0006-verified-portable-memory.md).
 Managed installation, review and derived caches are recorded in
 [ADR-0007](decisions/0007-managed-memory-replacement.md).
+
+Optional exact provider-call reuse, public plugin conformance and remote review are recorded
+in [ADR-0008](decisions/0008-practical-daily-memory.md). The opt-in recall cache contains
+sensitive queries/quotes and never bypasses final current-record validation.

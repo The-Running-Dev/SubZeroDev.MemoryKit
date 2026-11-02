@@ -1,3 +1,9 @@
+import {
+  reviewMemory,
+  reviewQueue,
+  type ReviewInput,
+  type ReviewQueueInput,
+} from '../workflow/review.ts';
 // HTTP API v1 (20-contract.md): routes a request to a client that is already authorised for
 // the caller, and maps errors to problem+json. Transport-free, so the server owns sockets.
 
@@ -112,6 +118,18 @@ async function route(client: MemoryClient, request: HttpRequest): Promise<HttpRe
   }
   if (rest.length === 0 && method === 'POST' && resource === 'context') {
     return json(200, await context(client, object(body) as unknown as ContextInput));
+  }
+
+  if (resource === 'review' && method === 'POST') {
+    if (rest.length === 1 && rest[0] === 'queue')
+      return json(200, await reviewQueue(client, object(body) as unknown as ReviewQueueInput));
+    if (rest.length === 0) {
+      if (request.headers.has('idempotency-key'))
+        throw new ValidationFailedError(
+          'Review uses expectedRevision; idempotency-key is not supported'
+        );
+      return written(200, await reviewMemory(client, object(body) as unknown as ReviewInput));
+    }
   }
 
   if (resource === 'memories') {

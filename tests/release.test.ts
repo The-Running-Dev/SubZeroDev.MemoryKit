@@ -131,6 +131,8 @@ const entries = {
   'package/dist/storage-postgres/index.d.ts': 'export {};',
   'package/dist/index-sqlite/index.js': 'export {};',
   'package/dist/index-sqlite/index.d.ts': 'export {};',
+  'package/dist/conformance/index.js': 'export {};',
+  'package/dist/conformance/index.d.ts': 'export {};',
   'package/dist/cli/main.js': '#!/usr/bin/env node\n',
 };
 
@@ -177,6 +179,22 @@ describe('release archive inspection', () => {
         ),
       /packed name/
     );
+    for (const field of ['dependencies', 'optionalDependencies', 'scripts']) {
+      assert.throws(
+        () =>
+          inspectArchive(
+            archive({
+              ...entries,
+              'package/package.json': JSON.stringify({
+                ...manifest,
+                [field]: { changed: '1.0.0' },
+              }),
+            }),
+            manifest
+          ),
+        new RegExp(`packed ${field}`)
+      );
+    }
     const missing = { ...entries };
     delete (missing as Partial<typeof entries>)['package/dist/history-git/index.js'];
     assert.throws(() => inspectArchive(archive(missing), manifest), /missing export/);

@@ -1,3 +1,9 @@
+import {
+  reviewMemory,
+  reviewQueue,
+  type ReviewInput,
+  type ReviewQueueInput,
+} from '../workflow/review.ts';
 // MCP tools over the service: specification 2026-07-28, stateless, through the TypeScript SDK
 // v2. Each tool is one service call. The schemas describe the input; the service validates it,
 // so a bad input is the same domain error here as on every other surface.
@@ -18,7 +24,7 @@ import type { MemoryClient, MemoryService, WriteOptions } from '../service/index
 import { capture, context, type CaptureInput, type ContextInput } from '../workflow/index.ts';
 
 export const MCP_PROTOCOL_VERSION = '2026-07-28';
-const SERVER_INFO = { name: 'memorykit', version: '0.1.0' };
+const SERVER_INFO = { name: 'memorykit', version: '0.2.0-rc.1' };
 
 // The service is the only validator; the SDK hands the arguments through unchanged.
 const PASS_THROUGH: jsonSchemaValidator = {
@@ -134,6 +140,31 @@ const TOOLS: Record<string, ToolSpec> = {
       ['namespace']
     ),
     call: (client, args) => context(client, args as unknown as ContextInput),
+  },
+  memory_review_queue: {
+    description:
+      'List attributed candidates and bounded exact-text duplicate suggestions in one namespace. Attribution is asserted data, not verification.',
+    inputSchema: object(
+      { namespace: string, cursor: string, limit: { type: 'integer', minimum: 1, maximum: 100 } },
+      ['namespace']
+    ),
+    call: (client, args) => reviewQueue(client, args as unknown as ReviewQueueInput),
+  },
+  memory_review: {
+    description:
+      'Apply an explicit user review decision: accept, reject, correct, or mark an exact duplicate of an accepted record. Requires the current revision. Do not accept generated claims automatically.',
+    inputSchema: object(
+      {
+        namespace: string,
+        id: string,
+        expectedRevision: revision,
+        action: { type: 'string', enum: ['accept', 'reject', 'correct', 'duplicate'] },
+        content: string,
+        duplicateOf: string,
+      },
+      ['namespace', 'id', 'expectedRevision', 'action']
+    ),
+    call: (client, args) => reviewMemory(client, args as unknown as ReviewInput),
   },
   memory_create: {
     description: 'Create a memory in a namespace.',

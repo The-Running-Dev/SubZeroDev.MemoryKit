@@ -204,7 +204,11 @@ it('preserves supersession, tombstone restoration and purge history across backe
     await c.create({ namespace: 'demo', kind: 'note', content: 'Purge current state' })
   ).memory;
   await c.purge({ id: purged.id, expectedRevision: 1 });
-  await c.syncHistory({ budgetMs: 10000 });
+  // History is asynchronous. Inspect retained revisions only after an acknowledged
+  // drain, including on slower hosts where the normal ten-second budget expires.
+  const drained = await c.syncHistory({ budgetMs: 60000 });
+  assert.equal(drained.blocked, null);
+  assert.equal(drained.pending, 0, JSON.stringify(drained));
   const before = await c.get(old.id),
     dead = await c.get(replacement.memory.id);
   await c.close();
