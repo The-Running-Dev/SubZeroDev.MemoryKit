@@ -91,3 +91,13 @@ replace a full qualification run. See [Qwen diagnostic](bounded-qwen-focused.jso
 
 These failures remain visible. This candidate is not qualified as a complete claude-mem
 replacement, and no failed gate is waived.
+
+## Installed candidate
+
+The final archive contains 112 files and 154,769 bytes, with SHA-256
+`eb24e37197c7075e69d4b8434b8414fcf40e42ee50a54d72bc81d49e9fa2f5c3`.
+Every shipped file was checked against a rebuild of clean source commit
+`c78ebea981a840cf662f07e34c40216a7a7ad373`; only npm-normalized package metadata is
+checked structurally instead of byte-for-byte. See [candidate binding](bounded-candidate.json).
+The package remains private and was not published. Native acceptance, package consumers
+and migration/rollback use the installed archive, rather than source imports for the CLI.
