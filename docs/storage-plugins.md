@@ -58,9 +58,24 @@ Outcomes/outbox can contain duplicate content needed for replay/export; purge re
 copies, while separate Git history follows the existing purge/redaction contract.
 
 This is a managed directory: use MemoryKit APIs to edit it. Manual edits fail integrity checks.
-Search scans local records; retrieval uses simple plural normalization and match-count ranking,
-not SQLite's Porter/BM25 algorithm. Performance is intended for modest local stores. Use SQLite
-for larger stores. UNC paths are rejected; avoid network shares and concurrently synced folders.
+Retrieval uses simple plural normalization and match-count ranking, not SQLite's Porter/BM25
+algorithm. Search scans local records by default. To enable a rebuildable candidate index,
+set `"storage":{"provider":"markdown","searchIndex":true}` in the profile, or pass that
+storage configuration to `initStore`/`openStore`. Regenerate hooks after profile changes.
+The option is configuration, not part of portable memory content; carry it explicitly to each
+reader. CLI, SDK, MCP and HTTP use the same configured backend.
+
+The optional `markdown/search.sqlite` contains terms, identities, scopes and lifecycle/link
+metadata, not authoritative content or credentials. It is sensitive derived data. Queries
+load matching record files and related superseders, rechecking their hashes and applying the
+usual service filters. Opening a store still checks all current files; writes and manifest
+processing remain linear. This is an indexed read path, not a general scaling guarantee.
+Missing/corrupt indexes rebuild from verified files. Current writers invalidate the index
+before publishing writes, including purge and writers with indexing disabled. Stop all users
+before manually removing a closed index and its `-journal` sidecar. Older binaries may leave
+derived terms until the next rebuild; upgrade every writer before relying on invalidation.
+Logical deletion does not securely erase SQLite free pages, filesystem copies or backups.
+UNC paths are rejected; avoid network shares and concurrently synced folders.
 
 All readers/writers coordinate through an exclusive `markdown/.lock` directory. A busy store
 times out instead of overwriting another writer. After a process crash, stop **every** MemoryKit
@@ -87,7 +102,8 @@ new fragments at the current installed CLI. Choose a fresh output directory ever
 Apply them with `memorykit install --profile <new-profile> --host <host> --settings <settings>`
 for managed ownership checks and preservation of unrelated groups. Review/re-trust Codex hooks
 through `/hooks`. Use `uninstall` with the old profile before changing ownership paths. Regenerate fragments after changing selector command timeouts or enabling discovery.
-Doctor checks opening/status, not model login quality or host hook activation. Existing automatic
+Doctor checks opening/status by default. Its explicit `--provider-probe` and `--readiness`
+options are described in the [portable guide](portable-memory.md). Existing automatic
 capture stays off unless explicitly enabled in the profile. For another project, an unpinned
 profile follows Git origin; without a supported origin choose an explicit namespace.
 
@@ -104,16 +120,25 @@ memorykit setup --store /absolute/store --storage-plugin /absolute/package/dist/
 
 The SDK can also import `PostgresStorage` from `subzerodev-memorykit/storage-postgres`.
 Logical `storeId` must be new at initialization; reopening never silently creates a missing
-store. Initialization needs CREATE/INSERT access to `memorykit_stores`; subsequent opens need
-SELECT/UPDATE only. Use PostgreSQL connection settings appropriate to your server, including
+store. The plugin now creates/upgrades `memorykit_search_rows_v1` and its GIN/scope indexes
+under a schema advisory lock. The plugin connection needs schema CREATE and table
+SELECT/INSERT/UPDATE/DELETE privileges, including index creation; deploy schema upgrades with
+an appropriately authorized connection. It does not silently fall back after a permissions
+failure. Use PostgreSQL connection settings appropriate to your server, including
 TLS where required. Errors omit connection details. `timeoutMs` bounds connection, lock and
 statement waits (default 10000, maximum 120000).
 
-This first plugin stores one JSONB snapshot per logical store and serializes writes with a
-row lock. It reuses Markdown's deterministic state engine, with transactional rollback in
-PostgreSQL. Search scans records and has the same ranking limitations as Markdown. It targets
-modest stores; it does not provide indexed full-text/vector search or high write throughput.
-Tokens, replay, policies, leases and outbox state share the same database transaction.
+The authoritative state remains one JSONB snapshot per logical store, with serialized writes.
+A transactionally maintained row mirror indexes exact and plural-normalized terms with GIN,
+and filters scope/lifecycle before returning candidates. Final metadata filtering, ranking,
+cursors and supersession projections retain the shared state engine's semantics. Reads use
+a repeatable-read transaction; mirror changes, authoritative state and the version marker
+commit atomically. If an older snapshot-only writer drops the marker, reads use authoritative
+rows until a current writer/open rebuilds the mirror. This is lexical candidate indexing,
+not PostgreSQL linguistic full-text or vector search. Untargeted reads, opening, writes and
+snapshot serialization can still process the full store. Tokens, replay, policies, leases
+and outbox state share the same database transaction. Purge removes current mirror rows;
+database dead tuples, WAL, replicas and backups follow PostgreSQL retention procedures.
 
 Git history remains local to the configured store directory. Keep one authoritative service
 with that directory; pointing multiple independently initialized history directories at the

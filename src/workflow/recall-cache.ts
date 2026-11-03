@@ -12,10 +12,12 @@ export interface RecallCache {
  * candidates, validates quotes and rechecks current record revisions before output. */
 export class CachedRecallSelector implements RecallSelector {
   readonly id: string;
-  readonly expand?: (query: string) => Promise<string[]>;
+  readonly budget: RecallSelector['budget'];
+  readonly expand?: (query: string, signal?: AbortSignal) => Promise<string[]>;
   readonly verify?: (
     request: RecallRequest,
-    selections: RecallSelection[]
+    selections: RecallSelection[],
+    signal?: AbortSignal
   ) => Promise<RecallSelection[]>;
   hits = 0;
   misses = 0;
@@ -23,16 +25,17 @@ export class CachedRecallSelector implements RecallSelector {
   private readonly cache: RecallCache;
   constructor(selector: RecallSelector, cache: RecallCache) {
     this.id = selector.id;
+    this.budget = selector.budget;
     this.selector = selector;
     this.cache = cache;
     if (selector.expand)
-      this.expand = (query) => this.call('expand', query, () => selector.expand!(query));
+      this.expand = (query, signal) => this.call('expand', query, () => selector.expand!(query, signal));
     if (selector.verify)
-      this.verify = (request, selections) =>
-        this.call('verify', { request, selections }, () => selector.verify!(request, selections));
+      this.verify = (request, selections, signal) =>
+        this.call('verify', { request, selections }, () => selector.verify!(request, selections, signal));
   }
-  async select(request: RecallRequest): Promise<RecallSelection[]> {
-    return this.call('select', request, () => this.selector.select(request));
+  async select(request: RecallRequest, signal?: AbortSignal): Promise<RecallSelection[]> {
+    return this.call('select', request, () => this.selector.select(request, signal));
   }
   private async call<T extends unknown[]>(
     task: string,

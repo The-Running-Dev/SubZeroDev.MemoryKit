@@ -29,7 +29,8 @@ export async function discover(
   selector: RecallSelector,
   eligible: (record: MemoryRecord) => boolean,
   bound: number,
-  reasons: Set<string>
+  reasons: Set<string>,
+  slots = 32
 ): Promise<{ records: MemoryRecord[]; terms: string[] }> {
   const words = discoveryTerms(text);
   const generated = selector.expand ? await selector.expand(text) : [];
@@ -46,7 +47,10 @@ export async function discover(
     (a, b) => b.length - a.length || words.indexOf(a) - words.indexOf(b)
   );
   if (ranked.length > 16) reasons.add('discovery_queries_limited');
-  const searches = [...new Set([...generated, ...ranked.slice(0, 16)])];
+  // Providers differ in whether a multi-term retrieve is conjunctive. Query bounded
+  // individual expansion terms too, so a useful synonym cannot be hidden by extra words.
+  const aliases = [...new Set(generated.flatMap(discoveryTerms))].slice(0, 16);
+  const searches = [...new Set([...generated, ...aliases, ...ranked.slice(0, 16)])];
   const pool = new Map<string, { record: MemoryRecord; score: number }>();
   for (let offset = 0; offset < searches.length; offset += 4) {
     const batch = await Promise.allSettled(
@@ -81,13 +85,15 @@ export async function discover(
   const discovered = [...pool.values()]
     .sort((a, b) => b.score - a.score || a.record.id.localeCompare(b.record.id))
     .map((r) => r.record);
-  // Reserve eight disclosure slots for recent zero-overlap facts. Neither source can
+  // Reserve a quarter of disclosure slots for recent zero-overlap facts. Neither source can
   // monopolize the budget; older indexed hits are considered before recency fillers.
+  const reserve = slots === 1 ? 0 : Math.max(1, Math.floor(slots / 4));
+  const indexed = slots - reserve;
   const ordered = [
-    ...discovered.slice(0, 24),
-    ...recent.slice(0, 8),
-    ...discovered.slice(24),
-    ...recent.slice(8),
+    ...discovered.slice(0, indexed),
+    ...recent.slice(0, reserve),
+    ...discovered.slice(indexed),
+    ...recent.slice(reserve),
   ];
   const unique = [...new Map(ordered.map((r) => [r.id, r])).values()];
   if (unique.length > bound) reasons.add('candidate_limit');

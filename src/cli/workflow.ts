@@ -1,4 +1,5 @@
 import { CachedRecallSelector } from '../workflow/recall-cache.ts';
+import { assessReadiness, probeRecall } from '../workflow/readiness.ts';
 import {
   closeSync,
   existsSync,
@@ -79,6 +80,9 @@ const HELP = `MemoryKit portable workflows:
     Regenerates the profile and host fragments using this installed CLI.
   doctor --profile <json>
     Opens the configured store and reports provider, history queue and workflow status.
+    --provider-probe explicitly calls the configured model with synthetic data only.
+    --readiness <json> assesses quality/native/migration report paths and cold p95 (default 10s).
+    Ready also requires --provider-probe and a current --host installation.
   install|uninstall --profile <json> --host claude-code|codex [--settings <json>] [--manifest <json>]
     Installs or replaces owned hook groups; uninstall removes only owned groups.
   doctor --profile <json> --host claude-code|codex [--settings <json>] [--probe]
@@ -132,6 +136,8 @@ interface Profile {
     verification?: boolean;
     retries?: number;
     cache?: string;
+    deadlineMs?: number;
+    budget?: { passages: number; passageChars: number; bytes: number };
   };
 }
 function readBounded(fd: number, max: number): string {
@@ -220,7 +226,7 @@ function profile(value: unknown): Profile {
       [
         'id',
         'command',
-        ...(provider === p.recall ? ['discovery', 'verification', 'retries', 'cache'] : ['index']),
+        ...(provider === p.recall ? ['discovery', 'verification', 'retries', 'cache', 'deadlineMs', 'budget'] : ['index']),
       ],
       ['id', 'command']
     );
@@ -240,6 +246,13 @@ function profile(value: unknown): Profile {
     throw new ValidationFailedError('Recall cache needs an absolute path');
   if (p.recall?.retries !== undefined && ![0, 1].includes(p.recall.retries))
     throw new ValidationFailedError('Recall retries must be 0 or 1');
+  integer(p.recall?.deadlineMs, 'recall.deadlineMs', 60000, 1, 120000);
+  if (p.recall?.budget !== undefined) {
+    fields(p.recall.budget, ['passages', 'passageChars', 'bytes'], ['passages', 'passageChars', 'bytes']);
+    integer(p.recall.budget.passages, 'budget.passages', 32, 1, 32);
+    integer(p.recall.budget.passageChars, 'budget.passageChars', 2048, 128, 2048);
+    integer(p.recall.budget.bytes, 'budget.bytes', 65536, 1024, 65536);
+  }
   if (p.recall?.verification !== undefined && typeof p.recall.verification !== 'boolean')
     throw new ValidationFailedError('Invalid recall verification option');
   if (p.recall?.discovery !== undefined && typeof p.recall.discovery !== 'boolean')
@@ -344,16 +357,9 @@ function hostHooks(p: Profile, config: string, host: Host): { hooks: Record<stri
         ? {}
         : {
             UserPromptSubmit: [
-              group(
-                Math.ceil(
-                  ((p.recall?.command.timeoutMs ?? 30000) *
-                    (1 +
-                      Number(p.recall?.discovery === true) +
-                      Number(p.recall?.verification === true)) *
-                    (1 + (p.recall?.retries ?? 0))) /
-                    1000
-                ) + 10
-              ),
+              // Leave time for shell/Node startup, opening the store and closing receipts.
+              // The workflow/provider deadline itself remains unchanged.
+              group(Math.ceil((p.recall?.deadlineMs ?? 60000) / 1000) + 30),
             ],
           }),
       ...(p.context !== false && p.startupContext === true ? { SessionStart: [group(30)] } : {}),
@@ -400,6 +406,8 @@ export async function runWorkflow(
         settings: { type: 'string' },
         manifest: { type: 'string' },
         probe: { type: 'boolean' },
+        'provider-probe': { type: 'boolean' },
+        readiness: { type: 'string' },
         cursor: { type: 'string' },
         'duplicate-of': { type: 'string' },
         help: { type: 'boolean' },
@@ -548,6 +556,7 @@ export async function runWorkflow(
         ? 'import'
         : projectNamespace(event?.cwd ?? process.cwd()));
     const contextInput: ContextInput = {
+      deadlineMs: p.recall?.deadlineMs,
       namespace,
       sharedNamespaces: p.sharedNamespaces,
       text: prompt === undefined ? v.text : prompt.text,
@@ -620,6 +629,32 @@ export async function runWorkflow(
           };
           ok = inspected.configured && current && probe !== false;
         }
+        const installationOk = Boolean(v.host) && ok;
+        const providerHealth = v['provider-probe'] && p.recall
+          ? await probeRecall(new CommandRecallSelector(p.recall.id, p.recall.command,
+              p.recall.discovery, p.recall.verification, p.recall.retries, p.recall.budget), p.recall.deadlineMs)
+          : null;
+        if (v['provider-probe'] && !providerHealth?.passed) ok = false;
+        let readiness: object | undefined;
+        if (v.readiness) {
+          const manifest = jsonFile(resolve(v.readiness));
+          fields(manifest, ['quality', 'nativeCodex', 'nativeClaude', 'replacement', 'maxColdP95Ms'], []);
+          const spec = manifest as Record<string, unknown>;
+          const evidence: Record<string, unknown> = {};
+          for (const key of ['quality', 'nativeCodex', 'nativeClaude', 'replacement']) {
+            if (spec[key] === undefined) continue;
+            if (typeof spec[key] !== 'string' || !isAbsolute(spec[key] as string))
+              throw new ValidationFailedError('Readiness report paths must be absolute');
+            if (existsSync(spec[key] as string)) evidence[key] = jsonFile(spec[key] as string);
+          }
+          const limit = integer(spec.maxColdP95Ms as number | undefined, 'maxColdP95Ms', 10000, 1, 120000);
+          const assessed = assessReadiness(p.recall, evidence, limit);
+          const blocked = [...assessed.blocked];
+          if (!providerHealth?.passed) blocked.push('providerHealth');
+          if (!installationOk) blocked.push('localInstallation');
+          readiness = { ...assessed, ready: blocked.length === 0, blocked };
+          ok = blocked.length === 0;
+        }
         print({
           ok,
           status: await client.status(),
@@ -632,6 +667,8 @@ export async function runWorkflow(
             verification: p.recall?.verification === true,
           },
           runtime: { node: process.version, cli: fileURLToPath(import.meta.url) },
+          ...(v['provider-probe'] ? { providerHealth } : {}),
+          ...(readiness ? { readiness } : {}),
           ...(installation ? { installation } : {}),
         });
         return ok ? 0 : 1;
@@ -750,7 +787,8 @@ export async function runWorkflow(
                 p.recall.command,
                 p.recall.discovery,
                 p.recall.verification,
-                p.recall.retries
+                p.recall.retries,
+                p.recall.budget
               );
         const cache = p.recall?.cache ? await openRecallCache() : undefined;
         const selector = provider && cache ? new CachedRecallSelector(provider, cache) : provider;

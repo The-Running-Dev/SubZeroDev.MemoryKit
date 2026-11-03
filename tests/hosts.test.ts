@@ -113,6 +113,7 @@ const p=r.passages[0]; console.log(JSON.stringify({selections:[{id:p.id,revision
     );
     assert.deepEqual(Object.keys(settings.hooks), ['UserPromptSubmit']);
     const hook = settings.hooks.UserPromptSubmit[0].hooks[0];
+    assert.ok(hook.timeout >= 90, 'Host must allow startup/cleanup beyond the 60s recall deadline');
     assert.equal(hook.command, process.execPath);
     assert.ok(hook.args.includes(f.profile));
     const event = {

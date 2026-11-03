@@ -1,5 +1,6 @@
 // Shared deterministic storage contracts; each backend owns atomic persistence.
 import { randomBytes } from 'node:crypto';
+import { plural, type RowSelection } from './search-index.ts';
 import type { Grant, Principal } from '../access/index.ts';
 import type {
   HistoryPolicy,
@@ -74,12 +75,6 @@ export const emptyState = (): State => ({
   lease: { holder: null, token: 0, expires: 0 },
 });
 // A deliberately small lexical normalization; no claim of SQLite's Porter/BM25 parity.
-const plural = (word: string) =>
-  word.endsWith('ies')
-    ? word.slice(0, -3) + 'y'
-    : word.endsWith('s') && !word.endsWith('ss')
-      ? word.slice(0, -1)
-      : word;
 const visible = (r: RecordRow, scope: RowScope) =>
   scope.patterns.some((p) => matchesPattern(p, r.namespace));
 function replacements(rows: RecordRow[], ids: string[], scope: RowScope) {
@@ -105,6 +100,9 @@ export abstract class StateStorage implements StorageProvider, TokenStore {
     change: boolean,
     fn: (state: State, rows: RecordRow[]) => T | Promise<T>
   ): Promise<T>;
+  protected readRows<T>(_selection: RowSelection, fn: (rows: RecordRow[]) => T): Promise<T> {
+    return this.use(false, (_, rows) => fn(rows));
+  }
   snapshot(): Promise<StorageSnapshot> {
     return this.use(false, (s, rows) => {
       if (s.outbox.some((e) => e.status !== 'exported'))
@@ -225,13 +223,13 @@ export abstract class StateStorage implements StorageProvider, TokenStore {
     });
   }
   get(id: string, scope: RowScope) {
-    return this.use(false, (_, rows) => {
+    return this.readRows({ ids: [id] }, (rows) => {
       const record = rows.find((r) => r.id === id && visible(r, scope));
       return record ? { record } : null;
     });
   }
   supersededBy(ids: string[], scope: RowScope) {
-    return this.use(false, (_, rows) => replacements(rows, ids, scope));
+    return this.readRows({ supersededIds: ids }, (rows) => replacements(rows, ids, scope));
   }
   private matches(query: StorageSearch, rows: RecordRow[], any = false) {
     const terms = searchTerms(query.text ?? '').flatMap(
@@ -319,7 +317,7 @@ export abstract class StateStorage implements StorageProvider, TokenStore {
     };
   }
   search(query: StorageSearch) {
-    return this.use(false, (_, rows) => {
+    return this.readRows({ query }, (rows) => {
       const p = this.page(query, rows, false);
       const selected = p.matched.slice(p.offset, p.offset + query.limit);
       const by = replacements(
@@ -335,7 +333,7 @@ export abstract class StateStorage implements StorageProvider, TokenStore {
     });
   }
   retrieve(query: StorageRetrieve) {
-    return this.use(false, (_, rows) => {
+    return this.readRows({ query, any: true }, (rows) => {
       const p = this.page(query, rows, true);
       const terms = searchTerms(query.text).flatMap(
         (t) => t.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? []

@@ -10,7 +10,7 @@ import { reviewMemory } from '../src/workflow/review.ts';
 import { tempDir } from './helpers.ts';
 
 const postgres = process.env.MEMORYKIT_TEST_POSTGRES_URL;
-for (const backend of ['sqlite', 'markdown', 'postgres'] as const) {
+for (const backend of ['sqlite', 'markdown', 'markdown-indexed', 'postgres'] as const) {
   it(
     `${backend}: public plugin conformance and old-fact review/recall workflow`,
     {
@@ -21,6 +21,7 @@ for (const backend of ['sqlite', 'markdown', 'postgres'] as const) {
     async () => {
       const storeIds: string[] = [];
       const storage = (): StorageConfig => {
+        if (backend === 'markdown-indexed') return { provider: 'markdown', searchIndex: true };
         if (backend !== 'postgres') return { provider: backend };
         const storeId = randomUUID();
         storeIds.push(storeId);

@@ -11,9 +11,12 @@ import {
   writeFileSync,
   fsyncSync,
   closeSync,
+  chmodSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
+import type { RowSelection } from '../storage-state/search-index.ts';
+import { indexedIds } from './search-index.ts';
 
 import { StateStorage, emptyState, type State, type RecordRow } from '../storage-state/index.ts';
 import {
@@ -42,12 +45,12 @@ function durable(file: string, data: string): void {
 export class MarkdownStorage extends StateStorage {
   readonly descriptor = {
     id: 'storage-markdown',
-    version: '0.1.0',
+    version: '0.2.0',
     contractVersions: [1],
     capabilities: ['search.lexical', 'retrieve.lexical', 'purge.current'],
     limitations: [
       'local-filesystem-only',
-      'linear-search',
+      'linear-manifest-and-writes',
       'managed-markdown',
       'manual-crash-lock-recovery',
     ],
@@ -55,10 +58,15 @@ export class MarkdownStorage extends StateStorage {
   private readonly path: string;
   private readonly timeout: number;
   private opened = false;
-  constructor(options: { path: string; busyTimeoutMs?: number }) {
+  private readonly searchIndex: boolean;
+  constructor(options: { path: string; busyTimeoutMs?: number; searchIndex?: boolean }) {
     super();
     this.path = resolve(options.path);
     this.timeout = options.busyTimeoutMs ?? 5000;
+    this.searchIndex = options.searchIndex === true;
+    if (options.searchIndex !== undefined && typeof options.searchIndex !== 'boolean')
+      throw new ValidationFailedError('searchIndex must be boolean');
+    if (!this.searchIndex) this.descriptor.limitations.push('linear-search');
     if (!Number.isSafeInteger(this.timeout) || this.timeout < 0 || this.timeout > 120000)
       throw new ValidationFailedError('busyTimeoutMs must be an integer between 0 and 120000');
     if (options.path.startsWith('\\\\') || options.path.startsWith('//'))
@@ -104,7 +112,7 @@ export class MarkdownStorage extends StateStorage {
   async close(): Promise<void> {
     this.opened = false;
   }
-  private load(): { state: State; rows: RecordRow[] } {
+  private load(ids?: string[]): { state: State; rows: RecordRow[] } {
     try {
       const state = JSON.parse(readFileSync(join(this.path, 'state.json'), 'utf8')) as State;
       if (state.version > 1)
@@ -119,7 +127,8 @@ export class MarkdownStorage extends StateStorage {
         !state.files
       )
         throw new Error('manifest');
-      const rows = Object.entries(state.files).map(([id, file]) => {
+      const rows = (ids === undefined ? Object.keys(state.files) : ids.filter((id) => Object.hasOwn(state.files,id))).map((id) => {
+        const file = state.files[id]!;
         if (!/^[a-f0-9]{64}\.md$/.test(file)) throw new Error('filename');
         const path = join(this.path, 'records', file);
         if (!lstatSync(path).isFile() || lstatSync(path).isSymbolicLink()) throw new Error('file');
@@ -137,6 +146,30 @@ export class MarkdownStorage extends StateStorage {
         reason: 'integrity_failed',
       });
     }
+  }
+  protected async readRows<T>(selection: RowSelection, fn: (rows: RecordRow[]) => T): Promise<T> {
+    if (!this.searchIndex) return super.readRows(selection, fn);
+    if (!this.opened) throw new StoreUnavailableError('Store is closed', { reason: 'closed' });
+    return this.lock(async () => {
+      const { state } = this.load([]);
+      const path = join(this.path, 'search.sqlite');
+      for (const file of [path, path + '-journal']) {
+        if (existsSync(file) && lstatSync(file).isSymbolicLink()) rmSync(file);
+      }
+      const read = (ids: string[]) => this.load(ids).rows;
+      const lookup = () => indexedIds(path, state, selection, read);
+      let ids: string[];
+      try { ids = lookup(); }
+      catch (error) {
+        // Authoritative integrity errors must never be hidden by rebuilding derived data.
+        if (error instanceof MemoryKitError) throw error;
+        rmSync(path, { force: true });
+        rmSync(path + '-journal', { force: true });
+        ids = lookup();
+      }
+      chmodSync(path, 0o600);
+      return structuredClone(fn(read(ids)));
+    });
   }
   private collect(state: State): void {
     const keep = new Set(Object.values(state.files));
@@ -158,6 +191,10 @@ export class MarkdownStorage extends StateStorage {
     }
     const tmp = join(this.path, `state-${randomBytes(12).toString('hex')}.tmp`);
     durable(tmp, JSON.stringify(state));
+    // Invalidate before publishing a write, including when this writer has indexing disabled.
+    // A crash leaves a rebuildable missing index, never retained terms from a completed purge.
+    rmSync(join(this.path, 'search.sqlite'), { force: true });
+    rmSync(join(this.path, 'search.sqlite-journal'), { force: true });
     renameSync(tmp, join(this.path, 'state.json'));
     this.collect(state);
   }

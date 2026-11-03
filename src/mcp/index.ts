@@ -136,6 +136,7 @@ const TOOLS: Record<string, ToolSpec> = {
         limit: { type: 'integer', minimum: 1, maximum: 50 },
         maxBytes: { type: 'integer', minimum: 512, maximum: 65536 },
         candidateLimit: { type: 'integer', minimum: 1, maximum: 1000 },
+        deadlineMs: { type: 'integer', minimum: 1, maximum: 120000 },
       },
       ['namespace']
     ),

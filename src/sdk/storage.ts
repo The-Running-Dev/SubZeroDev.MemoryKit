@@ -11,7 +11,8 @@ import {
 } from '../model/index.ts';
 
 export type StorageConfig =
-  | { provider: 'sqlite' | 'markdown' }
+  | { provider: 'sqlite' }
+  | { provider: 'markdown'; searchIndex?: boolean }
   | { provider: 'plugin'; module: string; options?: Record<string, JsonValue> };
 export interface StoragePluginContext {
   path: string;
@@ -38,10 +39,11 @@ export function validateStorageConfig(value: unknown): asserts value is StorageC
     !['sqlite', 'markdown', 'plugin'].includes(value.provider as string) ||
     Object.keys(value).some(
       (k) =>
-        !(value.provider === 'plugin' ? ['provider', 'module', 'options'] : ['provider']).includes(
+        !(value.provider === 'plugin' ? ['provider', 'module', 'options'] : value.provider === 'markdown' ? ['provider','searchIndex'] : ['provider']).includes(
           k
         )
     ) ||
+    (value.provider === 'markdown' && value.searchIndex !== undefined && typeof value.searchIndex !== 'boolean') ||
     (value.provider === 'plugin' &&
       (typeof value.module !== 'string' ||
         !isAbsolute(value.module) ||
@@ -91,7 +93,7 @@ export async function createStorage(
   }
   if (config.provider === 'markdown') {
     const { MarkdownStorage } = await import('../storage-markdown/index.ts');
-    const storage = new MarkdownStorage({ path: join(path, 'markdown') });
+    const storage = new MarkdownStorage({ path: join(path, 'markdown'), searchIndex: config.searchIndex });
     return { storage, tokens: storage as TokenStore, config };
   }
   if (

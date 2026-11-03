@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { buildStore, loadCorpus, loadHeldout, percentiles } from '../eval/retrieval/harness.ts';
 import { CachedRecallSelector } from '../src/workflow/recall-cache.ts';
+import { recallFingerprint } from '../src/workflow/readiness.ts';
 import { SqliteRecallCache } from '../src/index-sqlite/index.ts';
 import { canonicalJson, sha256Hex } from '../src/model/index.ts';
 import type { MemoryClient } from '../src/service/index.ts';
@@ -51,13 +52,16 @@ const config = JSON.parse(readFileSync(resolve(values.selector), 'utf8')) as {
   discovery?: boolean;
   verification?: boolean;
   retries?: number;
+  deadlineMs?: number;
+  budget?: RecallSelector['budget'];
 };
 const provider = new CommandRecallSelector(
   config.id,
   config.command,
   config.discovery,
   config.verification,
-  config.retries
+  config.retries,
+  config.budget
 );
 const cases = values.cases ? new Set(values.cases.split(',')) : undefined;
 let generatedQueries: string[];
@@ -70,12 +74,13 @@ let calls = 0,
   outputBytes = 0;
 const measured: RecallSelector = {
   id: provider.id,
+  budget: provider.budget,
   ...(provider.expand
     ? {
-        expand: async (query: string) => {
+        expand: async (query: string, signal?: AbortSignal) => {
           calls++;
           inputBytes += Buffer.byteLength(query);
-          const out = await provider.expand!(query);
+          const out = await provider.expand!(query, signal);
           generatedQueries = out;
           outputBytes += Buffer.byteLength(JSON.stringify(out));
           return out;
@@ -84,20 +89,20 @@ const measured: RecallSelector = {
     : {}),
   ...(provider.verify
     ? {
-        verify: async (request, selections) => {
+        verify: async (request, selections, signal) => {
           calls++;
           inputBytes += Buffer.byteLength(JSON.stringify({ request, selections }));
-          const out = await provider.verify!(request, selections);
+          const out = await provider.verify!(request, selections, signal);
           trace('verify', { ...request, selections }, out);
           outputBytes += Buffer.byteLength(JSON.stringify(out));
           return out;
         },
       }
     : {}),
-  select: async (request) => {
+  select: async (request, signal) => {
     calls++;
     inputBytes += Buffer.byteLength(JSON.stringify(request));
-    const out = await provider.select(request);
+    const out = await provider.select(request, signal);
     trace('select', request, out);
     outputBytes += Buffer.byteLength(JSON.stringify(out));
     return out;
@@ -108,6 +113,7 @@ const rows: Record<string, unknown>[] = [];
 const warmRows: Record<string, unknown>[] = [];
 let lastWarmMs = 0;
 async function recall(c: MemoryClient, input: ContextInput, scope = 'embedded') {
+  input = { ...input, deadlineMs: config.deadlineMs };
   lastWarmMs = 0;
   if (!values.cache) return context(c, input, undefined, measured);
   const cache = new SqliteRecallCache(
@@ -324,6 +330,9 @@ try {
     taskQueries: values.tasks,
     queryOverrides: values.tasks ? taskQueries : {},
     verification: config.verification === true,
+    configurationFingerprint: recallFingerprint(config),
+    configuration: { deadlineMs: config.deadlineMs ?? 60000, budget: config.budget ?? null },
+    generatedAt: new Date().toISOString(),
     cases: cases ? [...cases] : 'all',
     fillerNewerThanFacts: filler,
     transformations: [
