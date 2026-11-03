@@ -19,6 +19,7 @@ import { parseArgs } from 'node:util';
 import { openStore } from '../src/sdk/index.ts';
 import { context } from '../src/workflow/index.ts';
 import { CommandRecallSelector } from '../src/providers-command/index.ts';
+import { recallFingerprint } from '../src/workflow/readiness.ts';
 
 const { values } = parseArgs({
   options: {
@@ -40,6 +41,18 @@ const executable = isCodex ? values.codex! : values.claude!;
 assert.ok(existsSync(cli), 'Installed CLI does not exist');
 const work = mkdtempSync(join(tmpdir(), 'memorykit-native-'));
 const checks: { name: string; passed: boolean; contextBytes: number }[] = [];
+let version = 'unavailable';
+let configurationFingerprint: string | null = null;
+let activeCheck = 'native acceptance setup';
+const writeReport = (report: unknown) => {
+  const json = JSON.stringify(report, null, 2) + '\n';
+  if (values.report) {
+    const destination = resolve(values.report);
+    mkdirSync(dirname(destination), { recursive: true });
+    writeFileSync(destination, json);
+  }
+  process.stdout.write(json);
+};
 const env = { ...process.env };
 const run = (command: string, args: string[], cwd = work, input?: string) => {
   const result = spawnSync(command, args, {
@@ -59,7 +72,7 @@ const run = (command: string, args: string[], cwd = work, input?: string) => {
   return result.stdout;
 };
 try {
-  const version = run(executable, ['--version']).trim();
+  version = run(executable, ['--version']).trim();
   const store = join(work, 'store');
   let config = join(work, 'config with spaces');
   run(process.execPath, [
@@ -79,6 +92,7 @@ try {
   profile.capture = true;
   profile.sharedNamespaces = ['team/native'];
   if (values.selector) profile.recall = JSON.parse(readFileSync(resolve(values.selector), 'utf8'));
+  configurationFingerprint = profile.recall ? recallFingerprint(profile.recall) : null;
   writeFileSync(profilePath, JSON.stringify(profile));
   const upgraded = join(work, 'upgraded config with spaces');
   run(process.execPath, [cli, 'upgrade', '--profile', profilePath, '--output', upgraded]);
@@ -144,9 +158,11 @@ try {
 const fs = require('node:fs');
 const {spawnSync} = require('node:child_process');
 const input = fs.readFileSync(0, 'utf8');
+const startedAt=Date.now();
+fs.writeFileSync(${JSON.stringify(log)}, JSON.stringify({input:JSON.parse(input), started:true, startedAt}));
 const result = spawnSync(${JSON.stringify(generated.command)}, ${JSON.stringify(generated.args ?? [])},
   {input, encoding:'utf8', windowsHide:true, timeout:150000, shell:${isCodex ? JSON.stringify(process.platform === 'win32' ? 'powershell.exe' : '/bin/sh') : 'false'}});
-fs.writeFileSync(${JSON.stringify(log)}, JSON.stringify({input:JSON.parse(input), status:result.status, output:result.stdout}));
+fs.writeFileSync(${JSON.stringify(log)}, JSON.stringify({input:JSON.parse(input), status:result.status, elapsedMs:Date.now()-startedAt, output:result.stdout, stderr:result.stderr, error:result.error?.message}));
 process.stdout.write(result.stdout || '');
 process.stderr.write(result.stderr || '');
 process.exit(result.status === 0 ? 0 : 1);
@@ -220,6 +236,7 @@ process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');process.ex
     observe = true,
     assertAnswer = true
   ) => {
+    activeCheck = name;
     if (existsSync(log)) rmSync(log);
     const output = run(
       executable,
@@ -265,9 +282,16 @@ process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');process.ex
       process.stderr.write(`PASS ${name}\n`);
       return;
     }
-    assert.ok(existsSync(log), `${name}: native host did not invoke the hook`);
+    assert.ok(
+      existsSync(log),
+      `${name}: native host did not invoke the hook: ${output.slice(-4000)}`
+    );
     const invocation = JSON.parse(readFileSync(log, 'utf8'));
-    assert.equal(invocation.status, 0, `${name}: hook failed`);
+    assert.equal(
+      invocation.status,
+      0,
+      `${name}: hook failed${invocation.started ? ` or was interrupted after starting (${Date.now() - invocation.startedAt} ms ago)` : ` after ${invocation.elapsedMs} ms`}: ${String(invocation.error ?? invocation.stderr ?? output.slice(-4000)).slice(0, 4000)}`
+    );
     assert.equal(invocation.input.hook_event_name, 'UserPromptSubmit');
     assert.equal(invocation.input.prompt, prompt);
     const envelope = invocation.output.trim()
@@ -462,6 +486,7 @@ process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');process.ex
     capturedCode,
   ]);
   const beforeCompact = events().filter((e) => e.input.hook_event_name === 'PreCompact').length;
+  activeCheck = 'native compaction capture';
   const latestStop = events()
     .filter((e) => e.input.hook_event_name === 'Stop')
     .at(-1);
@@ -504,6 +529,7 @@ process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');process.ex
   check('recall after native compaction', capturedQuestion, alpha, replacementCode, [capturedCode]);
 
   if (values.peer) {
+    activeCheck = 'cross-host corrected capture recall';
     const peerHost = isCodex ? 'claude-code' : 'codex';
     const peerHome = join(work, 'peer-home');
     mkdirSync(peerHome);
@@ -592,6 +618,7 @@ process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');process.ex
   }
 
   // Small, descriptive fixture measurement, not a replacement for S18/S21's quality gates.
+  activeCheck = 'descriptive retrieval measurements';
   client = await connect();
   const measurements: { category: string; expected: number; returned: number; relevant: number }[] =
     [];
@@ -612,6 +639,7 @@ process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');process.ex
           namespace: 'project/native/alpha',
           sharedNamespaces: ['team/native'],
           text,
+          deadlineMs: profile.recall?.deadlineMs,
         },
         undefined,
         profile.recall
@@ -620,7 +648,8 @@ process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');process.ex
               profile.recall.command,
               profile.recall.discovery,
               profile.recall.verification,
-              profile.recall.retries
+              profile.recall.retries,
+              profile.recall.budget
             )
           : undefined
       );
@@ -635,6 +664,7 @@ process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');process.ex
     await client.close();
   }
   // Remove instrumentation before exercising ownership-aware removal.
+  activeCheck = 'native receipt and managed uninstall';
   writeFileSync(settingsPath, JSON.stringify(originalSettings));
   const receipt = JSON.parse(run(process.execPath, [cli, 'doctor', ...managedFlags], alpha));
   assert.ok(receipt.installation.lastInvocation, 'Native host must leave an invocation receipt');
@@ -652,14 +682,25 @@ process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');process.ex
     limitations:
       'Synthetic fixture only, not S18/S21 quality gates. Optional selection uses the explicitly configured provider. Codex hook trust bypass applies only to reviewed test hooks in an isolated temporary home; original user hooks/settings are never loaded. Zero contextBytes for the unwrapped command means output was not instrumented.',
     retrieval: profile.recall?.id ?? 'lexical',
+    configurationFingerprint,
+    generatedAt: new Date().toISOString(),
   };
-  const json = JSON.stringify(report, null, 2) + '\n';
-  if (values.report) {
-    const destination = resolve(values.report);
-    mkdirSync(dirname(destination), { recursive: true });
-    writeFileSync(destination, json);
-  }
-  process.stdout.write(json);
+  writeReport(report);
+} catch (error) {
+  // Keep failed native evidence reviewable without copying host output, paths or credentials.
+  // The original assertion and bounded diagnostic still go to the local process log.
+  writeReport({
+    host: values.host,
+    version,
+    installedCli: true,
+    storage: values.storage,
+    checks: [...checks, { name: activeCheck, passed: false, contextBytes: 0 }],
+    completed: false,
+    configurationFingerprint,
+    generatedAt: new Date().toISOString(),
+    limitations: 'Native acceptance failed. Inspect the local diagnostic log; this partial report cannot qualify replacement readiness.',
+  });
+  throw error;
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

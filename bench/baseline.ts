@@ -34,6 +34,17 @@ provider.git = function (this: unknown, args, exec) {
   spawned.set(phase, (spawned.get(phase) ?? 0) + 1);
   return spawn.call(this, args, exec);
 };
+// Benchmark data is synthetic. Preserve the original export error when syncHistory
+// reports only a public problem code, so a failed run can be diagnosed.
+const record = GitHistory.prototype.record;
+GitHistory.prototype.record = async function (entry) {
+  try {
+    return await record.call(this, entry);
+  } catch (error) {
+    console.error('Benchmark history export failed:', error);
+    throw error;
+  }
+};
 
 // A small deterministic generator, so every run writes the same store.
 function random(seed: number): () => number {
@@ -113,10 +124,12 @@ interface Result {
 async function measure(size: number): Promise<Result> {
   const dir = mkdtempSync(join(tmpdir(), 'memorykit-bench-'));
   spawned.clear();
+  let cleanup: (() => Promise<void>) | undefined;
   try {
     const store = { path: dir, service: { historyWaitMs: 0, drainBudgetMs: 3_600_000 } };
     await initStore(store);
     const { service, close } = await openService(store);
+    cleanup = close;
     const client = service.as(EMBEDDED_PRINCIPAL);
     const next = random(size);
     const pick = <T>(items: readonly T[]) => items[Math.floor(next() * items.length)]!;
@@ -152,6 +165,7 @@ async function measure(size: number): Promise<Result> {
     const revision = await timed(SAMPLES.revision, () => client.revision(pick(ids), 1));
     phase = 'setup';
     await close();
+    cleanup = undefined;
     return {
       size,
       create,
@@ -166,7 +180,11 @@ async function measure(size: number): Promise<Result> {
       repositoryBytes: sizeOf(join(dir, 'history.git')),
     };
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    try {
+      await cleanup?.();
+    } finally {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    }
   }
 }
 

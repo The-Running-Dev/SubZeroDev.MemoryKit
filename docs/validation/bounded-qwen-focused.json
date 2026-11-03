@@ -1,0 +1,197 @@
+{
+  "version": 1,
+  "provider": "ollama-qwen2.5-7b-verified",
+  "discovery": true,
+  "storage": "sqlite",
+  "taskQueries": true,
+  "queryOverrides": {
+    "exact-error-code": "What does error E4012 mean in the Alpha billing worker?",
+    "noise-tokens": "When do Alpha API tokens expire?",
+    "noise-release": "When do Alpha releases ship?",
+    "noise-backup": "When do Alpha database backups run and how long are they retained?",
+    "noise-stale-cache": "How long does Alpha cache product prices to avoid stale checkout totals?",
+    "noise-session": "Which database stores Alpha session data?"
+  },
+  "verification": true,
+  "configurationFingerprint": "845a33d2f14f050acf87abb5d22ec4ead2b49a05f7e07d09bdc83e00f7edd5b6",
+  "configuration": {
+    "deadlineMs": 120000,
+    "budget": {
+      "passages": 12,
+      "passageChars": 768,
+      "bytes": 16384
+    }
+  },
+  "generatedAt": "2026-11-02T20:01:52.668Z",
+  "cases": [
+    "old-paraphrase",
+    "old-verbose",
+    "correct-session-store",
+    "held-para-log-request-id",
+    "none-queue-current",
+    "correct-rabbitmq"
+  ],
+  "fillerNewerThanFacts": 1000,
+  "transformations": [
+    "Set metadata.status=accepted on raw corpus records and replacements for workflow eligibility",
+    "Only active accepted exact-scope task recall; raw-search-only scenarios classified as skipped",
+    "Implicit namespace enumeration intersects the principal read grants; explicit scopes remain unchanged"
+  ],
+  "cost": {
+    "calls": 14,
+    "processAttempts": 14,
+    "configuredRetries": 0,
+    "retries": 0,
+    "inputBytes": 14429,
+    "outputBytes": 728,
+    "note": "Actual uncached logical calls and process attempts including retries; input bytes count logical request data, output bytes count completed logical calls, not token accounting or billing"
+  },
+  "warm": {
+    "enabled": false,
+    "latencyMs": {
+      "p50": 0,
+      "p95": 0
+    },
+    "rows": []
+  },
+  "latencyMs": {
+    "p50": 42869.241100000014,
+    "p95": 120116.5242
+  },
+  "rows": [
+    {
+      "set": "corpus",
+      "id": "correct-session-store",
+      "ms": 120116.5242,
+      "error": {
+        "type": "urn:memorykit:error:StoreUnavailable",
+        "title": "Recall deadline exceeded",
+        "status": 503,
+        "code": "StoreUnavailable",
+        "retryable": false,
+        "details": {
+          "reason": "deadline"
+        }
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "correct-rabbitmq",
+      "category": "correction",
+      "ms": 46686.83129999999,
+      "expected": [
+        "01M6EXBDVGRCF2EYPTJXPNRABC@1"
+      ],
+      "actual": [],
+      "recall": 0,
+      "falseInjections": 0,
+      "noAnswer": false,
+      "reasons": [
+        "selection_content_limited",
+        "selection_input_limited"
+      ],
+      "generatedQueries": [
+        "queue",
+        "RabbitMQ",
+        "status"
+      ],
+      "bytes": 0
+    },
+    {
+      "set": "corpus",
+      "id": "none-queue-current",
+      "category": "no-answer",
+      "ms": 42869.241100000014,
+      "expected": [],
+      "actual": [],
+      "recall": null,
+      "falseInjections": 0,
+      "noAnswer": true,
+      "reasons": [
+        "selection_input_limited"
+      ],
+      "generatedQueries": [
+        "message",
+        "queue",
+        "system",
+        "broker",
+        "server",
+        "topic",
+        "subscription",
+        "management"
+      ],
+      "bytes": 0
+    },
+    {
+      "set": "heldout",
+      "id": "held-para-log-request-id",
+      "category": "paraphrase",
+      "ms": 53370.85089999999,
+      "expected": [
+        "01M6EXBDJPSAFYWSJ0TVY3ZT1Z@1"
+      ],
+      "actual": [
+        "01M6EXBDJPSAFYWSJ0TVY3ZT1Z@1"
+      ],
+      "recall": 1,
+      "falseInjections": 0,
+      "noAnswer": false,
+      "reasons": [
+        "selection_content_limited",
+        "selection_input_limited"
+      ],
+      "generatedQueries": [
+        "Alpha",
+        "log",
+        "line",
+        "request",
+        "id"
+      ],
+      "bytes": 485
+    },
+    {
+      "set": "scale-adversarial",
+      "id": "old-paraphrase",
+      "ms": 35865.3407,
+      "expected": [
+        "01M6EXBDY07FFFWXMJFEE51QZ2"
+      ],
+      "actual": [],
+      "passed": false,
+      "text": "",
+      "reasons": [
+        "candidate_limit",
+        "selection_input_limited"
+      ],
+      "generatedQueries": [
+        "cycling",
+        "equipment",
+        "storage",
+        "garage",
+        "barn",
+        "shed"
+      ]
+    },
+    {
+      "set": "scale-adversarial",
+      "id": "old-verbose",
+      "ms": 17780.923300000024,
+      "expected": [
+        "01M6EXBDY07FFFWXMJFEE51QZ2"
+      ],
+      "actual": [],
+      "passed": false,
+      "text": "",
+      "reasons": [
+        "candidate_limit",
+        "selection_input_limited"
+      ],
+      "generatedQueries": [
+        "cycling",
+        "equipment",
+        "inventory",
+        "supplies"
+      ]
+    }
+  ]
+}

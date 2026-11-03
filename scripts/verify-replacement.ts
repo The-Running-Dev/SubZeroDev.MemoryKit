@@ -78,7 +78,9 @@ try {
     assert.equal((await api.reconcileClaudeMem(client, changed, options)).ready, false);
     assert.deepEqual(await client.get(selected.id), selected);
     checks.push('changed-source reconciliation is read-only and preserves the correction');
-    await client.syncHistory({ budgetMs: 30000 });
+    const historyQueue = await client.syncHistory({ budgetMs: 30000 });
+    assert.deepEqual(historyQueue, { pending: 0, blocked: null, lastError: null },
+      'Synthetic migration history must be completely exported before measuring retained revisions');
     retainedHistory = await client.history(original.id);
     assert.ok(retainedHistory.length >= 3);
   } finally {

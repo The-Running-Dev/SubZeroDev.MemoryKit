@@ -11,6 +11,7 @@ import {
   validateSearch,
   toProblem,
   NotFoundError,
+  StoreUnavailableError,
   type MemoryRecord,
   type Problem,
   type SearchQuery,
@@ -80,12 +81,13 @@ export interface RecallSelection {
 }
 export interface RecallSelector {
   readonly id: string;
+  readonly budget?: { passages: number; passageChars: number; bytes: number };
   // Optional query expansion sees only the task, never the store or its authorization.
-  expand?(query: string): Promise<string[]>;
+  expand?(query: string, signal?: AbortSignal): Promise<string[]>;
   // Return only passages useful for this task, with verbatim evidence; [] means abstain.
-  select(input: RecallRequest): Promise<RecallSelection[]>;
+  select(input: RecallRequest, signal?: AbortSignal): Promise<RecallSelection[]>;
   // A second pass may remove proposals or repair their exact quotes, never add records.
-  verify?(input: RecallRequest, selections: RecallSelection[]): Promise<RecallSelection[]>;
+  verify?(input: RecallRequest, selections: RecallSelection[], signal?: AbortSignal): Promise<RecallSelection[]>;
 }
 
 export function fields(
@@ -240,6 +242,7 @@ export async function capture(
 }
 
 export interface ContextInput extends Scope {
+  deadlineMs?: number;
   text?: string;
   includeCandidates?: boolean;
   limit?: number;
@@ -335,6 +338,40 @@ export async function context(
   selector?: RecallSelector,
   index?: EmbeddingIndex
 ): Promise<ContextResult> {
+  const deadline = integer(input.deadlineMs, 'deadlineMs', 60000, 1, 120000);
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout>;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new StoreUnavailableError('Recall deadline exceeded', { reason: 'deadline' }));
+    }, deadline);
+  });
+  const check = () => {
+    if (controller.signal.aborted) throw new StoreUnavailableError('Recall deadline exceeded', { reason: 'deadline' });
+  };
+  const bounded: RecallSelector | undefined = selector && {
+    id: selector.id,
+    budget: selector.budget,
+    ...(selector.expand ? { expand: (query: string) => { check(); return selector.expand!(query, controller.signal); } } : {}),
+    ...(selector.verify ? { verify: (request: RecallRequest, selections: RecallSelection[]) => { check(); return selector.verify!(request, selections, controller.signal); } } : {}),
+    select: (request) => { check(); return selector.select(request, controller.signal); },
+  };
+  try {
+    return await Promise.race([contextRun(client, input, embedding, bounded, index), expired]);
+  } finally {
+    clearTimeout(timer!);
+    controller.abort();
+  }
+}
+
+async function contextRun(
+  client: MemoryClient,
+  input: ContextInput,
+  embedding?: EmbeddingProvider,
+  selector?: RecallSelector,
+  index?: EmbeddingIndex
+): Promise<ContextResult> {
   fields(
     input,
     [
@@ -345,6 +382,7 @@ export async function context(
       'limit',
       'maxBytes',
       'candidateLimit',
+      'deadlineMs',
     ],
     ['namespace']
   );
@@ -410,6 +448,10 @@ export async function context(
     if (input.text === undefined) records = candidates;
     else if (selector !== undefined) {
       nonempty(selector.id, 'selector.id', 256);
+      const budget = selector.budget ?? { passages: 32, passageChars: 2048, bytes: 65536 };
+      integer(budget.passages, 'budget.passages', 32, 1, 32);
+      integer(budget.passageChars, 'budget.passageChars', 2048, 128, 2048);
+      integer(budget.bytes, 'budget.bytes', 65536, 1024, 65536);
       mode = 'selected';
       // Provider disclosure budget includes the query and serialized passage metadata.
       const request: RecallRequest = { query: input.text, passages: [], limit };
@@ -421,7 +463,8 @@ export async function context(
         selector,
         eligible,
         candidateLimit,
-        reasons
+        reasons,
+        budget.passages
       );
       scanned = discovery.records.length;
       for (const record of discovery.records) {
@@ -430,15 +473,15 @@ export async function context(
           id: record.id,
           revision: record.revision,
           namespace: record.namespace,
-          content: passageWindow(record.content, discovery.terms),
-          truncated: chars.length > 2048,
+          content: passageWindow(record.content, discovery.terms, budget.passageChars),
+          truncated: chars.length > budget.passageChars,
         };
         if (passage.truncated) reasons.add('selection_content_limited');
         if (
-          request.passages.length >= 32 ||
+          request.passages.length >= budget.passages ||
           Buffer.byteLength(
             JSON.stringify({ ...request, passages: [...request.passages, passage] })
-          ) > 65536
+          ) > budget.bytes
         ) {
           reasons.add('selection_input_limited');
           continue;

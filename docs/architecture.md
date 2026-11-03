@@ -69,3 +69,15 @@ Managed installation, review and derived caches are recorded in
 Optional exact provider-call reuse, public plugin conformance and remote review are recorded
 in [ADR-0008](decisions/0008-practical-daily-memory.md). The opt-in recall cache contains
 sensitive queries/quotes and never bypasses final current-record validation.
+
+Recall now has a total deadline and configurable passage/byte budgets across expansion,
+selection and verification. Command adapters receive cancellation; model examples use compact
+passage indices and map them back to supplied identities and exact text. Optional verification,
+current revision checks and abstention remain independent requirements.
+
+PostgreSQL maintains transactional, derived search rows beside its authoritative JSONB snapshot.
+Managed Markdown can opt into a rebuildable SQLite term index and reads candidate files against
+their manifest hashes. These indexes narrow reads; store opening, writes and unfiltered scans
+can still be linear. Provider probes and replacement-readiness assessment are explicit diagnostic
+operations. Their local evidence does not switch hosts or enable capture. See
+[ADR-0009](decisions/0009-bounded-recall-and-indexed-readiness.md).

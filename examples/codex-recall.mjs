@@ -4,12 +4,10 @@ import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from '
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
+import { compactRecall } from './compact-recall.mjs';
 import {
-  instructions,
-  schema,
   expansionInstructions,
   expansionSchema,
-  verificationInstructions,
 } from './recall-prompt.mjs';
 
 let work;
@@ -32,6 +30,7 @@ try {
   const request = JSON.parse(raw);
   if (request.version !== 1 || !['select', 'expand', 'verify'].includes(request.task))
     throw new Error('Invalid request');
+  const compact = compactRecall(request);
   work = mkdtempSync(join(tmpdir(), 'memorykit-codex-selector-'));
   copyFileSync(
     join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'auth.json'),
@@ -39,15 +38,11 @@ try {
   );
   writeFileSync(
     join(work, 'instructions.txt'),
-    request.task === 'expand'
-      ? expansionInstructions
-      : request.task === 'verify'
-        ? verificationInstructions
-        : instructions
+    compact?.instructions ?? expansionInstructions
   );
   writeFileSync(
     join(work, 'schema.json'),
-    JSON.stringify(request.task === 'expand' ? expansionSchema : schema)
+    JSON.stringify(compact?.schema ?? expansionSchema)
   );
   writeFileSync(
     join(work, 'config.toml'),
@@ -69,7 +64,7 @@ try {
       '-',
     ],
     {
-      input: JSON.stringify(request),
+      input: JSON.stringify(compact?.input ?? request),
       cwd: work,
       env: { ...process.env, CODEX_HOME: work },
       encoding: 'utf8',
@@ -94,7 +89,8 @@ try {
     )
   )
     throw new Error('Unexpected model events');
-  process.stdout.write(JSON.stringify(JSON.parse(readFileSync(join(work, 'answer.json'), 'utf8'))));
+  const output = JSON.parse(readFileSync(join(work, 'answer.json'), 'utf8'));
+  process.stdout.write(JSON.stringify(compact ? compact.decode(output) : output));
 } catch {
   console.error('MemoryKit Codex recall failed; check executable, login, model and timeout.');
   process.exitCode ??= 1;

@@ -18,7 +18,7 @@ export interface CommandProviderOptions {
   timeoutMs?: number;
   maxOutputBytes?: number;
 }
-export function commandJson(options: CommandProviderOptions, request: unknown): Promise<unknown> {
+export function commandJson(options: CommandProviderOptions, request: unknown, signal?: AbortSignal): Promise<unknown> {
   const timeoutMs = options.timeoutMs ?? 30000;
   const maxOutputBytes = options.maxOutputBytes ?? 4 * 1024 * 1024;
   if (
@@ -39,9 +39,14 @@ export function commandJson(options: CommandProviderOptions, request: unknown): 
   if (Buffer.byteLength(input) > 8 * 1024 * 1024)
     throw new ValidationFailedError('Command provider input exceeds 8 MiB');
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new StoreUnavailableError('Recall deadline exceeded', { reason: 'deadline' }));
+      return;
+    }
     const child = spawn(options.command, options.args ?? [], {
       shell: false,
       windowsHide: true,
+      detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'ignore'],
     });
     const chunks: Buffer[] = [];
@@ -51,8 +56,18 @@ export function commandJson(options: CommandProviderOptions, request: unknown): 
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
       if (error) {
-        child.kill();
+        // On Windows the adapter may own a native model CLI. Kill its process tree
+        // before the parent disappears, so the total deadline also stops descendants.
+        if (process.platform === 'win32' && child.pid) {
+          const killer = spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], {
+            shell: false, windowsHide: true, stdio: 'ignore',
+          });
+          killer.on('error', () => child.kill());
+        } else if (child.pid) {
+          try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill(); }
+        } else child.kill();
         reject(error);
       } else resolve(result);
     };
@@ -60,6 +75,8 @@ export function commandJson(options: CommandProviderOptions, request: unknown): 
       () => finish(new StoreUnavailableError('Command provider timed out', { reason: 'timeout' })),
       timeoutMs
     );
+    const abort = () => finish(new StoreUnavailableError('Recall deadline exceeded', { reason: 'deadline' }));
+    signal?.addEventListener('abort', abort, { once: true });
     child.on('error', () => finish(new StoreUnavailableError('Command provider could not start')));
     child.stdin.on('error', () =>
       finish(new StoreUnavailableError('Command provider input failed'))
@@ -119,27 +136,31 @@ export class CommandRecallSelector implements RecallSelector {
   attempts = 0;
   readonly id: string;
   readonly options: CommandProviderOptions;
-  readonly expand?: (query: string) => Promise<string[]>;
+  readonly expand?: (query: string, signal?: AbortSignal) => Promise<string[]>;
+  readonly budget: RecallSelector['budget'];
   readonly verify?: (
     input: RecallRequest,
-    selections: RecallSelection[]
+    selections: RecallSelection[],
+    signal?: AbortSignal
   ) => Promise<RecallSelection[]>;
   constructor(
     id: string,
     options: CommandProviderOptions,
     discovery = false,
     verification = false,
-    retries = 0
+    retries = 0,
+    budget?: RecallSelector['budget']
   ) {
     this.id = id;
     this.options = options;
+    this.budget = budget;
     if (!Number.isInteger(retries) || retries < 0 || retries > 1)
       throw new ValidationFailedError('Recall retries must be 0 or 1');
-    const invoke = async (request: unknown) => {
+    const invoke = async (request: unknown, signal?: AbortSignal) => {
       for (let attempt = 0; ; attempt++) {
         try {
           this.attempts++;
-          return await commandJson(this.options, request);
+          return await commandJson(this.options, request, signal);
         } catch (error) {
           if (
             attempt >= retries ||
@@ -152,28 +173,28 @@ export class CommandRecallSelector implements RecallSelector {
     };
     this.invoke = invoke;
     if (verification)
-      this.verify = async (input, selections) => {
+      this.verify = async (input, selections, signal) => {
         const result = await invoke({
           version: 1,
           task: 'verify',
           ...input,
           selections,
-        });
+        }, signal);
         if (!isPlainObject(result) || !Array.isArray(result.selections))
           throw new ValidationFailedError('Recall verifier must return selections');
         return result.selections as RecallSelection[];
       };
     if (discovery)
-      this.expand = async (query) => {
-        const result = await invoke({ version: 1, task: 'expand', query });
+      this.expand = async (query, signal) => {
+        const result = await invoke({ version: 1, task: 'expand', query }, signal);
         if (!isPlainObject(result) || !Array.isArray(result.queries))
           throw new ValidationFailedError('Recall discovery must return queries');
         return result.queries as string[];
       };
   }
-  private readonly invoke: (request: unknown) => Promise<unknown>;
-  async select(input: RecallRequest): Promise<RecallSelection[]> {
-    const result = await this.invoke({ version: 1, task: 'select', ...input });
+  private readonly invoke: (request: unknown, signal?: AbortSignal) => Promise<unknown>;
+  async select(input: RecallRequest, signal?: AbortSignal): Promise<RecallSelection[]> {
+    const result = await this.invoke({ version: 1, task: 'select', ...input }, signal);
     if (!isPlainObject(result) || !Array.isArray(result.selections))
       throw new ValidationFailedError('Recall selector must return selections');
     return result.selections as RecallSelection[];

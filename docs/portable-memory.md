@@ -304,14 +304,16 @@ Example using an existing Claude Code login, independent of the calling host:
 Use a native executable on Windows, not a `.cmd`/`.ps1` shim. This example creates a temporary
 working directory, disables settings sources, hooks, tools, MCP and session persistence, and
 uses structured output. It uses the existing login, makes a billable/plan-accounted model call,
-and never installs a model or edits host settings. Its own call timeout is 25 seconds.
+and never installs a model or edits host settings. Its own call timeout defaults to 90 seconds;
+the whole context deadline can expire earlier.
 Discovery makes an additional query-expansion call. Optional `verification:true` makes a
 separate audit call over proposed passages only, allowing abstention or exact-quote repair.
 It cannot add records, change scope or resurrect an obsolete revision. Injection contains only
-the verified contiguous quote; irrelevant text elsewhere in a record is omitted. Verification
+the verified contiguous quote. The compact adapters return a whole bounded passage as that
+quote, which can retain incidental text inside the passage. Verification
 is opt-in and adds latency and provider cost. Run `install` again after changing recall
-configuration to update owned hooks: the prompt hook budget covers every enabled
-discovery/selection/verification stage and timeout retry, plus ten seconds. Slower calls fail
+configuration to update owned hooks: the prompt hook budget is the total context deadline
+plus thirty seconds for shell/Node startup, store opening and cleanup. Slower calls fail
 without injecting context. The measured two-call experiment without verification failed one
 abstention case; keep verification enabled for the tested daily configuration.
 
@@ -389,12 +391,12 @@ Each command defaults to 30 seconds (maximum 120), input 8 MiB, output 4 MiB (ma
 Multiple batches have separate timeouts. Failures are explicit; provider diagnostics are
 suppressed because prompts/output can be private.
 
-Recall profiles optionally set `"retries": 1` (default 0). Only an outer command deadline or
+Recall profiles optionally set `"retries": 1` (default 0). Only a per-command timeout or
 reserved adapter timeout exit code 75 triggers one retry. Invalid output, schema errors and
 other process failures are never retried, and there is no retrieval fallback. Codex and Ollama
-examples map their internal deadlines to 75. Generated hook budgets include the configured
-discovery/select/verification stages and retry allowance; worst-case waiting can be several
-minutes. Regenerate installed hooks after changing these values. Quality reports distinguish
+examples map their internal deadlines to 75. Retries share the total context deadline; its
+expiration is never retried. Generated prompt hook budgets add thirty seconds to that total
+for startup and cleanup. Regenerate installed hooks after changing these values. Quality reports distinguish
 logical calls from process attempts/retries; payload bytes are not token or billing accounting.
 `verification:false` skips the optional audit call; validate that tradeoff with the full quality
 gate before choosing it for daily use.
@@ -521,6 +523,66 @@ backups can retain prior bytes. Purging a source prevents stale injection immedi
 expiry/clear is not secure physical erasure. Include the closed cache file and its sidecars in
 private retention/deletion procedures. Add `--cache` to the full quality harness to measure
 cold and immediate repeated-query latency and actual uncached provider attempts separately.
+
+### Bounded cold recall and provider health
+
+An optional `recall` profile can set `"deadlineMs":60000` and
+`"budget":{"passages":16,"passageChars":1024,"bytes":24576}`. These are examples to
+measure with your provider, not a quality guarantee. Maximum/default disclosure is 32 passages,
+2048 code points each and 65536 serialized request bytes. Configured bounds are respectively
+1..32, 128..2048 and 1024..65536. The whole context deadline is 1..120000 milliseconds,
+default 60000, including discovery, selection, verification and retries. CLI profiles propagate
+it to SDK/HTTP context input and native hooks; MCP also accepts `deadlineMs` explicitly.
+Regenerate/reinstall owned hooks after changing profile limits. Per-command timeouts remain
+separate. Expiry is a provider error, never a successful abstention or a lexical fallback.
+Cooperative provider calls are cancelled and later phases do not start. Storage or custom SDK
+providers that ignore cancellation may finish background work after the response deadline.
+
+The shipped Codex/Ollama adapters request passage indices rather than generated identities or
+quotes, then copy the exact supplied passage text. Verification cannot add a new passage;
+the workflow still checks quotes, namespaces, acceptance and current revisions. Whole passages
+can include incidental material, within the configured passage/output bounds. Ollama exposes
+`--num-ctx` (default 16384) and `--num-predict` (default 1024). A generation reaching its output
+limit is an error. Choose a disclosure budget that fits the model's tokenizer and context;
+byte counts are not token counts, and a larger window alone does not establish retrieval quality.
+
+`memorykit doctor --profile PROFILE --provider-probe` explicitly calls the configured selector
+with synthetic evidence, checking selection, verification and no-answer behavior. It reads no
+stored content for that probe, writes no memories and does not use the recall cache. The usual
+doctor store checks still run. Without the flag doctor does not call a model. A passing probe
+establishes protocol/health on these examples, not the full quality gate.
+
+### Replacement readiness report
+
+Create a local JSON manifest with absolute paths to reports generated with the same recall
+configuration:
+
+```json
+{
+  "quality": "/absolute/quality.json",
+  "nativeCodex": "/absolute/native-codex.json",
+  "nativeClaude": "/absolute/native-claude.json",
+  "replacement": "/absolute/replacement.json",
+  "maxColdP95Ms": 10000
+}
+```
+
+Then run `memorykit doctor --profile PROFILE --host codex --provider-probe --readiness MANIFEST`
+(or `--host claude-code`, plus the usual custom `--settings` if used). It exits 1 while any gate
+is blocked. Gates require the full 58 measured task cases with discovery/verification and at
+least 1000 newer facts, no provider errors/false injections, correct abstention, recall at least
+0.9 per answer case, cold p95 within the chosen threshold, both native-host reports, installed
+package migration/rollback evidence, the live synthetic probe and a current local installation.
+Focused/smoke reports cannot satisfy the full gate. Missing files remain blocked. Existing
+reports without a configuration fingerprint must be rerun; don't edit evidence to make it pass.
+
+Fingerprints hash normalized provider commands/options, disclosure limits and deadlines without
+printing command arguments. These are user-supplied local attestations, not authenticated proof;
+they do not detect changes behind the same model/executable ID or bind a package build. Keep
+the reviewed candidate digest/source manifest separately and rerun evidence after upgrades.
+Only the selected host's current local installation is inspected; a historical native report
+does not establish another host's present installation or hook trust. No report enables capture,
+accepts memory, disables claude-mem or performs a live cutover.
 
 ### Daily cutover and rollback rehearsal
 

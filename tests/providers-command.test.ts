@@ -36,7 +36,7 @@ describe('optional command providers', () => {
                 message: {
                   content: JSON.stringify(
                     typeof body.format === 'object'
-                      ? { selections: [{ id: 'one', revision: 1, quote: 'Use SQLite.' }] }
+                      ? { matches: [0] }
                       : {
                           observations: [{ sourceId: 'one', content: 'Use SQLite.' }],
                         }

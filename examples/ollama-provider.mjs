@@ -1,12 +1,10 @@
 // Optional command provider. Requires an already-running Ollama and explicitly chosen
 // installed models. Downloads nothing. Protocol documentation: docs/portable-memory.md.
 import { parseArgs } from 'node:util';
+import { compactRecall } from './compact-recall.mjs';
 import {
-  instructions,
-  schema,
   expansionInstructions,
   expansionSchema,
-  verificationInstructions,
 } from './recall-prompt.mjs';
 
 try {
@@ -15,12 +13,18 @@ try {
       model: { type: 'string' },
       url: { type: 'string' },
       'timeout-ms': { type: 'string', default: '25000' },
+      'num-ctx': { type: 'string', default: '16384' },
+      'num-predict': { type: 'string', default: '1024' },
     },
   });
   const timeout = Number(values['timeout-ms']);
   if (!Number.isInteger(timeout) || timeout < 1000 || timeout > 110000)
     throw new Error('Timeout must be 1000..110000 milliseconds');
   if (!values.model) throw new Error('Supply --model with an installed model name');
+  const numCtx = Number(values['num-ctx']), numPredict = Number(values['num-predict']);
+  if (!Number.isInteger(numCtx) || numCtx < 4096 || numCtx > 65536 ||
+      !Number.isInteger(numPredict) || numPredict < 128 || numPredict > 8192)
+    throw new Error('Invalid context or generation bound');
   const base = new URL(values.url ?? 'http://127.0.0.1:11434');
   if (!['http:', 'https:'].includes(base.protocol)) throw new Error('Unsupported provider URL');
   let raw = '';
@@ -57,25 +61,24 @@ try {
     });
     console.log(JSON.stringify({ vectors: result.embeddings }));
   } else if (['select', 'expand', 'verify'].includes(request.task)) {
+    const compact = compactRecall(request);
     const result = await post('/api/chat', {
       model: values.model,
       stream: false,
-      format: request.task === 'expand' ? expansionSchema : schema,
-      options: { temperature: 0 },
+      format: compact?.schema ?? expansionSchema,
+      options: { temperature: 0, num_ctx: numCtx, num_predict: numPredict },
       messages: [
         {
           role: 'system',
-          content:
-            request.task === 'expand'
-              ? expansionInstructions
-              : request.task === 'verify'
-                ? verificationInstructions
-                : instructions,
+          content: compact?.instructions ?? expansionInstructions,
         },
-        { role: 'user', content: JSON.stringify(request) },
+        { role: 'user', content: JSON.stringify(compact?.input ?? request) },
       ],
     });
-    console.log(JSON.stringify(JSON.parse(result.message.content)));
+    // A truncated generation is an error, never a valid abstention or partial selection.
+    if (result.done_reason === 'length') throw new Error('Generation limit reached');
+    const output = JSON.parse(result.message.content);
+    console.log(JSON.stringify(compact ? compact.decode(output) : output));
   } else if (request.task === 'distill') {
     const source = request.input.observations;
     if (!Array.isArray(source)) throw new Error('Invalid observations');
