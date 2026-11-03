@@ -32,4 +32,3 @@ Return JSON {"matches":[0]}. Each number is an answering passage index. No dupli
     },
   };
 }
-
