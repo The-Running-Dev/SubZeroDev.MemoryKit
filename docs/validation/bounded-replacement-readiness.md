@@ -33,8 +33,9 @@ attestations, not a guarantee about another provider, backend, executable or pac
 - Typecheck, lint, release verification, compact adapter validation, total-deadline tests,
   Markdown candidate-read/rebuild tests and readiness failure/happy-path tests passed.
 - Installed-package checks exercise public entries, consumers, portable CLI, hooks and
-  storage/history plugin composition. The final archive passed on Node 24.22.1 and 26.12.1
-  on Windows. Earlier Node 24 attempts failed to launch child processes; the completed
+  storage/history plugin composition. The native-test archive passed on Node 24.22.1 and
+  26.12.1 on Windows; the final whitespace-only refresh passed on Node 24.22.1. Earlier
+  Node 24 attempts failed to launch child processes; the completed
   rerun passed every assertion. Migration and rollback cover pinned synthetic upstream
   export, attributed review, correction, reconciliation and SQLite/Markdown/Git round trips.
   See [migration evidence](bounded-replacement.json).
@@ -94,10 +95,60 @@ replacement, and no failed gate is waived.
 
 ## Installed candidate
 
-The final archive contains 112 files and 154,769 bytes, with SHA-256
-`eb24e37197c7075e69d4b8434b8414fcf40e42ee50a54d72bc81d49e9fa2f5c3`.
+The final archive contains 112 files and 154,766 bytes, with SHA-256
+`87ce60a2afdadcdfbbd55243431d16c019e7f93cea5bbd1081a4763441cfcb30`.
 Every shipped file was checked against a rebuild of clean source commit
-`c78ebea981a840cf662f07e34c40216a7a7ad373`; only npm-normalized package metadata is
+`3cf4f86133b5dabffb4bd78515915dc87471e83c`; only npm-normalized package metadata is
 checked structurally instead of byte-for-byte. See [candidate binding](bounded-candidate.json).
-The package remains private and was not published. Native acceptance, package consumers
-and migration/rollback use the installed archive, rather than source imports for the CLI.
+The native and migration tests used the preceding installed archive, SHA-256
+`eb24e37197c7075e69d4b8434b8414fcf40e42ee50a54d72bc81d49e9fa2f5c3`, built from
+`c78ebea981a840cf662f07e34c40216a7a7ad373`. See its
+[preserved binding](bounded-candidate-native.json). Comparing the two archives found
+identical file lists and identical bytes for every file except removal of a trailing blank
+line in `examples/compact-recall.mjs`, required by the repository whitespace check. The
+expensive native/model runs were not repeated for that whitespace-only change. The final
+archive passed its complete installed-package check. The package remains private and was
+not published. Native acceptance and migration/rollback use the installed CLI, rather than
+source imports for that entry point.
+
+## Native host acceptance
+
+The completed synthetic installed-CLI runs passed all 18 Codex checks and all 17 Claude
+Code checks. They cover fresh-process recall, project isolation, explicit shared scope,
+no-answer, correction, paraphrase and verbose tasks, capture review before acceptance,
+accepted capture and correction after restart, native compaction and recall afterward,
+cross-host corrected recall, installation receipts and managed uninstall. Codex additionally
+checks the unwrapped generated command. Codex used SQLite and Claude Code used Markdown;
+both used the explicitly configured verified Codex recall provider. This does not establish
+independent Claude or Qwen retrieval quality.
+
+Versions were `codex-cli 0.166.0-alpha.5.1` and `2.1.302 (Claude Code)`. See
+[Codex evidence](bounded-native-codex.json) and [Claude evidence](bounded-native-claude.json).
+These are small synthetic fixtures, not substitutes for the full model quality/latency gate.
+User settings and source accounts were not loaded, and the isolated installations were
+removed by the checks.
+
+Earlier attempts remain relevant: an interruption left incomplete runs, the Codex app update
+removed the old executable path and caused startup failures, one provider failed during a
+correction check, and the first attempt with the current Codex executable skipped the fresh
+process hook and returned missing context. The completed retry passed that check. These
+results demonstrate a passing rehearsal, not an absence of host/provider flakiness. Failed
+native assertions now save a bounded partial report before rethrowing, so a missing final
+report cannot be mistaken for acceptance.
+
+The new executable path changes the native provider configuration fingerprint to
+`94cca8dd50a6699b17a1298ddac71a2f691b922dbbf6bdf341fb454dbba3ddfd`.
+The full model report retains its original configuration and fingerprint; it is not
+retroactively qualified for the updated executable. Fingerprints bind serialized
+configuration, not executable or model contents.
+
+## Doctor rehearsal
+
+The installed CLI's synthetic provider probe passed in 25,622 ms. Doctor found the owned
+isolated installation configured and current, left its settings byte-for-byte unchanged,
+and accepted both native-host reports and migration/rollback evidence. It correctly exited
+1 with `ready: false`, blocking `quality` and `coldLatency`. The supplied full model report
+has a different configuration fingerprint, a deadline failure, and a 54,776 ms cold p95
+against the unchanged 10,000 ms limit. None of those failures was waived. See
+[doctor evidence](bounded-readiness.json). The rehearsal uninstalled its isolated managed
+hooks afterward; no existing host installation was cut over.
