@@ -46,7 +46,7 @@ try {
   );
   writeFileSync(
     join(work, 'config.toml'),
-    `approval_policy = "never"\nsandbox_mode = "read-only"\nweb_search = "disabled"\nmodel_reasoning_effort = "low"\nmodel_instructions_file = ${JSON.stringify(join(work, 'instructions.txt').replaceAll('\\', '/'))}\n[features]\nshell_tool = false\napply_patch_freeform = false\n`
+    `approval_policy = "never"\nsandbox_mode = "read-only"\nweb_search = "disabled"\nmodel_reasoning_effort = "low"\nmodel_instructions_file = ${JSON.stringify(join(work, 'instructions.txt').replaceAll('\\', '/'))}\n[features]\nshell_tool = false\napply_patch_freeform = false\napps = false\nplugins = false\nremote_plugin = false\nskill_search = false\nskip_host_skill_discovery = true\nsleep_tool = false\n`
   );
   const result = spawnSync(
     values.codex,

@@ -545,6 +545,7 @@ can include incidental material, within the configured passage/output bounds. Ol
 `--num-ctx` (default 16384) and `--num-predict` (default 1024). A generation reaching its output
 limit is an error. Choose a disclosure budget that fits the model's tokenizer and context;
 byte counts are not token counts, and a larger window alone does not establish retrieval quality.
+Use `--num-gpu N` (0..256) to request a GPU layer count for Ollama recall. Omit it for automatic placement. Measure memory use and latency on the target machine.
 An optional `--num-thread` (1..128) sets Ollama's CPU thread count; omit it to retain Ollama's
 automatic choice. Measure it on the target machine: more threads can increase latency under
 contention. Smaller explicit context/output budgets can reduce resource use but must still
