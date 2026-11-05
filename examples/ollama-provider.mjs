@@ -1,6 +1,7 @@
 // Optional command provider. Requires an already-running Ollama and explicitly chosen
 // installed models. Downloads nothing. Protocol documentation: docs/portable-memory.md.
 import { parseArgs } from 'node:util';
+import { appendFileSync } from 'node:fs';
 import { compactRecall } from './compact-recall.mjs';
 
 const subjectSchema = {
@@ -55,6 +56,7 @@ try {
       'num-predict': { type: 'string', default: '1024' },
       'num-thread': { type: 'string' },
       'num-gpu': { type: 'string' },
+      timings: { type: 'string' },
     },
   });
   const timeout = Number(values['timeout-ms']);
@@ -81,21 +83,35 @@ try {
   const request = JSON.parse(raw);
   if (request.version !== 1) throw new Error('Unsupported provider protocol');
   const post = async (path, body) => {
-    const response = await fetch(new URL(path, base), {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(timeout),
-    });
-    if (!response.ok) throw new Error('Ollama request failed');
-    const chunks = [];
-    let size = 0;
-    for await (const chunk of response.body) {
-      size += chunk.length;
-      if (size > 4 * 1024 * 1024) throw new Error('Provider response too large');
-      chunks.push(chunk);
+    const start = performance.now();
+    let result;
+    try {
+      const response = await fetch(new URL(path, base), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeout),
+      });
+      if (!response.ok) throw new Error('Ollama request failed');
+      const chunks = [];
+      let size = 0;
+      for await (const chunk of response.body) {
+        size += chunk.length;
+        if (size > 4 * 1024 * 1024) throw new Error('Provider response too large');
+        chunks.push(chunk);
+      }
+      result = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      return result;
+    } finally {
+      // Ollama durations are nanoseconds. Only fixed numeric fields leave the adapter.
+      if (values.timings) appendFileSync(values.timings, JSON.stringify({
+        version: 1, task: ['embed', 'select', 'expand', 'verify', 'distill'].includes(request.task) ? request.task : undefined,
+        httpSucceeded: result !== undefined, httpMs: performance.now() - start,
+        ...Object.fromEntries(['total_duration', 'load_duration', 'prompt_eval_duration', 'eval_duration']
+          .filter(key => Number.isFinite(result?.[key]) && result[key] >= 0)
+          .map(key => [key.replace('_duration', 'Ms'), result[key] / 1e6])),
+      }) + '\n', { mode: 0o600 });
     }
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
   };
   if (request.task === 'embed') {
     if (!Array.isArray(request.texts) || request.texts.some((text) => typeof text !== 'string'))

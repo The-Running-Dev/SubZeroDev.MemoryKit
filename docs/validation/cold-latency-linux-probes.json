@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "platform": "linux-x64",
+  "node": "v24.22.1",
+  "codex": "0.167.0-alpha.4",
+  "qualification": false,
+  "note": "Diagnostic expansion probes only. Original 58-case Windows suite not rerun; no provider success or latency improvement established.",
+  "probes": [
+    {
+      "mode": "seeded",
+      "diagnosticTimeoutMs": 15000,
+      "exitCode": 75,
+      "version": 1,
+      "task": "expand",
+      "succeeded": false,
+      "catalogCopied": true,
+      "setupMs": 5.852305999999999,
+      "spawnMs": 3.5994440000000054,
+      "processMs": 15011.965259,
+      "adapterMs": 15019.749547
+    },
+    {
+      "mode": "fresh",
+      "diagnosticTimeoutMs": 15000,
+      "exitCode": 75,
+      "version": 1,
+      "task": "expand",
+      "succeeded": false,
+      "catalogCopied": false,
+      "setupMs": 3.353009,
+      "spawnMs": 2.766466000000001,
+      "processMs": 15015.395840000001,
+      "adapterMs": 15020.99375
+    },
+    {
+      "mode": "seeded-with-host-backend-env",
+      "diagnosticTimeoutMs": 20000,
+      "exitCode": 75,
+      "version": 1,
+      "task": "expand",
+      "succeeded": false,
+      "catalogCopied": true,
+      "setupMs": 5.298958999999996,
+      "spawnMs": 4.288027,
+      "processMs": 20012.908697,
+      "adapterMs": 20020.126566000003
+    }
+  ]
+}

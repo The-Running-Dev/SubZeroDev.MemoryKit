@@ -340,7 +340,7 @@ the exact fixture results and their limits.
 
 An independent second selector uses an existing Codex login: configure the same command
 shape with `examples/codex-recall.mjs --codex /absolute/native/codex-executable` and
-`timeoutMs:110000`. It copies only existing authentication into an isolated temporary home,
+`timeoutMs:110000`. It copies existing authentication and optional native catalog metadata into an isolated temporary home,
 disables tools, rules and web access, and uses structured output. Its internal timeout is
 90 seconds per call, configurable with `--timeout-ms` (1000..110000). Set the outer command
 deadline above the adapter deadline. On Windows use the native `codex.exe`, rather than npm's `.cmd` shim.
@@ -348,6 +348,14 @@ Optional `--model` chooses an explicitly available model. It does not install mo
 change global configuration. Query expansion uses `{version:1,task:'expand',query}` and
 returns `{queries:[...]}`; selection retains the existing `select` protocol. Expansion is
 optional for other adapters and receives no memory passages.
+
+The Codex adapter also seeds the existing native `models_cache.json` into its isolated home;
+Codex validates cache freshness, executable version and provider/account identity. This copies
+no sessions, rules or user settings and does not cache retrieval. `--fresh-model-catalog`
+disables the seed for comparisons. Both Codex and Ollama accept an optional `--timings`
+JSONL path for numeric lifecycle/server timings without prompt or answer content. See the
+[cold latency investigation](validation/cold-latency-investigation.md) for measurements,
+limitations and unchanged full qualification commands. No new readiness result is implied.
 
 Run `node scripts/verify-recall-quality.ts --selector /absolute/recall.json --report
 /absolute/report.json` to measure a recall-profile object against existing eligible corpus
