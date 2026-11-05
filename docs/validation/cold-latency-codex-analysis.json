@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "provider": "codex-gpt-6.1-sol-s26-tools-disabled",
+  "measuredCases": 58,
+  "coldLatencyMs": {
+    "p50": 21543.079700000002,
+    "p95": 37781.58090000006
+  },
+  "phaseSummary": [
+    {
+      "task": "expand",
+      "calls": 58,
+      "completed": 58,
+      "totalMs": 530308.4782999993,
+      "fractionOfTotal": 0.3945559052711341,
+      "p50": 8451.937099999981,
+      "p95": 15048.9896
+    },
+    {
+      "task": "select",
+      "calls": 58,
+      "completed": 58,
+      "totalMs": 436130.3674000005,
+      "fractionOfTotal": 0.32448625463686037,
+      "p50": 6932.289600000018,
+      "p95": 11941.345400000002
+    },
+    {
+      "task": "verify",
+      "calls": 49,
+      "completed": 49,
+      "totalMs": 373964.0720000005,
+      "fractionOfTotal": 0.27823378091151285,
+      "p50": 6830.028399999952,
+      "p95": 13306.963799999998
+    }
+  ],
+  "nonProviderMs": {
+    "total": 3661.310499999934,
+    "p50": 45.30619999987539,
+    "p95": 144.43339999997988
+  },
+  "p95Case": {
+    "id": "held-correct-release-afternoon",
+    "ms": 37781.58090000006,
+    "phases": [
+      {
+        "task": "expand",
+        "ms": 15311.524299999932,
+        "completed": true
+      },
+      {
+        "task": "select",
+        "ms": 11692.050200000056,
+        "completed": true
+      },
+      {
+        "task": "verify",
+        "ms": 10725.600800000015,
+        "completed": true
+      }
+    ],
+    "otherMs": 52.40560000005644
+  },
+  "cost": {
+    "calls": 165,
+    "processAttempts": 165,
+    "configuredRetries": 0,
+    "retries": 0,
+    "inputBytes": 234954,
+    "outputBytes": 21336,
+    "note": "Actual uncached logical calls and process attempts including retries; input bytes count logical request data, output bytes count completed logical calls, not token accounting or billing"
+  },
+  "warm": {
+    "enabled": false,
+    "latencyMs": {
+      "p50": 0,
+      "p95": 0
+    },
+    "rows": []
+  },
+  "lifecycle": null,
+  "limits": [
+    "Recorded phase costs include adapter/CLI startup and provider execution; they do not separate them.",
+    "Lifecycle events are timing boundaries, not server-side inference metrics. turnMs includes transport and provider work.",
+    "Percentiles use the qualification harness nearest-rank method. Phase p95 values must not be summed.",
+    "This analysis is not a new quality or readiness qualification. The cold p95 threshold remains 10000 ms."
+  ]
+}
