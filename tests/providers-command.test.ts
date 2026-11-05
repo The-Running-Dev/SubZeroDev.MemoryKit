@@ -28,23 +28,18 @@ describe('optional command providers', () => {
       const body = JSON.parse(raw);
       requests.push({ path: req.url!, body });
       res.setHeader('content-type', 'application/json');
-      res.end(
-        JSON.stringify(
-          req.url === '/api/embed'
-            ? { embeddings: [[1, 0]] }
-            : {
-                message: {
-                  content: JSON.stringify(
-                    typeof body.format === 'object'
-                      ? { matches: [0] }
-                      : {
-                          observations: [{ sourceId: 'one', content: 'Use SQLite.' }],
-                        }
-                  ),
-                },
-              }
-        )
-      );
+      if (req.url === '/api/embed') {
+        res.end(JSON.stringify({ embeddings: [[1, 0]] }));
+        return;
+      }
+      const schema = body.format?.properties;
+      let output;
+      if (schema?.citations)
+        output = { citations: [{ i: 0, quote: 'SQLite' }, { i: 1, quote: 'unsupported' }] };
+      else if (schema?.queries) output = { subject: 'storage engine', queries: ['database'] };
+      else if (schema?.matches) output = { matches: [0] };
+      else output = { observations: [{ sourceId: 'one', content: 'Use SQLite.' }] };
+      res.end(JSON.stringify({ message: { content: JSON.stringify(output) } }));
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const address = server.address();
@@ -87,6 +82,20 @@ describe('optional command providers', () => {
       );
       assert.equal(requests[2]!.path, '/api/chat');
       assert.equal(typeof requests[2]!.body.format, 'object');
+      const tuned = { ...config, args: [...config.args, '--num-thread', '4', '--num-gpu', '0'] };
+      const selector = new CommandRecallSelector('ollama-test', tuned, true, true);
+      assert.deepEqual(await selector.expand!('Which storage engine?'), ['database']);
+      const passages = ['Use SQLite.', 'Use Markdown.'].map((content, index) => ({
+        id: String(index), revision: 1, namespace: 'demo', content, truncated: false,
+      }));
+      const proposed = passages.map(({ id, revision, content }) => ({ id, revision, quote: content }));
+      assert.deepEqual(
+        await selector.verify!({ query: 'database', limit: 2, passages }, proposed),
+        [{ id: '0', revision: 1, quote: 'SQLite' }]
+      );
+      assert.deepEqual(requests[3]!.body.options, {
+        temperature: 0, num_ctx: 16384, num_predict: 1024, num_thread: 4, num_gpu: 0,
+      });
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve()))

@@ -80,4 +80,4 @@ Managed Markdown can opt into a rebuildable SQLite term index and reads candidat
 their manifest hashes. These indexes narrow reads; store opening, writes and unfiltered scans
 can still be linear. Provider probes and replacement-readiness assessment are explicit diagnostic
 operations. Their local evidence does not switch hosts or enable capture. See
-[ADR-0009](decisions/0009-bounded-recall-and-indexed-readiness.md).
+[ADR-0009](decisions/0009-bounded-recall-and-indexed-readiness.md). See [ADR-0010](decisions/0010-semantic-cold-recall.md) for model prompt and cold latency qualification.

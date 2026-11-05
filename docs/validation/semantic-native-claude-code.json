@@ -1,0 +1,77 @@
+{
+  "host": "claude-code",
+  "version": "2.1.302 (Claude Code)",
+  "installedCli": true,
+  "storage": "markdown",
+  "checks": [
+    {
+      "name": "managed installation command probe",
+      "passed": true,
+      "contextBytes": 0
+    },
+    {
+      "name": "initial recall",
+      "passed": true,
+      "contextBytes": 494
+    },
+    {
+      "name": "fresh host process",
+      "passed": true,
+      "contextBytes": 494
+    },
+    {
+      "name": "project isolation",
+      "passed": true,
+      "contextBytes": 493
+    },
+    {
+      "name": "explicit shared scope",
+      "passed": true,
+      "contextBytes": 478
+    },
+    {
+      "name": "no answer",
+      "passed": true,
+      "contextBytes": 0
+    },
+    {
+      "name": "correction after restart",
+      "passed": true,
+      "contextBytes": 494
+    },
+    {
+      "name": "paraphrase",
+      "passed": true,
+      "contextBytes": 494
+    },
+    {
+      "name": "verbose-task",
+      "passed": true,
+      "contextBytes": 494
+    },
+    {
+      "name": "native capture seed",
+      "passed": true,
+      "contextBytes": 0
+    },
+    {
+      "name": "unaccepted capture excluded",
+      "passed": true,
+      "contextBytes": 0
+    },
+    {
+      "name": "accepted capture after restart",
+      "passed": true,
+      "contextBytes": 654
+    },
+    {
+      "name": "captured correction after restart",
+      "passed": false,
+      "contextBytes": 0
+    }
+  ],
+  "completed": false,
+  "configurationFingerprint": "4598a2938b7a4bcb4f95e8078fed73a9e5eb3cf783e3f0d4e0d1411e8477bbd2",
+  "generatedAt": "2026-11-05T14:58:09.933Z",
+  "limitations": "Native acceptance failed. Inspect the local diagnostic log; this partial report cannot qualify replacement readiness."
+}

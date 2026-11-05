@@ -545,6 +545,17 @@ can include incidental material, within the configured passage/output bounds. Ol
 `--num-ctx` (default 16384) and `--num-predict` (default 1024). A generation reaching its output
 limit is an error. Choose a disclosure budget that fits the model's tokenizer and context;
 byte counts are not token counts, and a larger window alone does not establish retrieval quality.
+Use `--num-gpu N` (0..256) to request a GPU layer count for Ollama recall. Omit it for automatic placement. Measure memory use and latency on the target machine.
+An optional `--num-thread` (1..128) sets Ollama's CPU thread count; omit it to retain Ollama's
+automatic choice. Measure it on the target machine: more threads can increase latency under
+contention. Smaller explicit context/output budgets can reduce resource use but must still
+fit the complete request and response. Neither setting changes the relevance rules.
+
+The opt-in `scripts/verify-recall-quality.ts` report includes per-case expansion, selection
+and verification durations, including incomplete phases. Its trace also records generated
+search queries. Traces contain supplied queries and passages: use synthetic fixtures or keep
+them private. Cold means uncached provider calls; model loading and concurrent machine load
+can still affect the measurement. Focused runs do not qualify a provider for replacement.
 
 `memorykit doctor --profile PROFILE --provider-probe` explicitly calls the configured selector
 with synthetic evidence, checking selection, verification and no-answer behavior. It reads no
@@ -632,3 +643,5 @@ backup or portable archive; do not copy an actively written SQLite main file alo
    archive restore into another fresh store before trusting it. Reconcile new records explicitly;
    restoring an older backup alone discards later work. Clear unused recall/index buckets under
    the private retention policy. No personal cutover is performed by these synthetic checks.
+
+See the [Qwen and Codex qualification results](validation/semantic-qualification.md) for cold latency, remaining retrieval failures and native acceptance.

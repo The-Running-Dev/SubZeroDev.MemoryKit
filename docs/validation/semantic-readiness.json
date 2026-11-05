@@ -1,0 +1,33 @@
+{
+  "generatedAt": "2026-11-05T15:31:04.830Z",
+  "exitCode": 1,
+  "synthetic": true,
+  "installedCli": true,
+  "settingsUnchanged": true,
+  "installation": {
+    "configured": true,
+    "current": true
+  },
+  "providerHealth": {
+    "passed": true,
+    "elapsedMs": 46765.296899999994,
+    "synthetic": true
+  },
+  "readiness": {
+    "ready": false,
+    "configurationFingerprint": "91523dc095b14c4a5009e5641283401380bede0b3110d4676d93b21cc66f6bcb",
+    "maxColdP95Ms": 10000,
+    "measuredColdP95Ms": 37781.58090000006,
+    "gates": {
+      "quality": true,
+      "coldLatency": false,
+      "nativeCodex": true,
+      "nativeClaude": true,
+      "migrationAndRollback": true
+    },
+    "blocked": [
+      "coldLatency"
+    ],
+    "limitations": "Local synthetic evidence for the configured provider. Does not establish host trust, live source cutover, physical erasure or readiness of another model, backend or package build."
+  }
+}

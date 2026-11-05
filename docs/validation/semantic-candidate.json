@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "package": "subzerodev-memorykit",
+  "packageVersion": "0.2.0-rc.1",
+  "sourceCommit": "2b86da5ab4a315e86a8da995641542aa38087d75",
+  "archive": "subzerodev-memorykit-0.2.0-rc.1.tgz",
+  "sha256": "10c334b3f58803cb851ccf6e3c971cb2621443f2d5940a7d5b480a07250721e7",
+  "integrity": "sha512-pANWiTZrer/hhor/CSD4j/GJldE4KGZQT2N1tEhsjSt1FoqFnQwIy91ileFYszjk8CiqZtsmfXi1To296oH2pw==",
+  "bytes": 154961,
+  "published": false,
+  "validation": "Archive structure, package identity and shipped file bytes checked against the rebuilt clean checkout. See CI and validation reports for test and model results."
+}
