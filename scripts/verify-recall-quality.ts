@@ -65,6 +65,24 @@ const provider = new CommandRecallSelector(
 );
 const cases = values.cases ? new Set(values.cases.split(',')) : undefined;
 let generatedQueries: string[];
+type PhaseTiming = { task: string; start: number; end?: number; completed: boolean };
+let phaseTimings: PhaseTiming[] = [];
+function snapshotPhases() {
+  return phaseTimings.map(({ task, start, end, completed }) => ({
+    task, ms: (end ?? performance.now()) - start, completed,
+  }));
+}
+async function timePhase<T>(task: string, run: () => Promise<T>): Promise<T> {
+  const phase: PhaseTiming = { task, start: performance.now(), completed: false };
+  phaseTimings.push(phase);
+  try {
+    const result = await run();
+    phase.completed = true;
+    return result;
+  } finally {
+    phase.end = performance.now();
+  }
+}
 const trace = (task: string, input: unknown, output: unknown): void => {
   if (values.trace)
     appendFileSync(resolve(values.trace), JSON.stringify({ task, input, output }) + '\n');
@@ -80,8 +98,9 @@ const measured: RecallSelector = {
         expand: async (query: string, signal?: AbortSignal) => {
           calls++;
           inputBytes += Buffer.byteLength(query);
-          const out = await provider.expand!(query, signal);
+          const out = await timePhase('expand', () => provider.expand!(query, signal));
           generatedQueries = out;
+          trace('expand', query, out);
           outputBytes += Buffer.byteLength(JSON.stringify(out));
           return out;
         },
@@ -92,7 +111,7 @@ const measured: RecallSelector = {
         verify: async (request, selections, signal) => {
           calls++;
           inputBytes += Buffer.byteLength(JSON.stringify({ request, selections }));
-          const out = await provider.verify!(request, selections, signal);
+          const out = await timePhase('verify', () => provider.verify!(request, selections, signal));
           trace('verify', { ...request, selections }, out);
           outputBytes += Buffer.byteLength(JSON.stringify(out));
           return out;
@@ -102,7 +121,7 @@ const measured: RecallSelector = {
   select: async (request, signal) => {
     calls++;
     inputBytes += Buffer.byteLength(JSON.stringify(request));
-    const out = await provider.select(request, signal);
+    const out = await timePhase('select', () => provider.select(request, signal));
     trace('select', request, out);
     outputBytes += Buffer.byteLength(JSON.stringify(out));
     return out;
@@ -114,6 +133,7 @@ const warmRows: Record<string, unknown>[] = [];
 let lastWarmMs = 0;
 async function recall(c: MemoryClient, input: ContextInput, scope = 'embedded') {
   input = { ...input, deadlineMs: config.deadlineMs };
+  phaseTimings = [];
   lastWarmMs = 0;
   if (!values.cache) return context(c, input, undefined, measured);
   const cache = new SqliteRecallCache(
@@ -125,9 +145,11 @@ async function recall(c: MemoryClient, input: ContextInput, scope = 'embedded') 
   const selector = new CachedRecallSelector(measured, cache);
   try {
     const cold = await context(c, input, undefined, selector);
+    const coldPhases = [...phaseTimings];
     const start = performance.now();
     const attempts = provider.attempts;
     const warm = await context(c, input, undefined, selector);
+    phaseTimings = coldPhases;
     lastWarmMs = performance.now() - start;
     const equal = JSON.stringify(cold.items) === JSON.stringify(warm.items);
     warmRows.push({
@@ -267,10 +289,11 @@ try {
           noAnswer: expected.length === 0,
           reasons: result.reasons,
           generatedQueries,
+          phases: snapshotPhases(),
           bytes: result.bytes,
         });
       } catch (e) {
-        rows.push({ set, id: q.id, ms: performance.now() - start, error: toProblem(e) });
+        rows.push({ set, id: q.id, ms: performance.now() - start, error: toProblem(e), phases: snapshotPhases() });
       } finally {
         await c.close();
       }
@@ -309,6 +332,7 @@ try {
         text: result.text,
         reasons: result.reasons,
         generatedQueries,
+        phases: snapshotPhases(),
       });
     } catch (e) {
       rows.push({
@@ -316,6 +340,7 @@ try {
         id,
         ms: performance.now() - start - lastWarmMs,
         error: toProblem(e),
+        phases: snapshotPhases(),
       });
     } finally {
       await c.close();

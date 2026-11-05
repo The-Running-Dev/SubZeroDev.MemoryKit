@@ -64,7 +64,7 @@ try {
       '-',
     ],
     {
-      input: JSON.stringify(compact?.input ?? request),
+      input: compact ? JSON.stringify(compact.input) : request.query,
       cwd: work,
       env: { ...process.env, CODEX_HOME: work },
       encoding: 'utf8',
@@ -95,5 +95,5 @@ try {
   console.error('MemoryKit Codex recall failed; check executable, login, model and timeout.');
   process.exitCode ??= 1;
 } finally {
-  if (work) rmSync(work, { recursive: true, force: true });
+  if (work) rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
