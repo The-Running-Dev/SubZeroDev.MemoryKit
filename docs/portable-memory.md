@@ -643,3 +643,5 @@ backup or portable archive; do not copy an actively written SQLite main file alo
    archive restore into another fresh store before trusting it. Reconcile new records explicitly;
    restoring an older backup alone discards later work. Clear unused recall/index buckets under
    the private retention policy. No personal cutover is performed by these synthetic checks.
+
+See the [Qwen and Codex qualification results](validation/semantic-qualification.md) for cold latency, remaining retrieval failures and native acceptance.
