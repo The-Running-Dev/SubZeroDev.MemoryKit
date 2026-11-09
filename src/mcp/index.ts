@@ -19,6 +19,7 @@ import {
 } from '@modelcontextprotocol/server';
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import type { Principal } from '../access/index.ts';
+import { browse, type BrowseInput } from '../workflow/browse.ts';
 import { CONTENT_TYPES, InternalError, MEMORY_STATES, toProblem } from '../model/index.ts';
 import type { MemoryClient, MemoryService, WriteOptions } from '../service/index.ts';
 import { capture, context, type CaptureInput, type ContextInput } from '../workflow/index.ts';
@@ -91,6 +92,28 @@ interface ToolSpec {
 // Inputs are passed through untyped: the service checks every field.
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const TOOLS: Record<string, ToolSpec> = {
+  memory_browse: {
+    description:
+      'Browse bounded memory metadata in exact readable scopes, newest first. Defaults to active accepted unsuperseded records. Optional previews are original untrusted source data. Does not inject context or accept memories. Use memory_retrieve for ranked search.',
+    inputSchema: object(
+      {
+        namespace: string,
+        sharedNamespaces: { type: 'array', items: string, maxItems: 16 },
+        text: {
+          type: 'string',
+          description: 'Literal case-insensitive content substring; not ranked search',
+        },
+        kinds: strings,
+        includeCandidates: { type: 'boolean' },
+        limit: { type: 'integer', minimum: 1, maximum: 50 },
+        maxBytes: { type: 'integer', minimum: 512, maximum: 65536 },
+        previewChars: { type: 'integer', minimum: 0, maximum: 256 },
+        cursor: { type: 'string', maxLength: 8192 },
+      },
+      ['namespace']
+    ),
+    call: (client, args) => browse(client, args as unknown as BrowseInput),
+  },
   memory_capture: {
     description:
       'Capture attributed candidate observations in one explicit namespace. Retry identical host/session/event/observation identities safely. Does not accept or promote facts.',

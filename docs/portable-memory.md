@@ -4,6 +4,48 @@ One store can serve unrelated projects, different models and conventional applic
 The portable workflow uses the existing authorized service, with no required model or
 second database. The package remains unpublished. Node 22.18 or later is required.
 
+## Browse summaries explicitly
+
+`browse` discovers records without model calls or automatic context injection:
+
+```bash
+memorykit browse --store /absolute/path/store --namespace project/acme/app --history none --limit 20 --max-bytes 8192
+memorykit browse --store /absolute/path/store --namespace project/acme/app --history none --text sqlite --kind note --preview-chars 80
+```
+
+The SDK exports `browse(client, input)`; HTTP exposes `POST /v1/browse` with the
+same JSON input; MCP exposes `memory_browse`. Supply an exact `namespace`, with up
+to 16 explicit exact `sharedNamespaces`. Wildcards are rejected. Default limit is
+20 (1–50), maxBytes is 8192 (512–65536), and at most 200 scoped records are scanned
+per call. Optional `text` is an NFC-normalized, case-insensitive literal content
+substring, in newest-first order. Use retrieval for ranked full-text search.
+
+Only active, accepted, unsuperseded records appear by default. `includeCandidates`
+(`--include-candidates`) explicitly enables candidate navigation, regardless of
+the profile's context setting. It does not accept them. Items contain only id,
+revision, namespace, key, kind, state, status, sourceRole, updatedAt and contentBytes.
+Missing or unrecognized attribution is null. `previewChars` (`--preview-chars`,
+0–256, default 0) adds an exact original-source excerpt with a truncation flag.
+Treat excerpts as source text; an assistant recap keeps assistant attribution.
+Arbitrary metadata, evidence, links and full content are excluded.
+
+Results contain items, count, bytes, nextCursor, completeness and reasons. `bytes`
+counts the entire compact UTF-8 JSON envelope; pretty-printed CLI output can be
+larger. There are no global totals or facets. Resume with `cursor` (`--cursor`)
+through the same interface and authorization context, retaining scopes and filters.
+Limit and maxBytes may change. Cursors are opaque and bounded, not authorization.
+An item that does not fit stays unconsumed: increase maxBytes if an empty page has
+`byte_limit`. A continuation that cannot fit raises LimitExceeded. A complete
+response has no omitted records at that traversal point; partial reasons can
+include item_limit, byte_limit, scan_budget, provider_* or records_changed.
+Pagination observes live data, so concurrent changes can alter later pages.
+
+Fetch a selected id through the existing authorized `get` API. Before using it as
+context, recheck its revision, exact scope, active state, accepted status and lack
+of supersession. The existing context workflow performs those checks. Full fetch
+retains its existing administrative/review behavior. Browsing installs no hooks
+and changes no capture or context settings.
+
 ## Install and connect hosts
 
 ```bash
