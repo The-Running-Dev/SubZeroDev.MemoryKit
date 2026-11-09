@@ -110,6 +110,20 @@ try {
   );
   console.log('portable cli ok');
 
+  // Browse candidate navigation is an explicit request, even when the profile allows
+  // candidates in context. Exercise the packed executable, not source-tree imports.
+  const browseArgs = ['browse', '--profile', 'portable-profile/memorykit.profile.json'];
+  assert.equal(JSON.parse(memorykit(...browseArgs)).count, 0);
+  const browsed = JSON.parse(memorykit(...browseArgs, '--include-candidates'));
+  assert.equal(browsed.count, 1);
+  assert.equal(browsed.items[0].status, 'candidate');
+  assert.equal(browsed.items[0].sourceRole, 'user');
+  assert.equal(browsed.bytes, Buffer.byteLength(JSON.stringify(browsed)));
+  assert.ok(browsed.bytes <= 8192);
+  assert.equal('content' in browsed.items[0], false);
+  assert.equal('preview' in browsed.items[0], false);
+  console.log('installed browse cli ok');
+
   // Execute the installed generated prompt hook with real stdin, rather than only
   // inspect its configuration. No native host credentials/model calls are needed here.
   const settings = JSON.parse(

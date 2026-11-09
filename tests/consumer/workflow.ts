@@ -4,13 +4,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   accept,
+  browse,
   capture,
   context,
+  handle,
   reviewQueue,
   reviewMemory,
   initStore,
   openStore,
   type CaptureInput,
+  type BrowseInput,
+  type BrowseItem,
+  type BrowseResult,
   type RecallSelector,
 } from 'subzerodev-memorykit';
 import { CommandEmbeddings, CommandRecallSelector } from 'subzerodev-memorykit/providers-command';
@@ -34,7 +39,28 @@ try {
       (await reviewQueue(client, { namespace: input.namespace })).items[0]!.memory.id,
       record.id
     );
-    await accept(client, record.id, record.revision);
+    const accepted = await accept(client, record.id, record.revision);
+    const browseInput: BrowseInput = { namespace: input.namespace, limit: 1, maxBytes: 1024 };
+    const page: BrowseResult = await browse(client, browseInput);
+    const item: BrowseItem = page.items[0]!;
+    assert.equal(page.count, 1);
+    assert.equal(item.id, record.id);
+    assert.equal(item.revision, accepted.memory.revision);
+    assert.equal(item.sourceRole, 'user');
+    assert.equal(item.status, 'accepted');
+    assert.equal(page.bytes, Buffer.byteLength(JSON.stringify(page)));
+    assert.ok(page.bytes <= browseInput.maxBytes!);
+    assert.equal('content' in item, false);
+    assert.equal('preview' in item, false);
+    assert.equal((await client.get(item.id)).content, input.observations[0]!.content);
+    const response = await handle(client, {
+      method: 'POST',
+      path: '/v1/browse',
+      headers: new Headers(),
+      body: JSON.stringify(browseInput),
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(JSON.parse(response.body), page);
     assert.match((await context(client, { namespace: input.namespace })).text, /SQLite WAL/);
     assert.equal(typeof CommandEmbeddings, 'function');
     assert.equal(typeof CommandRecallSelector, 'function');

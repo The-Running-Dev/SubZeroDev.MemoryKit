@@ -1,8 +1,29 @@
 # Package identity and publication
 
-Status: **proposal, not an approved identity or a published package** (2026-10-31).
+Status: **proposal, not an approved identity or a published package** (reconciled 2026-11-10).
 Issue [#14](https://github.com/The-Running-Dev/SubZeroDev.MemoryKit/issues/14) stays open.
 The implementation plan is complete; that does not grant permission to publish.
+
+## Current candidate and release choice
+
+`package.json` currently declares the proposed name `subzerodev-memorykit`, version
+`0.2.0-rc.1` and `private: true`. This is a release candidate, not a stable `0.2.0`
+release or approval to publish it first. The earlier `0.1.0` installation and tag
+instructions no longer describe the current manifest.
+
+The release scripts derive identity and version from the manifest. A release tag must
+equal `v${manifest.version}`: **if the owner selects the current RC**, that is
+`v0.2.0-rc.1`. If the owner selects a future stable release instead, choose its exact
+version in a reviewed manifest/lockfile change, update version-specific examples and
+protocol metadata, and rebuild/revalidate before authorizing the matching tag. No stable
+version or first-publication order is selected by this guide.
+
+The npm distribution tag is a separate owner decision from the Git release tag.
+`release.yml` currently passes no `--tag`, and `publishConfig` declares no tag. npm's
+default tag is `latest`; npm 11.9.0 also rejects prerelease publication without an
+explicit tag. Before authorizing any RC release tag, approve the intended npm channel
+(for example, `next` or `rc`) and review the workflow/metadata change that supplies it.
+This documentation change does not select a channel or alter publication behavior.
 
 ## Recommendation and evidence
 
@@ -57,7 +78,10 @@ but no release workflow to invoke or extend.
 Current local and proposed npmjs imports:
 
 ```ts
-import { initStore, openStore } from 'subzerodev-memorykit';
+import {
+  browse, initStore, openStore,
+  type BrowseInput, type BrowseResult,
+} from 'subzerodev-memorykit';
 import { GitHistory } from 'subzerodev-memorykit/history-git';
 ```
 
@@ -70,36 +94,51 @@ import { openStore } from '@subzerodev/memorykit';
 import { GitHistory } from '@subzerodev/memorykit/history-git';
 ```
 
-The root SDK, separate `/history-git` entry, lazy Git loading and `memorykit` executable
-remain the same. Internal deep imports remain blocked. No published placeholder consumers
-have been identified; no alias package is being introduced.
+The public entries are the root SDK and `/history-git`, `/providers-command`,
+`/index-sqlite`, `/storage-postgres` and `/conformance` subpaths. `browse`, `BrowseInput`,
+`BrowseItem` and `BrowseResult` are exported from the root; there is no `/browse` subpath
+or `MemoryClient.browse` method. CLI `memorykit browse`, HTTP `POST /v1/browse` and MCP
+`memory_browse` compose the same authorized search/get workflow. They default to active,
+accepted, unsuperseded records with metadata only; candidates and original-source previews
+require explicit request options. See [portable memory](portable-memory.md) for bounds,
+continuations and selected-record revalidation. Lazy Git loading and the `memorykit`
+executable remain unchanged. Internal deep imports remain blocked. No published placeholder
+consumers have been identified; no alias package is being introduced.
 
-Before publication, use only the local packed installation from the README. After an actual
-verified npmjs release under the recommended name, the commands would be:
+Before publication, use only the local packed installation from the README
+(`npm install ./subzerodev-memorykit-0.2.0-rc.1.tgz`). The following registry commands
+apply **only if the owner approves and actually publishes this exact RC under the proposed
+name**, and public verification succeeds:
 
 ```bash
-npm install subzerodev-memorykit@0.1.0 --registry=https://registry.npmjs.org
+npm install subzerodev-memorykit@0.2.0-rc.1 --registry=https://registry.npmjs.org
 npx --no-install memorykit --help
 ```
 
 For a global CLI install or a one-off invocation, after publication:
 
 ```bash
-npm install --global subzerodev-memorykit@0.1.0 --registry=https://registry.npmjs.org
+npm install --global subzerodev-memorykit@0.2.0-rc.1 --registry=https://registry.npmjs.org
 memorykit --help
-npm exec --registry=https://registry.npmjs.org --package=subzerodev-memorykit@0.1.0 -- memorykit --help
+npm exec --registry=https://registry.npmjs.org --package=subzerodev-memorykit@0.2.0-rc.1 -- memorykit --help
 ```
 
 A scoped choice changes `--package` and the installation target, never the binary name.
-These future examples are not evidence that version 0.1.0 exists on a registry.
+These conditional examples are not evidence that `0.2.0-rc.1` exists on a registry.
+For an owner-selected future stable release, substitute its verified exact name/version;
+do not drop the RC suffix or use an unversioned install as an implicit release decision.
 
 ## Owner-controlled prerequisites
 
 1. Approve the exact package name and npmjs/public destination. For a scoped name, confirm
    authenticated membership and write permission in that npm scope. Recheck availability.
-2. Review the proposed metadata, declared MIT license text and package contents. Keep
-   `private: true` until the identity is approved. Then set it to `false` in a reviewed change;
-   update all name references if the scoped alternative is selected.
+2. Approve the exact first-publication version (current RC or a separately chosen stable
+   version), npm distribution tag, proposed metadata, declared MIT license text and package
+   contents. Keep `private: true` until both the exact identity and version are explicitly
+   approved. Only then set it to `false` in a reviewed change; update all name references
+   if the scoped alternative is selected. The existing guards check tag/version equality
+   and configured identity, not a separate stored owner approval of a particular version
+   or npm distribution tag; that review and release authorization remain required.
 3. Configure the GitHub `npm` environment with repository/environment variables
    `MEMORYKIT_NPM_PACKAGE` (exact approved name) and `MEMORYKIT_NPM_REGISTRY`
    (`https://registry.npmjs.org`). Environment protection and tag restrictions are owner
@@ -113,10 +152,12 @@ These future examples are not evidence that version 0.1.0 exists on a registry.
    with direct `npm publish` allowed. A newly added trusted publisher must be validated
    within npm's documented expiry window. Do not assume package settings can be configured
    before a first package exists. Remove the bootstrap token after OIDC works.
-5. Merge the reviewed preparation and approved identity change; validation alone never
-   merges, creates a release tag or publishes. Create an owner-authorized `v0.1.0` tag on a
-   clean commit contained in `main`. The workflow checks tag/version, private status,
-   approved identity/destination and ancestry before publishing.
+5. Obtain explicit approval before merging the reviewed preparation, identity/version and
+   any channel change, and separately before creating the release tag or publishing.
+   Validation alone never authorizes those actions. The owner-authorized tag must equal
+   `v${manifest.version}` on a clean commit contained in `main` (`v0.2.0-rc.1` only if that
+   RC is selected). The workflow checks tag/version, private status, approved
+   identity/destination and ancestry before publishing.
 
 Trusted publishing requires a supported GitHub-hosted runner, Node >=22.14 and npm >=11.5.1.
 The workflow uses Node 24 and checks the bundled npm version before publishing. Public
@@ -130,9 +171,14 @@ actual tar entries, rejects unexpected files and credential signatures, hashes t
 and passes that exact archive to `npm run check:package -- /absolute/path/to/candidate.tgz`.
 The installed consumer exercises CLI init/create/get, declaration resolution, public SDK,
 blocked deep imports, memory/none isolation, Git composition and supersede retry/recovery,
-and the portable setup/capture/context workflow. Only `dist` JavaScript/declarations,
-README, manifest, LICENSE, `docs/portable-memory.md` and top-level `examples/*.mjs` may
-ship; source, tests,
+and the portable setup/capture/context workflow. Browse validation imports the function and
+all three public types from the installed root, checks bounded metadata/attribution and
+selected-record get, compares the installed HTTP handler's response with SDK output, and
+executes the installed CLI with default exclusion and explicit candidate opt-in. The source
+suite separately covers pagination, scope/eligibility, UTF-8 budgets and real stdio MCP
+`memory_browse`; it is not an installed-package MCP protocol check.
+Only `dist` JavaScript/declarations, README, manifest, LICENSE, `docs/portable-memory.md`,
+`docs/storage-plugins.md` and top-level `examples/*.mjs` may ship; source, tests,
 fixtures (including TLS keys), evaluation models, `.env`, `.npmrc`, `.git` and local stores
 are excluded. Signature checks are a focused check, not proof that arbitrary secrets cannot
 exist in program text. The file allowlist and clean build are the primary controls.
@@ -155,6 +201,8 @@ as part of this preparation.
 - [Public scoped publishing](https://docs.npmjs.com/creating-and-publishing-scoped-public-packages/)
 - [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/)
 - [npm trust prerequisites](https://docs.npmjs.com/cli/v11/commands/npm-trust/)
+- [npm publish and distribution tags](https://docs.npmjs.com/cli/v11/commands/npm-publish/#tag)
+- [npm 11.9.0 prerelease tag requirement](https://github.com/npm/cli/blob/v11.9.0/lib/commands/publish.js)
 - [GitHub npm registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-npm-registry)
 - [Verified public Data.Json metadata](https://registry.npmjs.org/subzerodev-data-json)
 - [Verified public landing-page metadata](https://registry.npmjs.org/subzerodev-platform-ui-landing-page)
