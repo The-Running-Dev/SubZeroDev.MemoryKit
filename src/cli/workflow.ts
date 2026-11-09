@@ -18,6 +18,7 @@ import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { installationPaths, installHooks, inspectInstallation } from '../hosts/installation.ts';
 import { reviewMemory, reviewQueue } from '../workflow/review.ts';
+import { browse } from '../workflow/browse.ts';
 import {
   parseHookEvent,
   projectNamespace,
@@ -65,6 +66,7 @@ export const WORKFLOW_COMMANDS = [
   'recall-cache-clear',
   'capture',
   'context',
+  'browse',
   'accept',
   'import-claude-mem',
   'reconcile-claude-mem',
@@ -96,6 +98,9 @@ const HELP = `MemoryKit portable workflows:
     Clears this profile scope's optional derived vector index.
   capture --profile <json> --input <json|->
   context --profile <json> [--text <query>] [--text-output] [--include-candidates]
+  browse --profile <json> [--text <literal-substring>] [--kind <kind>]...
+        [--limit <1..50>] [--max-bytes <512..65536>] [--preview-chars <0..256>] [--cursor <cursor>]
+    Returns bounded metadata, no content by default. Candidate browsing needs --include-candidates.
   accept <id> --profile <json> --expected-revision <n>
   import-claude-mem --profile <json> --input <json|-> --mapping <json>
         --source-id <stable-installation-id> [--project <source-project>]... [--dry-run]
@@ -104,7 +109,7 @@ const HELP = `MemoryKit portable workflows:
     Audits selected source coverage without changing reviewed records.
   hook --profile <json> --host claude-code|codex  (host event JSON on stdin)
 
-Instead of --profile, capture/context/accept/import accept --store <dir> or --url <url>
+Instead of --profile, capture/context/browse/accept/import accept --store <dir> or --url <url>
 [--token-env <VAR>], with --namespace <ns> and explicit --shared-namespace <ns>.
 Without --namespace, derives project/<owner>/<repo> from the current Git origin.
 Context defaults to accepted active records. Capture creates candidates only.
@@ -226,7 +231,9 @@ function profile(value: unknown): Profile {
       [
         'id',
         'command',
-        ...(provider === p.recall ? ['discovery', 'verification', 'retries', 'cache', 'deadlineMs', 'budget'] : ['index']),
+        ...(provider === p.recall
+          ? ['discovery', 'verification', 'retries', 'cache', 'deadlineMs', 'budget']
+          : ['index']),
       ],
       ['id', 'command']
     );
@@ -248,7 +255,11 @@ function profile(value: unknown): Profile {
     throw new ValidationFailedError('Recall retries must be 0 or 1');
   integer(p.recall?.deadlineMs, 'recall.deadlineMs', 60000, 1, 120000);
   if (p.recall?.budget !== undefined) {
-    fields(p.recall.budget, ['passages', 'passageChars', 'bytes'], ['passages', 'passageChars', 'bytes']);
+    fields(
+      p.recall.budget,
+      ['passages', 'passageChars', 'bytes'],
+      ['passages', 'passageChars', 'bytes']
+    );
     integer(p.recall.budget.passages, 'budget.passages', 32, 1, 32);
     integer(p.recall.budget.passageChars, 'budget.passageChars', 2048, 128, 2048);
     integer(p.recall.budget.bytes, 'budget.bytes', 65536, 1024, 65536);
@@ -389,6 +400,8 @@ export async function runWorkflow(
         input: { type: 'string' },
         output: { type: 'string' },
         text: { type: 'string' },
+        kind: { type: 'string', multiple: true },
+        'preview-chars': { type: 'string' },
         capture: { type: 'boolean' },
         'startup-context': { type: 'boolean' },
         'include-candidates': { type: 'boolean' },
@@ -584,6 +597,22 @@ export async function runWorkflow(
           close: async () => {},
         });
     try {
+      if (command === 'browse') {
+        print(
+          await browse(client, {
+            namespace,
+            sharedNamespaces: p.sharedNamespaces,
+            text: v.text,
+            kinds: v.kind,
+            includeCandidates: v['include-candidates'] === true,
+            limit: v.limit === undefined ? undefined : Number(v.limit),
+            maxBytes: p.maxBytes,
+            previewChars: v['preview-chars'] === undefined ? undefined : Number(v['preview-chars']),
+            cursor: v.cursor,
+          })
+        );
+        return 0;
+      }
       if (command === 'doctor') {
         let installation: object | undefined;
         let ok = true;
@@ -630,15 +659,29 @@ export async function runWorkflow(
           ok = inspected.configured && current && probe !== false;
         }
         const installationOk = Boolean(v.host) && ok;
-        const providerHealth = v['provider-probe'] && p.recall
-          ? await probeRecall(new CommandRecallSelector(p.recall.id, p.recall.command,
-              p.recall.discovery, p.recall.verification, p.recall.retries, p.recall.budget), p.recall.deadlineMs)
-          : null;
+        const providerHealth =
+          v['provider-probe'] && p.recall
+            ? await probeRecall(
+                new CommandRecallSelector(
+                  p.recall.id,
+                  p.recall.command,
+                  p.recall.discovery,
+                  p.recall.verification,
+                  p.recall.retries,
+                  p.recall.budget
+                ),
+                p.recall.deadlineMs
+              )
+            : null;
         if (v['provider-probe'] && !providerHealth?.passed) ok = false;
         let readiness: object | undefined;
         if (v.readiness) {
           const manifest = jsonFile(resolve(v.readiness));
-          fields(manifest, ['quality', 'nativeCodex', 'nativeClaude', 'replacement', 'maxColdP95Ms'], []);
+          fields(
+            manifest,
+            ['quality', 'nativeCodex', 'nativeClaude', 'replacement', 'maxColdP95Ms'],
+            []
+          );
           const spec = manifest as Record<string, unknown>;
           const evidence: Record<string, unknown> = {};
           for (const key of ['quality', 'nativeCodex', 'nativeClaude', 'replacement']) {
@@ -647,7 +690,13 @@ export async function runWorkflow(
               throw new ValidationFailedError('Readiness report paths must be absolute');
             if (existsSync(spec[key] as string)) evidence[key] = jsonFile(spec[key] as string);
           }
-          const limit = integer(spec.maxColdP95Ms as number | undefined, 'maxColdP95Ms', 10000, 1, 120000);
+          const limit = integer(
+            spec.maxColdP95Ms as number | undefined,
+            'maxColdP95Ms',
+            10000,
+            1,
+            120000
+          );
           const assessed = assessReadiness(p.recall, evidence, limit);
           const blocked = [...assessed.blocked];
           if (!providerHealth?.passed) blocked.push('providerHealth');

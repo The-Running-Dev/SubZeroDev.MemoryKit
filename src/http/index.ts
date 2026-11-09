@@ -8,6 +8,7 @@ import {
 // the caller, and maps errors to problem+json. Transport-free, so the server owns sockets.
 
 import type { HistoryPolicy } from '../contracts/index.ts';
+import { browse, type BrowseInput } from '../workflow/browse.ts';
 import { capture, context, type CaptureInput, type ContextInput } from '../workflow/index.ts';
 import {
   NotFoundError,
@@ -118,6 +119,9 @@ async function route(client: MemoryClient, request: HttpRequest): Promise<HttpRe
   }
   if (rest.length === 0 && method === 'POST' && resource === 'context') {
     return json(200, await context(client, object(body) as unknown as ContextInput));
+  }
+  if (rest.length === 0 && method === 'POST' && resource === 'browse') {
+    return json(200, await browse(client, object(body) as unknown as BrowseInput));
   }
 
   if (resource === 'review' && method === 'POST') {

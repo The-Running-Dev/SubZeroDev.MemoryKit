@@ -1,6 +1,7 @@
 // A MemoryClient over HTTP API v1. It throws the same typed errors an embedded client does,
 // rebuilt from the service's problem bodies.
 
+import { bindContinuation } from '../service/continuation.ts';
 import type {
   HistoryPolicy,
   HistoryQueue,
@@ -18,6 +19,7 @@ import {
   fromProblem,
   validateMemoryId,
   validateOperationId,
+  sha256Hex,
   type MemoryId,
   type MemoryRecord,
   type Namespace,
@@ -88,6 +90,7 @@ class HttpClient implements MemoryClient {
     this.base = base;
     this.headers = headers;
     this.fetchFn = fetchFn;
+    bindContinuation(this, sha256Hex(JSON.stringify([base, headers.get('authorization')])));
   }
 
   // waitForHistoryMs is not carried: the service applies its own wait.

@@ -95,6 +95,41 @@ describe('S10 MCP', () => {
     await issuer.close();
   });
 
+  it('browses bounded attributed summaries over the real stdio protocol', async () => {
+    const store = tempDir();
+    const config: StoreConfig = { path: store, history: { provider: 'none' } };
+    await initStore(config);
+    const writer = await openStore(config);
+    const record = await writer.create({
+      namespace: 'demo/notes',
+      kind: 'note',
+      content: 'Original private source',
+      metadata: { status: 'accepted', sourceRole: 'user', secret: 'hidden' },
+    });
+    await writer.close();
+    const client = await overStdio(store, 'none');
+    const result = await client.callTool({
+      name: 'memory_browse',
+      arguments: { namespace: 'demo/notes', maxBytes: 1024 },
+    });
+    assert.equal(result.isError, undefined);
+    const body = result.structuredContent as Structured;
+    assert.equal(body.count, 1);
+    assert.equal(body.bytes, Buffer.byteLength(JSON.stringify(body)));
+    assert.ok((body.bytes as number) <= 1024);
+    assert.deepEqual(
+      (body.items as { id: string; sourceRole: string }[]).map((r) => [r.id, r.sourceRole]),
+      [[record.memory.id, 'user']]
+    );
+    assert.ok(!JSON.stringify(body).includes('Original private source'));
+    assert.ok(!JSON.stringify(body).includes('hidden'));
+    const bad = await client.callTool({
+      name: 'memory_browse',
+      arguments: { namespace: 'demo/*' },
+    });
+    assert.equal(bad.isError, true);
+  });
+
   it('captures and builds bounded candidate context over the real stdio protocol', async () => {
     const store = tempDir();
     await initStore({ path: store, history: { provider: 'none' } });
@@ -258,7 +293,7 @@ describe('S10 MCP', () => {
     const { tools } = await client.listTools();
     const names = tools.map((tool) => tool.name).sort();
     assert.deepEqual(names, [...MCP_TOOLS].sort());
-    assert.equal(names.length, 16);
+    assert.equal(names.length, 17);
     for (const name of names) assert.doesNotMatch(name, /purge|namespace|sync/);
     for (const tool of tools) assert.equal(tool.inputSchema.type, 'object');
   });

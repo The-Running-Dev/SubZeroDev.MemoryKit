@@ -69,3 +69,4 @@ export {
 } from './workflow/review.ts';
 
 export { CachedRecallSelector, type RecallCache } from './workflow/recall-cache.ts';
+export { browse, type BrowseInput, type BrowseItem, type BrowseResult } from './workflow/browse.ts';

@@ -1,3 +1,4 @@
+import { bindContinuation } from './continuation.ts';
 import {
   authorize,
   authorizePattern,
@@ -454,6 +455,16 @@ class ServiceClient implements MemoryClient {
   constructor(service: MemoryService, principal: Principal) {
     this.service = service;
     this.principal = principal;
+    bindContinuation(
+      this,
+      sha256Hex(
+        canonicalJson({
+          id: principal.id,
+          profile: principal.profile,
+          read: [...permittedPatterns(principal, 'read')].sort(),
+        })
+      )
+    );
   }
 
   async create(input: CreateInput, opts: WriteOptions = {}): Promise<WriteOutcome> {
