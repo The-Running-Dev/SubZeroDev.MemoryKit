@@ -20,10 +20,13 @@ version or first-publication order is selected by this guide.
 
 The npm distribution tag is a separate owner decision from the Git release tag.
 `release.yml` currently passes no `--tag`, and `publishConfig` declares no tag. npm's
-default tag is `latest`; npm 11.9.0 also rejects prerelease publication without an
-explicit tag. Before authorizing any RC release tag, approve the intended npm channel
-(for example, `next` or `rc`) and review the workflow/metadata change that supplies it.
-This documentation change does not select a channel or alter publication behavior.
+default tag is `latest`, but every npm 11 release (checked in 11.0.0, the workflow's
+11.5.1 floor and 11.9.0) rejects prerelease publication without an explicit `--tag` or
+`publishConfig.tag`. The release guards do not check this, so an RC tag pushed against the
+current workflow would pass validation and then fail at `npm publish`. Before authorizing
+any RC release tag, approve the intended npm channel (for example, `next` or `rc`) and
+review the workflow/metadata change that supplies it. This guide does not select a channel
+or alter publication behavior.
 
 ## Recommendation and evidence
 
@@ -202,7 +205,7 @@ as part of this preparation.
 - [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/)
 - [npm trust prerequisites](https://docs.npmjs.com/cli/v11/commands/npm-trust/)
 - [npm publish and distribution tags](https://docs.npmjs.com/cli/v11/commands/npm-publish/#tag)
-- [npm 11.9.0 prerelease tag requirement](https://github.com/npm/cli/blob/v11.9.0/lib/commands/publish.js)
+- [npm 11 prerelease tag requirement (11.5.1 source)](https://github.com/npm/cli/blob/v11.5.1/lib/commands/publish.js)
 - [GitHub npm registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-npm-registry)
 - [Verified public Data.Json metadata](https://registry.npmjs.org/subzerodev-data-json)
 - [Verified public landing-page metadata](https://registry.npmjs.org/subzerodev-platform-ui-landing-page)
