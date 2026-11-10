@@ -2,6 +2,22 @@
 
 Append-only. Newest at the top. The rejected alternatives are the point — without them, every future session relitigates the same choice.
 
+## 2026-11-10 — Git repositories become read-only memory sources (S27–S29)
+
+- **Context:** The owner wants memories drawn from the private Notes repository that `/note` writes. Each save there commits a write-up, a companion and a verbatim transcript, with YAML front matter, straight to `main`. The owner asked for Git as a general source, not a Notes importer. The skill states that a save does not authorize memory ingestion. The only existing imports are claude-mem exports and MemoryKit archives. Markdown storage is a managed directory and cannot point at someone's own files.
+- **Chosen:** a profile-configured Git source ([design](45-git-memory-sources.md)), on a fixed ref, with required include paths. It reads only committed objects through plumbing, with no checkout, hooks or filters. Each document, or each heading section above 32 KiB, is one memory keyed by source and path, carrying commit, blob and content-hash provenance. Later commits update, supersede or archive memories. A local edit is reported as a conflict and never overwritten. Sources are candidates by default; `accepted` is an explicit per-source choice for owner-curated repositories. A SessionStart check starts a detached, leased sync, so sources stay current without a daemon or anything installed in the source repository.
+- **Rejected:**
+  - A Notes-specific importer: the same mechanism serves any repository's docs.
+  - Pointing Markdown storage at the repository: it is managed, and edits outside MemoryKit fail its integrity checks.
+  - Reading the working tree: it would ingest unfinished, uncommitted text and depend on checkout state.
+  - Installing a `post-commit` hook in the source repository: MemoryKit must not write to a source. A user may add one.
+  - A background daemon or watcher: it adds a service to run; the session-start check covers the use.
+  - A full YAML dependency: a bounded subset covers the front matter in use, and the runtime dependency list stays at one.
+  - Accepting every source automatically: it conflicts with S22's review default for anything not explicitly owner-curated.
+  - Purging on delete: deletion archives, and purging remains an owner action.
+  - Re-importing over corrections: curation wins, as in claude-mem reconciliation.
+- **Revisit:** if documents need memory links, if a non-text format is requested, or if one memory per section proves too coarse or too fine in retrieval evaluation over a Notes-shaped fixture. Ingesting the owner's real Notes repository is a cutover step after S29, not part of any slice. The S26 cold-latency blocker on daily automatic recall is unaffected.
+
 ## 2026-11-01 — Restore the portable end-user workflow
 
 The owner clarified the general-purpose, cross-project/cross-LLM goal and authorized

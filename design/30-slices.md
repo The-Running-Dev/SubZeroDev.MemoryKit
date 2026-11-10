@@ -2,6 +2,7 @@
 
 S22 adds the owner-authorized portable workflow extension after the completed/retired
 stages below: [contract, adapters and acceptance](40-portable-workflows.md).
+S27–S29 make a Git repository a read-only memory source: [design](45-git-memory-sources.md).
 
 Ordered riskiest assumption first. Each slice is one reviewable PR and leaves the system runnable. Each slice adds its scenarios to the shared conformance suite, and that suite runs against every adapter that exists at the time. Criterion ids are stable.
 
@@ -300,3 +301,40 @@ Acceptance:
     - with a passed gate, to add the reranker to the contract and plan its build, keeping S19 and S20 only if the chosen source is (c);
     - with a failed gate, to close Stage 5 with S17's `retrieve` and retire S19 and S20.
 Out of scope: product code; contract changes; LLM ranking; fine-tuning; hosted APIs; rerankers over 100 MiB in fp32; quantized models; new or changed query sets.
+
+## S27 — Import a committed tree from a Git repository
+Status: todo
+Delivers: `planGitSource` and `syncGitSource` for a first import, and the `memorykit source plan` and `memorykit source sync` commands. They read one commit of a configured source into memories with provenance, chunking, front matter and the secret guard.
+Touches: workflow (git source), cli, sdk exports, profile schema, conformance, docs ([design](45-git-memory-sources.md))
+Acceptance:
+  - S27.1 A plan over a fixture repository lists what would be created, skipped (with type, size, secret, unmapped or front-matter reasons) and chunked, and makes no writes. Running sync creates exactly that set. Each record carries a key, a namespace, `metadata.source`, provenance and evidence that name the commit, path and blob.
+  - S27.2 Running the sync again at the same commit makes no writes. A crash injected mid-import resumes by replay, with no duplicate records or revisions.
+  - S27.3 A 570 KB transcript becomes ordered sections, each within `chunkBytes`, whose concatenation equals the original text. A 5 MiB file is skipped and reported.
+  - S27.4 Uncommitted and untracked edits in the working tree are not read. The repository's files, index, refs and config are byte-identical after sync. A configured `textconv` or filter driver is not run.
+  - S27.5 Excluded paths (`Journal/**` in the fixture) never appear in records, plans or reports beyond a count. A file with a private-key block is skipped by rule.
+  - S27.6 Imported records are found by `retrieve`, `browse` and `context` in their mapped namespace, and not from any other namespace.
+
+## S28 — Follow later commits without overwriting curation
+Status: todo
+Delivers: incremental sync from the stored cursor through every rule in the table above, including rename to supersede, delete to archive, conflict reporting and force-push recovery, plus a `memorykit source status` report.
+Touches: workflow (git source), cli, conformance, docs
+Depends on: S27
+Acceptance:
+  - S28.1 Editing, renaming and deleting files across three commits produces updates, a supersede and an archive. Every memory's history shows the commit that caused it.
+  - S28.2 A record corrected through `update` after import is reported as `conflict` when its file changes upstream, and keeps its corrected content and revision.
+  - S28.3 A candidate source re-queues a changed record for review. An accepted source keeps it accepted, and a review decision is never reversed without a content change.
+  - S28.4 After a force push that drops the cursor commit, sync reconciles the whole tree, produces the same records as a fresh import of the new tip, and creates no duplicates.
+  - S28.5 Hitting a bound returns `partial` with the cursor unchanged. The next run completes, and the result equals an unbounded run.
+  - S28.6 Status reports each source's ref, its last applied commit, its lag in commits, and its counts of skipped records, conflicts and archives. It shows no document content.
+
+## S29 — Keep sources current automatically
+Status: todo
+Delivers: profile sources with `auto: true` stay current without anyone running a command.
+Touches: hosts (SessionStart), cli (`source sync --due`), http, mcp, doctor, docs
+Depends on: S28
+Acceptance:
+  - S29.1 The SessionStart hook does a bounded check (one `rev-parse` per due source, under 200 ms in total). It starts at most one detached sync per store under a lease, and never delays or fails the host session. The next prompt's recall sees the new commit's documents.
+  - S29.2 Two hosts starting at once run one sync. A sync whose holder crashed is taken over after its lease expires.
+  - S29.3 HTTP `POST /v1/sources/{id}/sync` and `GET /v1/sources/{id}`, and MCP `memory_source_status`, act only on configured ids. Any path, ref or URL in a request is rejected.
+  - S29.4 `doctor` reports unreachable repositories, refs that do not resolve, failed fetches, conflicts and lag, without document content.
+  - S29.5 The docs give a source configuration for a Notes-style repository. It sets explicit includes, excludes `Journal/**` and `raw/**` by default, and maps `project` values to namespaces. The docs also give a cutover and rollback runbook, along with the optional user-owned `post-commit` hook line. MemoryKit installs nothing in the source repository.
