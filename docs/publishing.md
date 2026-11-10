@@ -22,11 +22,12 @@ The npm distribution tag is a separate owner decision from the Git release tag.
 `release.yml` currently passes no `--tag`, and `publishConfig` declares no tag. npm's
 default tag is `latest`, but every npm 11 release (checked in 11.0.0, the workflow's
 11.5.1 floor and 11.9.0) rejects prerelease publication without an explicit `--tag` or
-`publishConfig.tag`. The release guards do not check this, so an RC tag pushed against the
-current workflow would pass validation and then fail at `npm publish`. Before authorizing
-any RC release tag, approve the intended npm channel (for example, `next` or `rc`) and
-review the workflow/metadata change that supplies it. This guide does not select a channel
-or alter publication behavior.
+`publishConfig.tag`. `npm run check:release -- publish` therefore refuses a prerelease
+unless `publishConfig.tag` names a lowercase channel other than `latest` (an RC must not
+become the default install) and not a SemVer-range-like name; validation mode does not
+require it. Before authorizing any RC release tag, approve the intended npm channel (for
+example, `next` or `rc`) and review the `publishConfig.tag` change that supplies it. This
+guide does not select a channel.
 
 ## Recommendation and evidence
 
@@ -139,9 +140,10 @@ do not drop the RC suffix or use an unversioned install as an implicit release d
    version), npm distribution tag, proposed metadata, declared MIT license text and package
    contents. Keep `private: true` until both the exact identity and version are explicitly
    approved. Only then set it to `false` in a reviewed change; update all name references
-   if the scoped alternative is selected. The existing guards check tag/version equality
-   and configured identity, not a separate stored owner approval of a particular version
-   or npm distribution tag; that review and release authorization remain required.
+   if the scoped alternative is selected. The existing guards check tag/version equality,
+   configured identity and that a prerelease declares a non-`latest` channel, not a
+   separate stored owner approval of a particular version or npm distribution tag; that
+   review and release authorization remain required.
 3. Configure the GitHub `npm` environment with repository/environment variables
    `MEMORYKIT_NPM_PACKAGE` (exact approved name) and `MEMORYKIT_NPM_REGISTRY`
    (`https://registry.npmjs.org`). Environment protection and tag restrictions are owner
