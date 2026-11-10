@@ -14,7 +14,7 @@ export function verifyRelease(
 ) {
   assert.match(String(manifest.version), /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
   assert.equal(options.tag, `v${manifest.version}`, 'release tag must match package version');
-  const config = manifest.publishConfig as { registry?: string; access?: string };
+  const config = manifest.publishConfig as { registry?: string; access?: string; tag?: unknown };
   assert.equal(config.registry, REGISTRY, 'only the reviewed npmjs destination is supported');
   assert.equal(config.access, 'public', 'distribution must be public');
   assert.equal(manifest.license, 'MIT', 'retain the declared license');
@@ -30,6 +30,21 @@ export function verifyRelease(
       'approved package identity must match manifest'
     );
     assert.equal(options.approvedRegistry, REGISTRY, 'approved registry must match destination');
+    // npm 11 refuses an untagged prerelease only at `npm publish`, after every other guard.
+    // release.yml passes no --tag, so the reviewed channel must be publishConfig.tag. Refuse
+    // `latest` (an RC would become the default install) and SemVer-range-like names, which
+    // npm also rejects as tags.
+    if (String(manifest.version).includes('-')) {
+      const channel = config.tag;
+      assert.ok(
+        typeof channel === 'string' &&
+          /^[a-z][a-z0-9-]*$/.test(channel) &&
+          channel !== 'latest' &&
+          channel !== 'x' &&
+          !/^v\d/.test(channel),
+        'prerelease publication requires an approved non-latest publishConfig.tag channel'
+      );
+    }
   }
 }
 

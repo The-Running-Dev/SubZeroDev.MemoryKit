@@ -12,7 +12,15 @@ const approved = {
   approvedName: manifest.name,
   approvedRegistry: REGISTRY,
 };
-const publishable = { ...manifest, private: false };
+// A publishable prerelease must also declare an approved npm channel.
+const publishable = {
+  ...manifest,
+  private: false,
+  publishConfig: {
+    ...manifest.publishConfig,
+    ...(String(manifest.version).includes('-') ? { tag: 'next' } : {}),
+  },
+};
 
 describe('publication guards', () => {
   it('validates the private candidate but refuses publication until explicitly enabled', () => {
@@ -55,6 +63,32 @@ describe('publication guards', () => {
           approved
         ),
       /must be public/
+    );
+  });
+
+  it('requires a non-latest npm channel before publishing a prerelease', () => {
+    const at = (version: string, tag?: string) =>
+      [
+        {
+          ...publishable,
+          version,
+          publishConfig: { registry: REGISTRY, access: 'public', ...(tag ? { tag } : {}) },
+        },
+        { ...approved, tag: `v${version}` },
+      ] as const;
+    for (const tag of [undefined, '', 'latest', 'x', 'v1', '1.x', 'Next', 'next tag'])
+      assert.throws(
+        () => verifyRelease(...at('1.0.0-rc.1', tag)),
+        /requires an approved non-latest publishConfig.tag/,
+        String(tag)
+      );
+    verifyRelease(...at('1.0.0-rc.1', 'next'));
+    verifyRelease(...at('1.0.0-rc.1', 'rc'));
+    verifyRelease(...at('1.0.0'));
+    // Validation (PRs, dispatch) stays usable for the private untagged candidate.
+    verifyRelease(
+      { ...at('1.0.0-rc.1')[0], private: true },
+      { publish: false, tag: 'v1.0.0-rc.1' }
     );
   });
 
