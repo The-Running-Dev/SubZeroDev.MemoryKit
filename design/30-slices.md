@@ -341,7 +341,7 @@ Acceptance:
   - S29.5 The docs give a source configuration for a Notes-style repository. It sets explicit includes, excludes `Journal/**` and `raw/**` by default, and maps `project` values to namespaces. The docs also give a cutover and rollback runbook, along with the optional user-owned `post-commit` hook line. MemoryKit installs nothing in the source repository.
 
 ## S30 — Measure the floor of one provider call
-Status: todo
+Status: done
 Delivers: the p50 and p95 of a minimal-prompt call for each supported provider and profile, deciding whether the 10 s cold p95 limit is reachable at all ([design](46-cold-recall-latency.md)).
 Touches: scripts, docs/validation (no product code)
 Depends on: S29
