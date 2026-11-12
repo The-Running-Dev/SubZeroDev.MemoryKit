@@ -328,7 +328,7 @@ Acceptance:
   - S28.6 Status reports each source's ref, its last applied commit, its lag in commits, and its counts of skipped records, conflicts and archives. It shows no document content.
 
 ## S29 — Keep sources current automatically
-Status: todo
+Status: done
 Delivers: profile sources with `auto: true` stay current without anyone running a command.
 Touches: hosts (SessionStart), cli (`source sync --due`), http, mcp, doctor, docs
 Depends on: S28

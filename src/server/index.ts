@@ -18,6 +18,7 @@ import {
   ValidationFailedError,
 } from '../model/index.ts';
 import { openService, type StoreConfig } from '../sdk/index.ts';
+import type { SourceRuntime } from '../workflow/source-runner.ts';
 
 export interface ServeOptions {
   store: StoreConfig;
@@ -27,6 +28,8 @@ export interface ServeOptions {
     | { profile: 'local' }
     | { profile: 'remote'; issuer: string; audience: string; ceiling: Grant[] };
   allowedOrigins?: string[];
+  // Configured Git sources HTTP and MCP may report on or sync, by id only.
+  sources?: SourceRuntime;
 }
 
 export const MAX_BODY_BYTES = 4 * 1024 * 1024;
@@ -207,7 +210,7 @@ export async function serve(opts: ServeOptions): Promise<{ url: string; close():
   const opened = await openService(opts.store);
   const { service, tokens } = opened;
   const authenticator: Authenticator = oidc ?? new LocalTokenAuthenticator(tokens);
-  const mcp = mcpHttpHandler(service);
+  const mcp = mcpHttpHandler(service, opts.sources);
   const origins = new Set(opts.allowedOrigins ?? []);
   const inFlight = new Set<Promise<void>>();
   // Set once listening; the 401 challenge falls back to it.
@@ -276,12 +279,16 @@ export async function serve(opts: ServeOptions): Promise<{ url: string; close():
         send(res, response);
         return;
       }
-      response = await handle(service.as(principal), {
-        method: req.method ?? 'GET',
-        path,
-        headers,
-        body,
-      });
+      response = await handle(
+        service.as(principal),
+        {
+          method: req.method ?? 'GET',
+          path,
+          headers,
+          body,
+        },
+        opts.sources
+      );
     } catch (error) {
       response = problemResponse(error);
       if (remote !== undefined && response.status === 401) {

@@ -1,4 +1,9 @@
 import {
+  sourceStatusOf,
+  syncConfiguredSource,
+  type SourceRuntime,
+} from '../workflow/source-runner.ts';
+import {
   reviewMemory,
   reviewQueue,
   type ReviewInput,
@@ -103,7 +108,11 @@ function writeOptions(headers: Headers): WriteOptions {
 
 const TRANSITIONS = ['archive', 'restore', 'tombstone'] as const;
 
-async function route(client: MemoryClient, request: HttpRequest): Promise<HttpResponse | null> {
+async function route(
+  client: MemoryClient,
+  request: HttpRequest,
+  sources?: SourceRuntime
+): Promise<HttpResponse | null> {
   const { method, body } = request;
   const parts = segments(request.path);
   if (parts === null || parts[0] !== 'v1') return null;
@@ -122,6 +131,20 @@ async function route(client: MemoryClient, request: HttpRequest): Promise<HttpRe
   }
   if (rest.length === 0 && method === 'POST' && resource === 'browse') {
     return json(200, await browse(client, object(body) as unknown as BrowseInput));
+  }
+
+  // Configured source ids only. A sync takes no input: any field, such as a path, ref or URL,
+  // is rejected rather than ignored.
+  if (resource === 'sources' && rest.length >= 1) {
+    const id = rest[0]!;
+    if (rest.length === 1 && method === 'GET') return json(200, sourceStatusOf(sources, id));
+    if (rest.length === 2 && rest[1] === 'sync' && method === 'POST') {
+      const input = object(body);
+      if (Object.keys(input).length > 0) throw invalidBody('a source sync takes no fields');
+      if (!sources) return null;
+      return json(200, await syncConfiguredSource(client, sources, id));
+    }
+    return null;
   }
 
   if (resource === 'review' && method === 'POST') {
@@ -201,9 +224,13 @@ async function route(client: MemoryClient, request: HttpRequest): Promise<HttpRe
   return null;
 }
 
-export async function handle(client: MemoryClient, request: HttpRequest): Promise<HttpResponse> {
+export async function handle(
+  client: MemoryClient,
+  request: HttpRequest,
+  sources?: SourceRuntime
+): Promise<HttpResponse> {
   try {
-    const response = await route(client, request);
+    const response = await route(client, request, sources);
     if (response !== null) return response;
     throw new NotFoundError('No such route', { method: request.method });
   } catch (error) {

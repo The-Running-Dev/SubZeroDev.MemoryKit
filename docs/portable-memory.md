@@ -302,10 +302,17 @@ never the working tree: only Git plumbing runs (no checkout, hooks, textconv or 
 drivers) and nothing in the repository is written.
 
 ```json
-{ "id": "notes", "repository": "/absolute/path/to/clone", "ref": "main",
-  "include": ["Notes/**"], "exclude": ["Notes/private/**"],
+{
+  "id": "notes",
+  "repository": "/absolute/path/to/clone",
+  "ref": "main",
+  "include": ["Notes/**"],
+  "exclude": ["Notes/private/**"],
   "namespace": { "by": "first-segment", "map": { "Notes": "project/acme/notes" } },
-  "status": "candidate", "chunkBytes": 32768, "kinds": { "decision": "decision" } }
+  "status": "candidate",
+  "chunkBytes": 32768,
+  "kinds": { "decision": "decision" }
+}
 ```
 
 ```bash
@@ -329,14 +336,14 @@ sync resumes by replay.
 
 `source sync` reconciles the store with the tip of `ref` on every run, so a repeat is a no-op:
 
-| Repository change | Outcome |
-| --- | --- |
-| New file | created at the source's status |
-| Changed file, record not edited here | `update`; a `candidate` source re-queues it, an `accepted` source keeps it accepted |
-| Changed file, record corrected here | left as is and reported as a `changed` conflict |
-| Renamed file | new record, old one superseded (a renamed-and-edited file is followed through the cursor) |
-| Deleted or no longer included | archived; if corrected here, reported as a `deleted` conflict |
-| Key held by a record this sync did not archive | reported as a `blocked` conflict |
+| Repository change                              | Outcome                                                                                   |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| New file                                       | created at the source's status                                                            |
+| Changed file, record not edited here           | `update`; a `candidate` source re-queues it, an `accepted` source keeps it accepted       |
+| Changed file, record corrected here            | left as is and reported as a `changed` conflict                                           |
+| Renamed file                                   | new record, old one superseded (a renamed-and-edited file is followed through the cursor) |
+| Deleted or no longer included                  | archived; if corrected here, reported as a `deleted` conflict                             |
+| Key held by a record this sync did not archive | reported as a `blocked` conflict                                                          |
 
 A record counts as corrected when its content no longer matches the chunk recorded in
 `metadata.source`. Sections are keyed by ordinal and slug, so a section that moves is archived
@@ -353,6 +360,72 @@ memorykit source status --profile /absolute/path/config/memorykit.profile.json -
 
 `status` reports the ref, tip commit, last applied commit, lag in commits, and counts of
 skipped records, conflicts and archives from the last sync. It never shows document content.
+
+### Keeping a source current
+
+Two optional fields on a source make it follow its repository without anyone running a command:
+`"auto": true` (off by default) and `"fetch": "origin"` (off by default; the name of a remote
+to `git fetch` before each sync).
+
+With `auto`, the host `SessionStart` hook checks each auto source with one `git rev-parse`
+(no document content), and when a tip moved it starts one detached `memorykit source sync --due`.
+The hook never waits for it and never fails the host session. The next prompt's recall sees the
+new commit's documents. Reinstall hooks after adding `auto`, because the SessionStart group
+becomes part of the owned hooks (`memorykit doctor` reports the difference). One sync runs per
+store: a lease file beside the state file, taken over after five minutes if its holder crashed.
+
+```bash
+memorykit source sync --due --profile /absolute/path/config/memorykit.profile.json
+```
+
+HTTP and MCP name configured source ids only; a path, ref or URL in a request is rejected.
+Start `serve` or `mcp` with `--sources-profile <profile.json>` to expose them:
+`GET /v1/sources/{id}`, `POST /v1/sources/{id}/sync` (no body fields) and the MCP tool
+`memory_source_status`. A sync already running answers `StoreBusy`, which is retryable.
+`memorykit doctor` adds a `sources` section: unreachable repositories, refs that do not resolve
+and failed fetches fail it; conflicts, lag and never-synced sources are reported. It carries no
+paths, keys or document content.
+
+#### Notes-style repository
+
+A repository of notes with a `Notes/` tree, raw captures and a daily journal:
+
+```json
+{
+  "id": "notes",
+  "repository": "/absolute/path/to/Notes",
+  "ref": "main",
+  "include": ["Notes/**", "Projects/**/*.md"],
+  "exclude": ["Journal/**", "raw/**"],
+  "namespace": {
+    "by": "front-matter",
+    "field": "project",
+    "map": { "acme": "project/acme/notes", "memorykit": "project/memorykit/notes" }
+  },
+  "status": "candidate",
+  "auto": true
+}
+```
+
+Use explicit includes, and keep `Journal/**` and `raw/**` excluded unless you mean to import
+them. `project` values map to namespaces; a note whose `project` is not in the map is skipped
+and reported, never guessed.
+
+#### Cutover and rollback
+
+Cutover: run `source plan` and read the counts, run `source sync` once, review the candidates,
+set `"auto": true`, then reinstall the host hooks.
+
+Rollback: remove `"auto"` (or the source) from the profile and reinstall the hooks. The
+source's records stay in the store as candidates; archive them by key prefix `git:<id>:` if
+they should go. The repository is never modified, so there is nothing to undo there.
+
+MemoryKit installs nothing in the source repository. To sync on every commit anyway, add this
+line to a `post-commit` hook you own (it is yours; MemoryKit never writes it):
+
+```bash
+memorykit source sync --due --profile /absolute/path/config/memorykit.profile.json >/dev/null 2>&1 &
+```
 
 ## Optional model providers
 

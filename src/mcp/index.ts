@@ -20,8 +20,15 @@ import {
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import type { Principal } from '../access/index.ts';
 import { browse, type BrowseInput } from '../workflow/browse.ts';
-import { CONTENT_TYPES, InternalError, MEMORY_STATES, toProblem } from '../model/index.ts';
+import {
+  CONTENT_TYPES,
+  InternalError,
+  MEMORY_STATES,
+  ValidationFailedError,
+  toProblem,
+} from '../model/index.ts';
 import type { MemoryClient, MemoryService, WriteOptions } from '../service/index.ts';
+import { sourceStatusOf, type SourceRuntime } from '../workflow/source-runner.ts';
 import { capture, context, type CaptureInput, type ContextInput } from '../workflow/index.ts';
 
 export const MCP_PROTOCOL_VERSION = '2026-07-28';
@@ -86,7 +93,7 @@ function split(args: Args): [Args, WriteOptions] {
 interface ToolSpec {
   description: string;
   inputSchema: JsonSchemaType;
-  call(client: MemoryClient, args: Args): Promise<object>;
+  call(client: MemoryClient, args: Args, sources?: SourceRuntime): Promise<object>;
 }
 
 // Inputs are passed through untyped: the service checks every field.
@@ -281,6 +288,17 @@ const TOOLS: Record<string, ToolSpec> = {
     inputSchema: object({ id: string, revision: revision }, ['id', 'revision']),
     call: (client, args) => client.revision(args.id as string, args.revision as number),
   },
+  memory_source_status: {
+    description:
+      'Report where a configured Git memory source stands: ref, last applied commit, lag and counts. Takes only a configured source id, never a path, ref or URL. Returns no document content.',
+    inputSchema: object({ source: string }, ['source']),
+    call: (_client, args, sources) => {
+      const { source, ...extra } = args;
+      if (Object.keys(extra).length > 0)
+        throw new ValidationFailedError('memory_source_status takes only a source id');
+      return Promise.resolve(sourceStatusOf(sources, source));
+    },
+  },
   memory_operation: {
     description: 'Read the outcome of a write by its operation id.',
     inputSchema: object({ operationId: string }, ['operationId']),
@@ -319,7 +337,7 @@ function failure(error: unknown): CallToolResult {
 }
 
 // One server instance for one serving unit, acting for one caller.
-export function createMcpServer(client: MemoryClient): McpServer {
+export function createMcpServer(client: MemoryClient, sources?: SourceRuntime): McpServer {
   const server = new McpServer(SERVER_INFO, { capabilities: { tools: {} } });
   for (const [name, spec] of Object.entries(TOOLS)) {
     server.registerTool(
@@ -330,7 +348,7 @@ export function createMcpServer(client: MemoryClient): McpServer {
       },
       async (args: Args) => {
         try {
-          return result(await spec.call(client, args ?? {}));
+          return result(await spec.call(client, args ?? {}, sources));
         } catch (error) {
           return failure(error);
         }
@@ -342,12 +360,12 @@ export function createMcpServer(client: MemoryClient): McpServer {
 
 // Streamable HTTP. The caller authenticates first and passes the principal along; requests in
 // a revision other than 2026-07-28 are refused with the supported list.
-export function mcpHttpHandler(service: MemoryService): McpHttpHandler {
+export function mcpHttpHandler(service: MemoryService, sources?: SourceRuntime): McpHttpHandler {
   return createMcpHandler(
     (ctx) => {
       const principal = ctx.authInfo?.extra?.principal as Principal | undefined;
       if (principal === undefined) throw new InternalError('No principal for the MCP request');
-      return createMcpServer(service.as(principal));
+      return createMcpServer(service.as(principal), sources);
     },
     { legacy: 'reject', responseMode: 'json' }
   );
@@ -356,11 +374,14 @@ export function mcpHttpHandler(service: MemoryService): McpHttpHandler {
 // stdio over this process, for one embedded caller. The SDK serves 2025-era hosts
 // (including Codex) and the modern binding through the same tool factory. `closed` settles when the client closes
 // the input or `close` is called.
-export function serveMcpStdio(client: MemoryClient): {
+export function serveMcpStdio(
+  client: MemoryClient,
+  sources?: SourceRuntime
+): {
   closed: Promise<void>;
   close(): Promise<void>;
 } {
-  const handle = serveStdio(() => createMcpServer(client), { legacy: 'serve' });
+  const handle = serveStdio(() => createMcpServer(client, sources), { legacy: 'serve' });
   let settle = (): void => {};
   const closed = new Promise<void>((resolve) => (settle = resolve));
   let closing: Promise<void> | undefined;

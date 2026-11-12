@@ -293,7 +293,7 @@ describe('S10 MCP', () => {
     const { tools } = await client.listTools();
     const names = tools.map((tool) => tool.name).sort();
     assert.deepEqual(names, [...MCP_TOOLS].sort());
-    assert.equal(names.length, 17);
+    assert.equal(names.length, 18);
     for (const name of names) assert.doesNotMatch(name, /purge|namespace|sync/);
     for (const tool of tools) assert.equal(tool.inputSchema.type, 'object');
   });

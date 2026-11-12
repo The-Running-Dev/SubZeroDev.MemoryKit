@@ -40,7 +40,7 @@ import type {
   WriteOutcome,
 } from '../service/index.ts';
 import type { MemoryRecord } from '../model/index.ts';
-import { runWorkflow, WORKFLOW_COMMANDS } from './workflow.ts';
+import { loadSourceRuntime, runWorkflow, WORKFLOW_COMMANDS } from './workflow.ts';
 import { STORAGE_OPTIONS, storageOptions } from './storage.ts';
 
 export interface CliIo {
@@ -107,7 +107,7 @@ Commands:
   namespace get <ns> --store <dir>
   namespace set <ns> --history-policy <full|metadata|none> --store <dir>
   history-sync --store <dir> [--retry-blocked] [--budget-ms <n>]
-  serve --store <dir> [--listen <host>:<port>] [--allowed-origin <origin>]...
+  serve --store <dir> [--listen <host>:<port>] [--allowed-origin <origin>]... [--sources-profile <json>]
         [--tls-cert <file> --tls-key <file>]
         [--oidc-issuer <url> --oidc-audience <aud> --oidc-ceiling <permissions>:<pattern>...]
                                    Serve the store over HTTP (default ${DEFAULT_LISTEN});
@@ -157,6 +157,7 @@ const OPTIONS = {
   'token-env': { type: 'string' },
   listen: { type: 'string' },
   'allowed-origin': { type: 'string', multiple: true },
+  'sources-profile': { type: 'string' },
   'tls-cert': { type: 'string' },
   'tls-key': { type: 'string' },
   'oidc-issuer': { type: 'string' },
@@ -821,6 +822,9 @@ export async function run(
           listen: parseListen(values.listen ?? DEFAULT_LISTEN),
           ...(tls === undefined ? {} : { tls }),
           auth: serveAuth(values),
+          ...(values['sources-profile'] === undefined
+            ? {}
+            : { sources: loadSourceRuntime(values['sources-profile']) }),
           ...(values['allowed-origin'] === undefined
             ? {}
             : { allowedOrigins: values['allowed-origin'] }),
@@ -839,7 +843,12 @@ export async function run(
         // stdout carries only protocol messages from here on.
         const client = await deps.openStore(storeConfig(values));
         try {
-          const server = serveMcpStdio(client);
+          const server = serveMcpStdio(
+            client,
+            values['sources-profile'] === undefined
+              ? undefined
+              : loadSourceRuntime(values['sources-profile'])
+          );
           await Promise.race([server.closed, (deps.untilShutdown ?? untilSignal)()]);
           await server.close();
         } finally {

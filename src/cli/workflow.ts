@@ -15,7 +15,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { homedir } from 'node:os';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { installationPaths, installHooks, inspectInstallation } from '../hosts/installation.ts';
 import { reviewMemory, reviewQueue } from '../workflow/review.ts';
 import { browse } from '../workflow/browse.ts';
@@ -56,11 +56,18 @@ import {
 import {
   gitSourceStatus,
   planGitSource,
-  syncGitSource,
   validateGitSource,
   type GitSourceConfig,
-  type GitSourceSyncState,
 } from '../workflow/git-source.ts';
+import {
+  dueSources,
+  inspectSources,
+  leaseHeld,
+  readSourceStates,
+  syncConfiguredSource,
+  syncDueSources,
+  type SourceRuntime,
+} from '../workflow/source-runner.ts';
 import type { CliDeps, CliIo } from './run.ts';
 
 export const WORKFLOW_COMMANDS = [
@@ -122,6 +129,8 @@ const HELP = `MemoryKit portable workflows:
     archives deletions, reports conflicts) and a repeat is a no-op; status reports the ref, last
     applied commit, lag and counts, never document content. The cursor lives beside the profile
     as <profile>.sources.json and is only an optimization.
+    sync --due syncs every auto source whose tip moved, under one lease (a sync already running
+    is skipped); sources may set auto (follow on SessionStart) and fetch (a remote to fetch first).
   hook --profile <json> --host claude-code|codex  (host event JSON on stdin)
 
 Instead of --profile, capture/context/browse/accept/import accept --store <dir> or --url <url>
@@ -183,39 +192,6 @@ function jsonFile(path: string, max = 16 * 1024 * 1024): unknown {
     closeSync(fd);
   }
 }
-// Per-source sync state beside the profile. The cursor is only an optimization, so a missing or
-// malformed file means a full reconcile, never an error.
-function readSourceStates(file: string | undefined): Record<string, GitSourceSyncState> {
-  const states: Record<string, GitSourceSyncState> = {};
-  if (!file || !existsSync(file)) return states;
-  let raw: unknown;
-  try {
-    raw = jsonFile(file, 1024 * 1024);
-  } catch {
-    return states;
-  }
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return states;
-  for (const [id, value] of Object.entries(raw)) {
-    if (typeof value !== 'object' || value === null) continue;
-    const s = value as Record<string, unknown>;
-    const count = (n: unknown) =>
-      typeof n === 'number' && Number.isSafeInteger(n) && n >= 0 ? n : 0;
-    states[id] = {
-      cursor: typeof s.cursor === 'string' && /^[0-9a-f]{40,64}$/.test(s.cursor) ? s.cursor : null,
-      skipped: count(s.skipped),
-      conflicts: count(s.conflicts),
-      archived: count(s.archived),
-    };
-  }
-  return states;
-}
-
-function writeSourceStates(file: string, states: Record<string, GitSourceSyncState>): void {
-  const temp = `${file}.${randomUUID()}.tmp`;
-  writeFileSync(temp, JSON.stringify(states, null, 2));
-  renameSync(temp, file);
-}
-
 function parseJson(raw: string): unknown {
   try {
     return JSON.parse(raw.replace(/^\uFEFF/, ''));
@@ -409,6 +385,44 @@ async function setup(p: Profile, output: string): Promise<object> {
     installed: false,
   };
 }
+const hasAutoSources = (p: Profile): boolean => p.sources?.some((s) => s.auto === true) === true;
+
+function sourceRuntime(p: Profile, profilePath: string | undefined): SourceRuntime {
+  return {
+    sources: p.sources ?? [],
+    ...(profilePath === undefined ? {} : { stateFile: `${resolve(profilePath)}.sources.json` }),
+  };
+}
+
+// SessionStart: one cheap check per auto source, then at most one detached sync. The lease
+// check keeps a second host from spawning, and the child takes the lease itself. Any failure
+// here is swallowed: a host session never waits on, or fails because of, a source sync.
+function startDueSync(p: Profile, profilePath: string): void {
+  try {
+    if (!hasAutoSources(p)) return;
+    const runtime = sourceRuntime(p, profilePath);
+    if (leaseHeld(runtime.stateFile!)) return;
+    if (dueSources(runtime.sources, readSourceStates(runtime.stateFile)).length === 0) return;
+    const cli = fileURLToPath(
+      new URL('./main' + (import.meta.url.endsWith('.ts') ? '.ts' : '.js'), import.meta.url)
+    );
+    const child = spawn(
+      process.execPath,
+      [cli, 'source', 'sync', '--due', '--profile', profilePath],
+      { detached: true, stdio: 'ignore', windowsHide: true }
+    );
+    child.on('error', () => {});
+    child.unref();
+  } catch {
+    /* Nonblocking by design. */
+  }
+}
+
+// The configured sources of a workflow profile, for `serve` and `mcp` to expose by id.
+export function loadSourceRuntime(file: string): SourceRuntime {
+  return sourceRuntime(profile(jsonFile(file, 65536)), file);
+}
+
 function hostHooks(p: Profile, config: string, host: Host): { hooks: Record<string, unknown[]> } {
   const cli = fileURLToPath(
     new URL('./main' + (import.meta.url.endsWith('.ts') ? '.ts' : '.js'), import.meta.url)
@@ -433,7 +447,9 @@ function hostHooks(p: Profile, config: string, host: Host): { hooks: Record<stri
               group(Math.ceil((p.recall?.deadlineMs ?? 60000) / 1000) + 30),
             ],
           }),
-      ...(p.context !== false && p.startupContext === true ? { SessionStart: [group(30)] } : {}),
+      ...((p.context !== false && p.startupContext === true) || hasAutoSources(p)
+        ? { SessionStart: [group(30)] }
+        : {}),
       ...(p.capture ? { Stop: [group(60)], PreCompact: [group(60)] } : {}),
     },
   };
@@ -475,6 +491,7 @@ export async function runWorkflow(
         project: { type: 'string', multiple: true },
         'dry-run': { type: 'boolean' },
         source: { type: 'string' },
+        due: { type: 'boolean' },
         'text-output': { type: 'boolean' },
         json: { type: 'boolean' },
         settings: { type: 'string' },
@@ -617,6 +634,8 @@ export async function runWorkflow(
           /* Absent after successful replacement. */
         }
       }
+      if (event!.hook_event_name === 'SessionStart' && v.profile !== undefined)
+        startDueSync(p, resolve(v.profile));
       if (
         event!.hook_event_name === 'SessionStart' || event!.hook_event_name === 'UserPromptSubmit'
           ? p.context === false ||
@@ -771,6 +790,8 @@ export async function runWorkflow(
           readiness = { ...assessed, ready: blocked.length === 0, blocked };
           ok = blocked.length === 0;
         }
+        const sources = p.sources?.length ? inspectSources(sourceRuntime(p, v.profile)) : undefined;
+        if (sources?.some((s) => !s.ok)) ok = false;
         print({
           ok,
           status: await client.status(),
@@ -785,6 +806,7 @@ export async function runWorkflow(
           runtime: { node: process.version, cli: fileURLToPath(import.meta.url) },
           ...(v['provider-probe'] ? { providerHealth } : {}),
           ...(readiness ? { readiness } : {}),
+          ...(sources ? { sources } : {}),
           ...(installation ? { installation } : {}),
         });
         return ok ? 0 : 1;
@@ -1008,12 +1030,20 @@ export async function runWorkflow(
         const action = positionals[0];
         if (action !== 'plan' && action !== 'sync' && action !== 'status')
           throw new ValidationFailedError('source needs plan, sync or status');
+        const runtime = sourceRuntime(p, v.profile);
+        if (v.due) {
+          if (action !== 'sync' || v.source !== undefined)
+            throw new ValidationFailedError('--due is only for `source sync` without --source');
+          const run = await syncDueSources(client, runtime);
+          print(run);
+          return run.failures.length > 0 || run.results.some((r) => r.completeness === 'partial')
+            ? 1
+            : 0;
+        }
         const source = p.sources?.find((s) => s.id === v.source);
         if (!source)
           throw new ValidationFailedError('source needs --source naming a configured id');
-        const stateFile =
-          v.profile === undefined ? undefined : `${resolve(v.profile)}.sources.json`;
-        const states = readSourceStates(stateFile);
+        const states = readSourceStates(runtime.stateFile);
         if (action === 'status') {
           print(gitSourceStatus(source, states[source.id]));
           return 0;
@@ -1034,10 +1064,7 @@ export async function runWorkflow(
           });
           return 0;
         }
-        const result = await syncGitSource(client, source, {
-          cursor: states[source.id]?.cursor ?? null,
-        });
-        if (stateFile) writeSourceStates(stateFile, { ...states, [source.id]: result.state });
+        const result = await syncConfiguredSource(client, runtime, source.id);
         print(result);
         return result.completeness === 'partial' ? 1 : 0;
       }
