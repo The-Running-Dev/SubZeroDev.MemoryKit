@@ -84,7 +84,8 @@ function run(arm: string, extra: string[]) {
         { input: request, encoding: 'utf8', timeout: timeoutMs + 15000, windowsHide: true }
       );
       const ms = performance.now() - start;
-      const timedOut = r.error?.code === 'ETIMEDOUT' || r.status === 75;
+      const timedOut =
+        (r.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT' || r.status === 75;
       let ok = false;
       try {
         ok = r.status === 0 && Array.isArray(JSON.parse(r.stdout).selections);
@@ -106,7 +107,9 @@ function run(arm: string, extra: string[]) {
     } catch {
       /* none */
     }
-    const turn = lifecycle.map((l: any) => l.turnMs).filter(Number.isFinite) as number[];
+    const turn = lifecycle
+      .map((l) => (l as { turnMs?: number }).turnMs)
+      .filter(Number.isFinite) as number[];
     return {
       arm,
       warmupMs,
