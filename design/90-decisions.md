@@ -2,6 +2,20 @@
 
 Append-only. Newest at the top. The rejected alternatives are the point — without them, every future session relitigates the same choice.
 
+## 2026-11-12 — Stage 5 re-planned for S26's cold recall latency (S30–S33)
+
+- **Context:** S26 passes quality (Codex 58/58) and fails the unchanged 10 s cold p95 (Codex 37.8 s, Qwen 29.2 s). 99.6% of that time is three serial provider calls: expansion 39%, selection 32%, verification 28%. The Stage 5 closure concerned a model score as the final answer; it does not cover replacing a model call that only proposes candidates.
+- **Chosen:** measure before building ([design](46-cold-recall-latency.md)). S30 measures one call's floor per provider and stops the plan for any provider above 8 s p95. S31 tests local candidates against the expansion call, S32 a single select-and-verify read, S33 builds only what passed and re-runs the full S26 gate. The 10 s limit and every verification, abstention, quote, revision and scope rule stay.
+- **Rejected:**
+  - Raising the 10 s limit: the owner kept it, and a looser gate would hide the shortfall.
+  - Dropping independent verification outright: the index-only Qwen run admitted unsupported context for five queries.
+  - Reopening S17's `retrieve` or a similarity floor: S18 and S21 stand.
+  - Building an embedder first: nothing shows one call fits the budget, so S30 comes first.
+  - A cache or prefetch as the fix: it helps repeats, and the gate is a cold, uncached run.
+- **Revisit:** after S30, if a provider's one-call p95 is above 8 s, or after S32 if the fused read fails quality.
+
+---
+
 ## 2026-11-10 — Git repositories become read-only memory sources (S27–S29)
 
 - **Context:** The owner wants memories drawn from the private Notes repository that `/note` writes. Each save there commits a write-up, a companion and a verbatim transcript, with YAML front matter, straight to `main`. The owner asked for Git as a general source, not a Notes importer. The skill states that a save does not authorize memory ingestion. The only existing imports are claude-mem exports and MemoryKit archives. Markdown storage is a managed directory and cannot point at someone's own files.

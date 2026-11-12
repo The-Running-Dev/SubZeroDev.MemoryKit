@@ -3,6 +3,7 @@
 S22 adds the owner-authorized portable workflow extension after the completed/retired
 stages below: [contract, adapters and acceptance](40-portable-workflows.md).
 S27–S29 make a Git repository a read-only memory source: [design](45-git-memory-sources.md).
+S30–S33 re-plan Stage 5 for S26's cold recall latency: [design](46-cold-recall-latency.md).
 
 Ordered riskiest assumption first. Each slice is one reviewable PR and leaves the system runnable. Each slice adds its scenarios to the shared conformance suite, and that suite runs against every adapter that exists at the time. Criterion ids are stable.
 
@@ -338,3 +339,47 @@ Acceptance:
   - S29.3 HTTP `POST /v1/sources/{id}/sync` and `GET /v1/sources/{id}`, and MCP `memory_source_status`, act only on configured ids. Any path, ref or URL in a request is rejected.
   - S29.4 `doctor` reports unreachable repositories, refs that do not resolve, failed fetches, conflicts and lag, without document content.
   - S29.5 The docs give a source configuration for a Notes-style repository. It sets explicit includes, excludes `Journal/**` and `raw/**` by default, and maps `project` values to namespaces. The docs also give a cutover and rollback runbook, along with the optional user-owned `post-commit` hook line. MemoryKit installs nothing in the source repository.
+
+## S30 — Measure the floor of one provider call
+Status: todo
+Delivers: the p50 and p95 of a minimal-prompt call for each supported provider and profile, deciding whether the 10 s cold p95 limit is reachable at all ([design](46-cold-recall-latency.md)).
+Touches: scripts, docs/validation (no product code)
+Depends on: S29
+Acceptance:
+  - S30.1 The report gives one-call p50 and p95 for Codex (fresh and seeded catalog) and Qwen (weights unloaded and resident), at least 30 samples each, with executable version, host, GPU state and load.
+  - S30.2 Failed and timed-out samples are kept and counted, never dropped.
+  - S30.3 A 90-decisions entry records whether each provider's one-call p95 is at most 8 s. A provider above it is recorded as unable to meet the limit, and S31 to S33 are not planned for it.
+Out of scope: changing prompts, models, the 10 s limit or any gate.
+
+## S31 — Measure candidates without the expansion call
+Status: todo
+Delivers: whether S17 lexical, MiniLM vectors or RRF find, without a model call, every record the expansion call finds on the 58 cases.
+Touches: scripts, eval/retrieval, docs/validation (no product code)
+Depends on: S30
+Acceptance:
+  - S31.1 For each of the 58 cases and 1,000 fillers, the report lists the expansion call's candidate set and each local source's at depths 16 and 24, scored by recall of the records the case needs.
+  - S31.2 No case loses a needed record against expansion, and with oracle selection no case admits an irrelevant record.
+  - S31.3 The decision entry names the chosen source and depth, or records that expansion stays.
+Out of scope: product code; a similarity floor as the final answer (S18 and S21 stand).
+
+## S32 — Measure one read that selects and verifies
+Status: todo
+Delivers: whether a single call returning indices and exact quotes, under the existing deterministic validators, keeps the S26 quality.
+Touches: examples (adapter prompts), scripts, docs/validation
+Depends on: S31
+Acceptance:
+  - S32.1 On the 58 cases Codex passes 58 and Qwen passes at least 52, with no unsupported context and the adversarial no-answer case returning nothing.
+  - S32.2 The report gives each phase's p50 and p95, and the end-to-end cold p95 against 10,000 ms.
+  - S32.3 A 90-decisions entry records pass or fail. A failed gate keeps the separate verification call.
+Out of scope: removing quote or revision validation; raising any deadline.
+
+## S33 — Build and qualify what S31 and S32 passed
+Status: todo
+Delivers: the chosen candidate source and single read, qualified under the full S26 gate.
+Touches: workflow (recall), providers, doctor, docs
+Depends on: S32
+Acceptance:
+  - S33.1 Only the parts that passed S31 and S32 are built, behind a new provider identity.
+  - S33.2 The full 58-case uncached gate with 1,000 fillers, native Codex and Claude Code hosts, installed doctor readiness and migration/rollback all pass against the built package.
+  - S33.3 If cold p95 is still above 10,000 ms, a 90-decisions entry records the remaining gap and daily automatic recall stays opt-in. The limit is not changed.
+Out of scope: publication, personal ingestion, global installation cutover.
