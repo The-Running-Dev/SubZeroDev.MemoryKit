@@ -59,6 +59,17 @@ export {
   type ClaudeMemImportPlan,
 } from './workflow/import.ts';
 
+export {
+  planGitSource,
+  syncGitSource,
+  validateGitSource,
+  type GitSourceConfig,
+  type GitSourcePlan,
+  type GitSourceSyncResult,
+  type GitSourceSkip,
+  type NamespaceMapping,
+} from './workflow/git-source.ts';
+
 export { exportStore, importStore, type PortableArchive } from './sdk/portable.ts';
 export {
   reviewQueue,

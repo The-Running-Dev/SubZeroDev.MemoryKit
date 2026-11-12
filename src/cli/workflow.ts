@@ -53,6 +53,12 @@ import {
   planClaudeMemImport,
   type ClaudeMemImportOptions,
 } from '../workflow/import.ts';
+import {
+  planGitSource,
+  syncGitSource,
+  validateGitSource,
+  type GitSourceConfig,
+} from '../workflow/git-source.ts';
 import type { CliDeps, CliIo } from './run.ts';
 
 export const WORKFLOW_COMMANDS = [
@@ -70,6 +76,7 @@ export const WORKFLOW_COMMANDS = [
   'accept',
   'import-claude-mem',
   'reconcile-claude-mem',
+  'source',
   'hook',
 ];
 const HELP = `MemoryKit portable workflows:
@@ -107,6 +114,9 @@ const HELP = `MemoryKit portable workflows:
   reconcile-claude-mem --profile <json> --input <json|-> --mapping <json>
         --source-id <stable-installation-id> [--project <source-project>]...
     Audits selected source coverage without changing reviewed records.
+  source plan|sync --profile <json> --source <id>
+    Imports one committed tree of a configured Git source (profile sources[]). plan lists what
+    would be created or skipped and writes nothing; sync creates records, a repeat is a no-op.
   hook --profile <json> --host claude-code|codex  (host event JSON on stdin)
 
 Instead of --profile, capture/context/browse/accept/import accept --store <dir> or --url <url>
@@ -132,6 +142,7 @@ interface Profile {
   includeCandidates?: boolean;
   maxBytes?: number;
   limit?: number;
+  sources?: GitSourceConfig[];
   distiller?: CommandProviderOptions;
   embedding?: { id: string; command: CommandProviderOptions; index?: string };
   recall?: {
@@ -195,6 +206,7 @@ function profile(value: unknown): Profile {
       'distiller',
       'embedding',
       'recall',
+      'sources',
     ],
     ['version']
   );
@@ -223,6 +235,16 @@ function profile(value: unknown): Profile {
   });
   integer(p.maxBytes, 'maxBytes', 8192, 512, 65536);
   integer(p.limit, 'limit', 10, 1, 50);
+  if (p.sources !== undefined) {
+    if (!Array.isArray(p.sources) || p.sources.length > 32)
+      throw new ValidationFailedError('Invalid workflow profile sources');
+    const ids = new Set<string>();
+    for (const source of p.sources) {
+      validateGitSource(source);
+      if (ids.has(source.id)) throw new ValidationFailedError('Duplicate source id');
+      ids.add(source.id);
+    }
+  }
   if (p.distiller !== undefined) validateCommand(p.distiller);
   for (const provider of [p.embedding, p.recall]) {
     if (provider === undefined) continue;
@@ -414,6 +436,7 @@ export async function runWorkflow(
         'source-id': { type: 'string' },
         project: { type: 'string', multiple: true },
         'dry-run': { type: 'boolean' },
+        source: { type: 'string' },
         'text-output': { type: 'boolean' },
         json: { type: 'boolean' },
         settings: { type: 'string' },
@@ -432,7 +455,13 @@ export async function runWorkflow(
     }
     if (
       positionals.length !==
-      (command === 'accept' ? 1 : command === 'review' ? (positionals.length ? 2 : 0) : 0)
+      (command === 'accept' || command === 'source'
+        ? 1
+        : command === 'review'
+          ? positionals.length
+            ? 2
+            : 0
+          : 0)
     )
       throw new ValidationFailedError('Unexpected positional arguments');
     const base =
@@ -934,6 +963,33 @@ export async function runWorkflow(
           return 0;
         }
         const result = await importClaudeMem(client, data, options);
+        print(result);
+        return result.completeness === 'partial' ? 1 : 0;
+      }
+      if (command === 'source') {
+        const action = positionals[0];
+        if (action !== 'plan' && action !== 'sync')
+          throw new ValidationFailedError('source needs plan or sync');
+        const source = p.sources?.find((s) => s.id === v.source);
+        if (!source)
+          throw new ValidationFailedError('source needs --source naming a configured id');
+        if (action === 'plan') {
+          const plan = planGitSource(source);
+          print({
+            dryRun: true,
+            source: plan.source,
+            commit: plan.commit,
+            counts: plan.counts,
+            records: plan.records.map((r) => ({
+              key: r.input.key,
+              namespace: r.input.namespace,
+              bytes: r.bytes,
+            })),
+            skipped: plan.skipped,
+          });
+          return 0;
+        }
+        const result = await syncGitSource(client, source);
         print(result);
         return result.completeness === 'partial' ? 1 : 0;
       }
