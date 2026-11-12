@@ -61,6 +61,7 @@ export {
 
 export {
   gitSourceStatus,
+  inspectGitSource,
   planGitSource,
   syncGitSource,
   validateGitSource,

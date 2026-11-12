@@ -36,6 +36,10 @@ export interface GitSourceConfig {
   chunkBytes?: number;
   extensions?: string[];
   kinds?: Record<string, string>;
+  // Remote to fetch before a sync. Off unless named.
+  fetch?: string;
+  // Kept current by the SessionStart hook and `source sync --due`. Off by default.
+  auto?: boolean;
 }
 
 export type SkipReason =
@@ -82,6 +86,9 @@ export interface GitSourceConflict {
 }
 
 export interface GitSourceSyncState {
+  lastRunAt?: string;
+  fetch?: 'ok' | 'failed';
+  failure?: string;
   cursor: string | null;
   skipped: number;
   conflicts: number;
@@ -165,6 +172,8 @@ export function validateGitSource(value: unknown): GitSourceConfig {
       'chunkBytes',
       'extensions',
       'kinds',
+      'fetch',
+      'auto',
     ],
     ['id', 'repository', 'ref', 'include', 'namespace']
   );
@@ -186,6 +195,13 @@ export function validateGitSource(value: unknown): GitSourceConfig {
   if (value.status !== undefined && !['candidate', 'accepted'].includes(value.status as string))
     throw new ValidationFailedError('Invalid source status');
   integer(value.chunkBytes, 'chunkBytes', DEFAULT_CHUNK_BYTES, 1024, 262144);
+  if (value.auto !== undefined && typeof value.auto !== 'boolean')
+    throw new ValidationFailedError('Invalid source auto');
+  if (
+    value.fetch !== undefined &&
+    !(typeof value.fetch === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(value.fetch))
+  )
+    throw new ValidationFailedError('Invalid source fetch remote');
   if (value.extensions !== undefined) {
     if (!Array.isArray(value.extensions) || value.extensions.length > 16)
       throw new ValidationFailedError('Invalid source extensions');
@@ -910,4 +926,48 @@ export function gitSourceStatus(
     conflicts: state?.conflicts ?? null,
     archived: state?.archived ?? null,
   };
+}
+
+// The ref's commit when the repository and ref are usable, with no document content read.
+export function inspectGitSource(config: GitSourceConfig): {
+  repository: boolean;
+  commit: string | null;
+} {
+  const source = validateGitSource(config);
+  try {
+    git(source.repository, ['rev-parse', '--git-dir']);
+  } catch {
+    return { repository: false, commit: null };
+  }
+  try {
+    const commit = git(source.repository, [
+      'rev-parse',
+      '--verify',
+      '--end-of-options',
+      `${source.ref}^{commit}`,
+    ])
+      .toString('utf8')
+      .trim();
+    return { repository: true, commit };
+  } catch {
+    return { repository: true, commit: null };
+  }
+}
+
+// Fetches the configured remote (an owner opt-in; the only thing here that writes to the
+// repository's refs). A failure is reported, never thrown, so the sync still reads the tip.
+export function fetchGitSource(config: GitSourceConfig, timeoutMs = 60_000): boolean {
+  const source = validateGitSource(config);
+  if (source.fetch === undefined) return true;
+  const { spawnSync } = process.getBuiltinModule('node:child_process');
+  const result = spawnSync(
+    'git',
+    ['-C', source.repository, 'fetch', '--quiet', '--no-tags', '--end-of-options', source.fetch],
+    {
+      timeout: timeoutMs,
+      windowsHide: true,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    }
+  );
+  return !result.error && result.status === 0;
 }
