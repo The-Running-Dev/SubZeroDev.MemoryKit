@@ -1,0 +1,421 @@
+{
+  "version": 1,
+  "provider": "ollama",
+  "at": "2026-11-12T14:57:53.277Z",
+  "executable": "ollama version is 0.40.16",
+  "host": {
+    "platform": "win32",
+    "release": "10.0.26200",
+    "cpus": 16,
+    "memGiB": 32,
+    "node": "v26.12.1"
+  },
+  "gpuBefore": "NVIDIA T1200 Laptop GPU, 0 MiB, 4096 MiB, 0 %",
+  "request": "one passage, one question, limit 3 (select)",
+  "results": [
+    {
+      "arm": "unloaded",
+      "warmupMs": null,
+      "samples": 30,
+      "failed": 0,
+      "timedOut": 0,
+      "wallMs": {
+        "p50": 10435.508699999998,
+        "p95": 12444.853100000008
+      },
+      "okWallMs": {
+        "p50": 10435.508699999998,
+        "p95": 12444.853100000008
+      },
+      "turnMs": {
+        "p50": 0,
+        "p95": 0
+      },
+      "rows": [
+        {
+          "ms": 9897.380000000001,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 9536.040900000002,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 9761.335299999999,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 10219.175000000003,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 11031.9689,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 10435.508699999998,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 10463.230600000003,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 9750.973899999997,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 11888.716199999995,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 11516.584699999992,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 10040.78319999999,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 10020.0858,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 11116.122400000007,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 10497.611399999994,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 12444.853100000008,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 13750.237299999979,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 11675.350399999996,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 10149.350999999995,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 10291.403700000024,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 11597.45200000002,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 11557.277999999991,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 11167.532500000001,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 10642.662799999991,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 11328.443700000003,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 11020.559299999964,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 10158.50820000004,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 9766.925899999973,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 9763.63439999998,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 9793.629599999986,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 9909.285399999993,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        }
+      ]
+    },
+    {
+      "arm": "resident",
+      "warmupMs": 720.8634999999776,
+      "samples": 30,
+      "failed": 0,
+      "timedOut": 0,
+      "wallMs": {
+        "p50": 862.4077999999863,
+        "p95": 883.8378999999841
+      },
+      "okWallMs": {
+        "p50": 862.4077999999863,
+        "p95": 883.8378999999841
+      },
+      "turnMs": {
+        "p50": 0,
+        "p95": 0
+      },
+      "rows": [
+        {
+          "ms": 720.2187000000267,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 828.6226000000024,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 822.0174000000115,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 846.1411999999546,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 878.4158999999636,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 855.8366999999853,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 873.0117999999784,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 907.078600000008,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 868.133199999982,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 856.875,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 866.97570000001,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 847.5760000000009,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 864.0641000000178,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 870.7909999999683,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 868.694599999988,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 852.7215999999898,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 858.6283999999869,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 876.1812999999966,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 873.0494999999646,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 862.4077999999863,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 876.9305000000168,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 867.7569000000367,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 863.6055000000051,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 864.5496000000276,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 854.9429999999702,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 856.3682000000263,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 883.8378999999841,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 853.7892999999458,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 852.2477000000072,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        },
+        {
+          "ms": 857.4538000000175,
+          "ok": true,
+          "status": 0,
+          "timedOut": false
+        }
+      ]
+    }
+  ],
+  "gpuAfter": "2331 MiB, 24 %",
+  "limit": "Percentiles use the harness nearest-rank method. Wall time includes adapter spawn and CLI start. Not a quality or readiness qualification."
+}

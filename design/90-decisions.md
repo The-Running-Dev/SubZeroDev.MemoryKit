@@ -2,6 +2,18 @@
 
 Append-only. Newest at the top. The rejected alternatives are the point — without them, every future session relitigates the same choice.
 
+## 2026-11-12 — S30: one Codex call is already above 8 s; resident Qwen is not
+
+- **Context:** S30 measured one minimal provider call, 30 samples per profile ([report](../docs/validation/s30-floor.md)). `gpt-6.1-sol`, the model S26 qualified, is rejected for this ChatGPT account, so Codex was measured as `gpt-6-sol`, a different identity.
+- **Chosen:** apply the 8 s stop rule per provider profile. Codex `gpt-6-sol` is above it: p95 11,038 ms with a seeded catalog and 10,114 ms with a fresh one, so S31 to S33 are not planned for Codex, and it is recorded as unable to meet the 10 s limit with three serial calls or with one. Qwen 2.5 7B with weights resident is far below it (p95 884 ms) and continues into S31 to S33. Qwen with weights unloaded is above it (p95 12,445 ms), so Qwen is only a candidate where the host keeps the model resident.
+- **Rejected:**
+  - Calling the Codex result a model-wide finding: it is one window on one account for one identity, and `gpt-6.1-sol` was not measurable.
+  - Reading the resident Qwen floor as a pass: the request was one passage, so it bounds real calls from below only, and Qwen failed S26 quality (52/58) with an index-only verifier.
+  - Choosing another Codex model to keep Codex in the plan: that is a new provider identity and the owner's call.
+- **Revisit:** if `gpt-6.1-sol` or another Codex model returns, rerun S30 for it with `scripts/measure-provider-floor.ts`; if resident Qwen fails S31 or S32, close the plan the same way.
+
+---
+
 ## 2026-11-12 — Stage 5 re-planned for S26's cold recall latency (S30–S33)
 
 - **Context:** S26 passes quality (Codex 58/58) and fails the unchanged 10 s cold p95 (Codex 37.8 s, Qwen 29.2 s). 99.6% of that time is three serial provider calls: expansion 39%, selection 32%, verification 28%. The Stage 5 closure concerned a model score as the final answer; it does not cover replacing a model call that only proposes candidates.
