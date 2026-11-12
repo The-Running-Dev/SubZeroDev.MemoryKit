@@ -295,6 +295,36 @@ rows fail before writes. Input is capped at 16 MiB and 10,000 selected records. 
 rows/source identity to resume; changed rows require reconciliation rather than overwriting
 curation. Imports remain candidates. Unexported attachments are not migrated.
 
+## Git repositories as memory sources
+
+A profile may list `sources[]`. Each source reads one committed tree of a local clone and
+never the working tree: only Git plumbing runs (no checkout, hooks, textconv or filter
+drivers) and nothing in the repository is written.
+
+```json
+{ "id": "notes", "repository": "/absolute/path/to/clone", "ref": "main",
+  "include": ["Notes/**"], "exclude": ["Notes/private/**"],
+  "namespace": { "by": "first-segment", "map": { "Notes": "project/acme/notes" } },
+  "status": "candidate", "chunkBytes": 32768, "kinds": { "decision": "decision" } }
+```
+
+```bash
+memorykit source plan --profile /absolute/path/config/memorykit.profile.json --source notes
+memorykit source sync --profile /absolute/path/config/memorykit.profile.json --source notes
+```
+
+`ref`, `include` and `namespace` are required. `namespace` is a fixed namespace or a map from
+the first path segment or a front-matter field; unmapped files are skipped. `.md`, `.markdown`
+and `.txt` files up to 4 MiB are read; other types are skipped and reported. Documents over
+`chunkBytes` split at headings, then paragraphs, and concatenating the sections restores the
+original text. Front matter keeps only `title`, `date`, `type`, `tags`, `project` and
+`record-kind`. Paths matching `exclude`, or `.env*`, `*.pem`, `*.key`, `id_*`, `*.p12` and
+`*.pfx`, are counted and never listed. A document with a private-key block or a
+high-confidence token is skipped and reported by path and rule, never stored. Records are keyed
+`git:<id>:<path>[#<ordinal>-<slug>]` and carry the commit, path and blob in `metadata.source`,
+provenance and evidence. A repeat sync at the same commit writes nothing, and an interrupted
+sync resumes by replay. Following later commits is not yet supported.
+
 ## Optional model providers
 
 No model is required. Implement SDK `Distiller`/`EmbeddingProvider`/`RecallSelector`, or configure a trusted

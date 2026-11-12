@@ -303,7 +303,7 @@ Acceptance:
 Out of scope: product code; contract changes; LLM ranking; fine-tuning; hosted APIs; rerankers over 100 MiB in fp32; quantized models; new or changed query sets.
 
 ## S27 — Import a committed tree from a Git repository
-Status: todo
+Status: done
 Delivers: `planGitSource` and `syncGitSource` for a first import, and the `memorykit source plan` and `memorykit source sync` commands. They read one commit of a configured source into memories with provenance, chunking, front matter and the secret guard.
 Touches: workflow (git source), cli, sdk exports, profile schema, conformance, docs ([design](45-git-memory-sources.md))
 Acceptance:
