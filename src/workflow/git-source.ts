@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import { isAbsolute } from 'node:path';
 import {
   isPlainObject,
@@ -183,6 +182,8 @@ function globRegExp(glob: string): RegExp {
 }
 
 function git(repository: string, args: string[], maxBuffer = 64 * 1024 * 1024): Buffer {
+  // Loaded on use, so importing the SDK entry does not load child_process.
+  const { spawnSync } = process.getBuiltinModule('node:child_process');
   const result = spawnSync(
     'git',
     ['--no-optional-locks', '-c', 'core.fsmonitor=false', '-C', repository, ...args],
