@@ -54,10 +54,12 @@ import {
   type ClaudeMemImportOptions,
 } from '../workflow/import.ts';
 import {
+  gitSourceStatus,
   planGitSource,
   syncGitSource,
   validateGitSource,
   type GitSourceConfig,
+  type GitSourceSyncState,
 } from '../workflow/git-source.ts';
 import type { CliDeps, CliIo } from './run.ts';
 
@@ -114,9 +116,12 @@ const HELP = `MemoryKit portable workflows:
   reconcile-claude-mem --profile <json> --input <json|-> --mapping <json>
         --source-id <stable-installation-id> [--project <source-project>]...
     Audits selected source coverage without changing reviewed records.
-  source plan|sync --profile <json> --source <id>
-    Imports one committed tree of a configured Git source (profile sources[]). plan lists what
-    would be created or skipped and writes nothing; sync creates records, a repeat is a no-op.
+  source plan|sync|status --profile <json> --source <id>
+    Follows a configured Git source (profile sources[]). plan lists what the tip would create or
+    skip and writes nothing; sync reconciles the store with the tip (updates, supersedes renames,
+    archives deletions, reports conflicts) and a repeat is a no-op; status reports the ref, last
+    applied commit, lag and counts, never document content. The cursor lives beside the profile
+    as <profile>.sources.json and is only an optimization.
   hook --profile <json> --host claude-code|codex  (host event JSON on stdin)
 
 Instead of --profile, capture/context/browse/accept/import accept --store <dir> or --url <url>
@@ -178,6 +183,39 @@ function jsonFile(path: string, max = 16 * 1024 * 1024): unknown {
     closeSync(fd);
   }
 }
+// Per-source sync state beside the profile. The cursor is only an optimization, so a missing or
+// malformed file means a full reconcile, never an error.
+function readSourceStates(file: string | undefined): Record<string, GitSourceSyncState> {
+  const states: Record<string, GitSourceSyncState> = {};
+  if (!file || !existsSync(file)) return states;
+  let raw: unknown;
+  try {
+    raw = jsonFile(file, 1024 * 1024);
+  } catch {
+    return states;
+  }
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return states;
+  for (const [id, value] of Object.entries(raw)) {
+    if (typeof value !== 'object' || value === null) continue;
+    const s = value as Record<string, unknown>;
+    const count = (n: unknown) =>
+      typeof n === 'number' && Number.isSafeInteger(n) && n >= 0 ? n : 0;
+    states[id] = {
+      cursor: typeof s.cursor === 'string' && /^[0-9a-f]{40,64}$/.test(s.cursor) ? s.cursor : null,
+      skipped: count(s.skipped),
+      conflicts: count(s.conflicts),
+      archived: count(s.archived),
+    };
+  }
+  return states;
+}
+
+function writeSourceStates(file: string, states: Record<string, GitSourceSyncState>): void {
+  const temp = `${file}.${randomUUID()}.tmp`;
+  writeFileSync(temp, JSON.stringify(states, null, 2));
+  renameSync(temp, file);
+}
+
 function parseJson(raw: string): unknown {
   try {
     return JSON.parse(raw.replace(/^\uFEFF/, ''));
@@ -968,11 +1006,18 @@ export async function runWorkflow(
       }
       if (command === 'source') {
         const action = positionals[0];
-        if (action !== 'plan' && action !== 'sync')
-          throw new ValidationFailedError('source needs plan or sync');
+        if (action !== 'plan' && action !== 'sync' && action !== 'status')
+          throw new ValidationFailedError('source needs plan, sync or status');
         const source = p.sources?.find((s) => s.id === v.source);
         if (!source)
           throw new ValidationFailedError('source needs --source naming a configured id');
+        const stateFile =
+          v.profile === undefined ? undefined : `${resolve(v.profile)}.sources.json`;
+        const states = readSourceStates(stateFile);
+        if (action === 'status') {
+          print(gitSourceStatus(source, states[source.id]));
+          return 0;
+        }
         if (action === 'plan') {
           const plan = planGitSource(source);
           print({
@@ -989,7 +1034,10 @@ export async function runWorkflow(
           });
           return 0;
         }
-        const result = await syncGitSource(client, source);
+        const result = await syncGitSource(client, source, {
+          cursor: states[source.id]?.cursor ?? null,
+        });
+        if (stateFile) writeSourceStates(stateFile, { ...states, [source.id]: result.state });
         print(result);
         return result.completeness === 'partial' ? 1 : 0;
       }

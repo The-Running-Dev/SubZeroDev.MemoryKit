@@ -315,7 +315,7 @@ Acceptance:
   - S27.6 Imported records are found by `retrieve`, `browse` and `context` in their mapped namespace, and not from any other namespace.
 
 ## S28 — Follow later commits without overwriting curation
-Status: todo
+Status: done
 Delivers: incremental sync from the stored cursor through every rule in the table above, including rename to supersede, delete to archive, conflict reporting and force-push recovery, plus a `memorykit source status` report.
 Touches: workflow (git source), cli, conformance, docs
 Depends on: S27

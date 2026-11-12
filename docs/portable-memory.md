@@ -323,7 +323,36 @@ original text. Front matter keeps only `title`, `date`, `type`, `tags`, `project
 high-confidence token is skipped and reported by path and rule, never stored. Records are keyed
 `git:<id>:<path>[#<ordinal>-<slug>]` and carry the commit, path and blob in `metadata.source`,
 provenance and evidence. A repeat sync at the same commit writes nothing, and an interrupted
-sync resumes by replay. Following later commits is not yet supported.
+sync resumes by replay.
+
+### Following later commits
+
+`source sync` reconciles the store with the tip of `ref` on every run, so a repeat is a no-op:
+
+| Repository change | Outcome |
+| --- | --- |
+| New file | created at the source's status |
+| Changed file, record not edited here | `update`; a `candidate` source re-queues it, an `accepted` source keeps it accepted |
+| Changed file, record corrected here | left as is and reported as a `changed` conflict |
+| Renamed file | new record, old one superseded (a renamed-and-edited file is followed through the cursor) |
+| Deleted or no longer included | archived; if corrected here, reported as a `deleted` conflict |
+| Key held by a record this sync did not archive | reported as a `blocked` conflict |
+
+A record counts as corrected when its content no longer matches the chunk recorded in
+`metadata.source`. Sections are keyed by ordinal and slug, so a section that moves is archived
+and recreated rather than matched. The cursor (last fully applied commit) is stored beside the
+profile as `<profile>.sources.json`; it only supplies rename pairs and lag, so losing it or a
+force push that drops it costs nothing but a full reconcile, with no duplicates. Bounds
+(`maxChanges` 2,000 writes, `maxBlobBytes` 64 MiB, an optional deadline) return `partial` with
+the cursor unchanged; the next run finishes. A blob-budget cut never archives anything.
+Records left in a namespace the mapping no longer names are not followed.
+
+```bash
+memorykit source status --profile /absolute/path/config/memorykit.profile.json --source notes
+```
+
+`status` reports the ref, tip commit, last applied commit, lag in commits, and counts of
+skipped records, conflicts and archives from the last sync. It never shows document content.
 
 ## Optional model providers
 

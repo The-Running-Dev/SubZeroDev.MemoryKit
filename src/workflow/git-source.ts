@@ -7,12 +7,14 @@ import {
   ValidationFailedError,
   type JsonValue,
 } from '../model/index.ts';
+import type { MemoryRecord } from '../model/index.ts';
 import type { CreateInput, MemoryClient } from '../service/index.ts';
 import { fields, integer, nonempty } from './index.ts';
 
 // A Git repository as a read-only memory source. Only committed objects are read, through
 // plumbing commands: no checkout, hooks, textconv or filter drivers run, and nothing in the
-// repository is written. S27 imports one committed tree; syncing later commits is S28.
+// repository is written. S27 imports one committed tree; S28 reconciles later commits against
+// the records' own metadata.source, so the cursor is only an optimization.
 
 export type NamespaceMapping =
   | string
@@ -51,6 +53,8 @@ export interface PlannedGitRecord {
   operationId: string;
   path: string;
   bytes: number;
+  chunkSha256: string;
+  ordinal: number | null;
 }
 
 export interface GitSourcePlan {
@@ -58,6 +62,7 @@ export interface GitSourcePlan {
   commit: string;
   records: PlannedGitRecord[];
   skipped: GitSourceSkip[];
+  truncated: boolean;
   counts: {
     files: number;
     records: number;
@@ -68,20 +73,64 @@ export interface GitSourcePlan {
   };
 }
 
+export interface GitSourceConflict {
+  key: string;
+  // changed: the file changed upstream but the record was corrected here.
+  // deleted: the file left the source but the record was corrected here.
+  // blocked: the key is held by an archived, superseded or tombstoned record this sync did not make.
+  reason: 'changed' | 'deleted' | 'blocked';
+}
+
+export interface GitSourceSyncState {
+  cursor: string | null;
+  skipped: number;
+  conflicts: number;
+  archived: number;
+}
+
+export interface GitSourceSyncOptions {
+  cursor?: string | null;
+  maxChanges?: number;
+  maxBlobBytes?: number;
+  deadlineMs?: number;
+}
+
 export interface GitSourceSyncResult {
   source: string;
   commit: string;
   created: number;
+  updated: number;
+  superseded: number;
+  archived: number;
+  restored: number;
   unchanged: number;
+  conflicts: GitSourceConflict[];
   failures: { key: string; code: string }[];
   skipped: GitSourceSkip[];
   counts: GitSourcePlan['counts'];
   completeness: 'complete' | 'partial';
+  cursor: string | null;
+  state: GitSourceSyncState;
+}
+
+export interface GitSourceStatus {
+  source: string;
+  ref: string;
+  commit: string;
+  cursor: string | null;
+  lag: number | null;
+  cursorReachable: boolean | null;
+  skipped: number | null;
+  conflicts: number | null;
+  archived: number | null;
 }
 
 export const MAX_GIT_FILE_BYTES = 4 * 1024 * 1024;
 export const MAX_GIT_SECTIONS = 256;
 export const DEFAULT_CHUNK_BYTES = 32768;
+export const MAX_GIT_CHANGES = 2000;
+export const MAX_GIT_BLOB_BYTES = 64 * 1024 * 1024;
+const ARCHIVE_REASON = 'Removed from the Git source';
 const MAX_FRONT_MATTER_BYTES = 4096;
 const FRONT_MATTER_FIELDS = ['title', 'date', 'type', 'tags', 'project', 'record-kind'];
 const DEFAULT_EXTENSIONS = ['.md', '.markdown', '.txt'];
@@ -384,7 +433,12 @@ function resolveNamespace(
   return mapping.default;
 }
 
-export function planGitSource(config: GitSourceConfig): GitSourcePlan {
+export function planGitSource(
+  config: GitSourceConfig,
+  limits: { maxBlobBytes?: number } = {}
+): GitSourcePlan {
+  const maxBlobBytes = limits.maxBlobBytes ?? MAX_GIT_BLOB_BYTES;
+  let blobBytes = 0;
   const source = validateGitSource(config);
   const chunkBytes = integer(source.chunkBytes, 'chunkBytes', DEFAULT_CHUNK_BYTES, 1024, 262144);
   const commit = git(source.repository, [
@@ -407,6 +461,7 @@ export function planGitSource(config: GitSourceConfig): GitSourcePlan {
     commit,
     records: [],
     skipped: [],
+    truncated: false,
     counts: { files: 0, records: 0, chunkedFiles: 0, skipped: 0, excluded: 0, notIncluded: 0 },
   };
   const skip = (path: string, reason: SkipReason, extra: Partial<GitSourceSkip> = {}) =>
@@ -434,6 +489,12 @@ export function planGitSource(config: GitSourceConfig): GitSourcePlan {
       skip(entry.path, 'size', { bytes: entry.size });
       continue;
     }
+    if (blobBytes + entry.size > maxBlobBytes) {
+      // Later paths stay unread, so nothing absent from this plan may be treated as removed.
+      plan.truncated = true;
+      break;
+    }
+    blobBytes += entry.size;
     let text: string;
     try {
       text = new TextDecoder('utf-8', { fatal: true }).decode(
@@ -490,6 +551,7 @@ export function planGitSource(config: GitSourceConfig): GitSourcePlan {
         path: entry.path,
         blob: entry.blob,
         contentSha256,
+        chunkSha256: sha256Hex(chunk),
         author: meta[0] ?? '',
         authoredAt: meta[1] ?? '',
       };
@@ -497,6 +559,8 @@ export function planGitSource(config: GitSourceConfig): GitSourcePlan {
       records.push({
         path: entry.path,
         bytes: Buffer.byteLength(chunk),
+        chunkSha256: sha256Hex(chunk),
+        ordinal: chunked ? index + 1 : null,
         operationId: `gitsrc:${sha256Hex(`${source.id}\0${commit}\0${entry.path}\0${section ?? ''}`).slice(0, 48)}`,
         input: {
           namespace,
@@ -531,42 +595,319 @@ export function planGitSource(config: GitSourceConfig): GitSourcePlan {
   return plan;
 }
 
-// The operation id is derived from source, commit, path and section, so replaying a sync
-// resumes an interrupted import and a repeat at the same commit writes nothing.
+const SHA = /^[0-9a-f]{40,64}$/;
+const STATES = ['active', 'archived', 'superseded', 'tombstoned'] as const;
+
+function namespacesOf(mapping: NamespaceMapping): string[] {
+  if (typeof mapping === 'string') return [mapping];
+  return [
+    ...new Set([...Object.values(mapping.map), ...(mapping.default ? [mapping.default] : [])]),
+  ];
+}
+
+function sourceOf(record: MemoryRecord): Record<string, JsonValue> | undefined {
+  const value = record.metadata.source;
+  return isPlainObject(value) ? (value as Record<string, JsonValue>) : undefined;
+}
+
+// The hash of the chunk this record last took from the repository, when it can be known.
+function recordedHash(record: MemoryRecord): string | undefined {
+  const source = sourceOf(record);
+  if (typeof source?.chunkSha256 === 'string') return source.chunkSha256;
+  if (source && source.section === undefined && typeof source.contentSha256 === 'string')
+    return source.contentSha256;
+  return record.revision === 1 ? sha256Hex(record.content) : undefined;
+}
+
+const isEdited = (record: MemoryRecord): boolean =>
+  sha256Hex(record.content) !== recordedHash(record);
+
+function isAncestor(repository: string, cursor: string, tip: string): boolean {
+  if (!SHA.test(cursor)) return false;
+  try {
+    git(repository, ['merge-base', '--is-ancestor', cursor, tip]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Old path to new path for renames since the cursor, so an edited-and-renamed file is followed.
+function renamePairs(repository: string, cursor: string, tip: string): Map<string, string> {
+  const pairs = new Map<string, string>();
+  const out = git(repository, [
+    'diff',
+    '-M',
+    '--name-status',
+    '-z',
+    '--diff-filter=R',
+    cursor,
+    tip,
+    '--',
+  ])
+    .toString('utf8')
+    .split('\0');
+  for (let i = 0; i + 2 < out.length; i += 3) pairs.set(out[i + 1]!, out[i + 2]!);
+  return pairs;
+}
+
+async function listRecords(client: MemoryClient, config: GitSourceConfig): Promise<MemoryRecord[]> {
+  const records: MemoryRecord[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await client.search({
+      namespaces: namespacesOf(config.namespace),
+      metadata: { gitSource: config.id },
+      states: [...STATES],
+      limit: 100,
+      ...(cursor ? { cursor } : {}),
+    });
+    records.push(...page.items);
+    cursor = page.nextCursor ?? undefined;
+  } while (cursor);
+  return records;
+}
+
+// Reconciles the store with the tip of the source's ref. Every run compares the planned tip
+// records with the source's own records (by key and recorded content hash), so the cursor only
+// supplies rename pairs and lag: a lost or force-pushed-away cursor costs nothing but that.
 export async function syncGitSource(
   client: MemoryClient,
-  config: GitSourceConfig
+  config: GitSourceConfig,
+  options: GitSourceSyncOptions = {}
 ): Promise<GitSourceSyncResult> {
-  const plan = planGitSource(config);
+  const started = Date.now();
+  const maxChanges = integer(options.maxChanges, 'maxChanges', MAX_GIT_CHANGES, 1, 1_000_000);
+  const plan = planGitSource(
+    config,
+    options.maxBlobBytes === undefined ? {} : { maxBlobBytes: options.maxBlobBytes }
+  );
+  const repository = config.repository;
+  const previous = options.cursor ?? null;
   const result: GitSourceSyncResult = {
     source: plan.source,
     commit: plan.commit,
     created: 0,
+    updated: 0,
+    superseded: 0,
+    archived: 0,
+    restored: 0,
     unchanged: 0,
+    conflicts: [],
     failures: [],
     skipped: plan.skipped,
     counts: plan.counts,
     completeness: 'complete',
+    cursor: previous,
+    state: { cursor: previous, skipped: plan.skipped.length, conflicts: 0, archived: 0 },
   };
-  for (const record of plan.records) {
+  const existing = await listRecords(client, config);
+  const byKey = new Map(existing.map((record) => [record.key, record] as const));
+  const planned = new Set(plan.records.map((record) => record.input.key!));
+  const pairs =
+    previous && isAncestor(repository, previous, plan.commit)
+      ? renamePairs(repository, previous, plan.commit)
+      : new Map<string, string>();
+  const claimed = new Set<string>();
+  const removed = existing.filter((r) => r.state === 'active' && r.key && !planned.has(r.key));
+  const opId = (action: string, key: string, revision: number) =>
+    `gitsrc:${sha256Hex(`${plan.source}\0${plan.commit}\0${key}\0${action}\0${revision}`).slice(0, 48)}`;
+  let changes = 0;
+  const bounded = (): boolean =>
+    changes >= maxChanges ||
+    (options.deadlineMs !== undefined && Date.now() - started > options.deadlineMs);
+  const conflict = (key: string, reason: GitSourceConflict['reason']): void => {
+    result.conflicts.push({ key, reason });
+  };
+  const merged = (found: MemoryRecord, record: PlannedGitRecord) => {
+    const base: Record<string, JsonValue> = { ...found.metadata };
+    delete base.frontmatter;
+    return { ...base, ...record.input.metadata };
+  };
+  const renameSource = (record: PlannedGitRecord): MemoryRecord | undefined => {
+    if (plan.truncated) return undefined;
+    const oldPath = [...pairs].find(([, to]) => to === record.path)?.[0];
+    return removed.find((found) => {
+      if (claimed.has(found.id) || isEdited(found)) return false;
+      const source = sourceOf(found);
+      const section = source?.section as Record<string, JsonValue> | undefined;
+      if (
+        oldPath !== undefined &&
+        source?.path === oldPath &&
+        (section?.ordinal ?? null) === record.ordinal
+      )
+        return true;
+      return recordedHash(found) === record.chunkSha256;
+    });
+  };
+
+  let stopped = false;
+  const guard = async (key: string, work: () => Promise<void>): Promise<void> => {
+    if (stopped) return;
+    if (bounded()) {
+      stopped = true;
+      result.completeness = 'partial';
+      return;
+    }
     try {
-      const known = await client.operation(record.operationId).then(
-        () => true,
-        (error: unknown) => {
-          if (toProblem(error).code === 'NotFound') return false;
-          throw error;
+      await work();
+    } catch (error) {
+      result.failures.push({ key, code: toProblem(error).code });
+      result.completeness = 'partial';
+      stopped = true;
+    }
+  };
+
+  for (const record of plan.records) {
+    const key = record.input.key!;
+    const found = byKey.get(key);
+    await guard(key, async () => {
+      if (!found) {
+        const from = renameSource(record);
+        if (from) {
+          claimed.add(from.id);
+          changes++;
+          await client.supersede(
+            { id: from.id, expectedRevision: from.revision, replacement: record.input },
+            { operationId: opId('supersede', key, from.revision) }
+          );
+          result.superseded++;
+          return;
         }
+        const known = await client.operation(record.operationId).then(
+          () => true,
+          (error: unknown) => {
+            if (toProblem(error).code === 'NotFound') return false;
+            throw error;
+          }
+        );
+        if (known) {
+          result.unchanged++;
+          return;
+        }
+        changes++;
+        await client.create(record.input, { operationId: record.operationId });
+        result.created++;
+        return;
+      }
+      let current = found;
+      if (current.state === 'archived') {
+        if (current.provenance?.reason !== ARCHIVE_REASON) return conflict(key, 'blocked');
+        changes++;
+        const outcome = await client.restore(
+          {
+            id: current.id,
+            expectedRevision: current.revision,
+            provenance: record.input.provenance!,
+          },
+          { operationId: opId('restore', key, current.revision) }
+        );
+        current = outcome.memory;
+        result.restored++;
+      } else if (current.state !== 'active') {
+        return conflict(key, 'blocked');
+      }
+      if (
+        recordedHash(current) === record.chunkSha256 ||
+        current.content === record.input.content
+      ) {
+        if (current === found) result.unchanged++;
+        return;
+      }
+      if (isEdited(current)) return conflict(key, 'changed');
+      changes++;
+      await client.update(
+        {
+          id: current.id,
+          expectedRevision: current.revision,
+          content: record.input.content,
+          contentType: record.input.contentType!,
+          metadata: merged(current, record),
+          provenance: record.input.provenance!,
+        },
+        { operationId: opId('update', key, current.revision) }
       );
-      if (known) {
-        result.unchanged++;
+      result.updated++;
+    });
+  }
+
+  if (!plan.truncated && !stopped) {
+    for (const found of removed) {
+      if (claimed.has(found.id)) continue;
+      const key = found.key!;
+      if (isEdited(found)) {
+        conflict(key, 'deleted');
         continue;
       }
-      await client.create(record.input, { operationId: record.operationId });
-      result.created++;
-    } catch (error) {
-      result.failures.push({ key: record.input.key!, code: toProblem(error).code });
-      result.completeness = 'partial';
+      await guard(key, async () => {
+        changes++;
+        await client.archive(
+          {
+            id: found.id,
+            expectedRevision: found.revision,
+            provenance: {
+              origin: { kind: 'git-source', name: plan.source, version: plan.commit },
+              reason: ARCHIVE_REASON,
+              evidence: [
+                ...(found.provenance?.evidence ?? []),
+                { ref: `git:${plan.source}@${plan.commit}`, note: 'removed' },
+              ],
+            },
+          },
+          { operationId: opId('archive', key, found.revision) }
+        );
+        result.archived++;
+      });
     }
   }
+
+  const archivedBefore = existing.filter(
+    (r) => r.state === 'archived' && r.provenance?.reason === ARCHIVE_REASON
+  ).length;
+  result.state.conflicts = result.conflicts.length;
+  result.state.archived = Math.max(0, archivedBefore + result.archived - result.restored);
+  if (result.completeness === 'complete') {
+    result.cursor = plan.commit;
+    result.state.cursor = plan.commit;
+  }
   return result;
+}
+
+// Where a source stands, from the repository and the stored sync state. No document content.
+export function gitSourceStatus(
+  config: GitSourceConfig,
+  state?: GitSourceSyncState | null
+): GitSourceStatus {
+  const source = validateGitSource(config);
+  const commit = git(source.repository, [
+    'rev-parse',
+    '--verify',
+    '--end-of-options',
+    `${source.ref}^{commit}`,
+  ])
+    .toString('utf8')
+    .trim();
+  const cursor = state?.cursor ?? null;
+  let lag: number | null = null;
+  let reachable: boolean | null = null;
+  if (cursor) {
+    reachable = isAncestor(source.repository, cursor, commit);
+    if (reachable)
+      lag = Number(
+        git(source.repository, ['rev-list', '--count', `${cursor}..${commit}`])
+          .toString()
+          .trim()
+      );
+  }
+  return {
+    source: source.id,
+    ref: source.ref,
+    commit,
+    cursor,
+    lag,
+    cursorReachable: reachable,
+    skipped: state?.skipped ?? null,
+    conflicts: state?.conflicts ?? null,
+    archived: state?.archived ?? null,
+  };
 }
