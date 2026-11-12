@@ -60,12 +60,17 @@ export {
 } from './workflow/import.ts';
 
 export {
+  gitSourceStatus,
   planGitSource,
   syncGitSource,
   validateGitSource,
   type GitSourceConfig,
   type GitSourcePlan,
+  type GitSourceConflict,
+  type GitSourceStatus,
+  type GitSourceSyncOptions,
   type GitSourceSyncResult,
+  type GitSourceSyncState,
   type GitSourceSkip,
   type NamespaceMapping,
 } from './workflow/git-source.ts';
