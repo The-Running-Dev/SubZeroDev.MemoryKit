@@ -1,0 +1,6636 @@
+{
+  "version": 1,
+  "generatedAt": "2026-11-13T14:12:05.416Z",
+  "expansionFrom": {
+    "file": "docs/validation/bounded-codex-final.json",
+    "provider": "codex-gpt-6.1-sol-verified",
+    "generatedAt": "2026-11-02T19:55:58.552Z"
+  },
+  "fillerNewerThanFacts": 1000,
+  "model": {
+    "id": "Xenova/all-MiniLM-L6-v2",
+    "revision": "751bff37182d3f1213fa05d7196b954e230abad9",
+    "dtype": "fp32",
+    "package": "@huggingface/transformers 4.3.2",
+    "diskBytes": 91100283,
+    "loadMs": 354.97369999999955,
+    "queryMs": {
+      "p50": 2.7588000000005195,
+      "p95": 3.9364999999997963
+    },
+    "documentMs": {
+      "p50": 2.2646999999997206,
+      "p95": 3.26720000000023
+    },
+    "documentsEmbedded": 1071
+  },
+  "host": {
+    "platform": "win32",
+    "release": "10.0.26200",
+    "cpus": 16,
+    "memGiB": 32,
+    "node": "v26.12.1"
+  },
+  "cases": 58,
+  "skipped": [
+    "corpus/history-session-store",
+    "corpus/history-queue",
+    "corpus/state-failover-archived",
+    "corpus/state-staging-tombstoned",
+    "corpus/scope-queue-history",
+    "corpus/scope-named-foreign",
+    "corpus/sparse-sev1",
+    "corpus/reject-no-terms",
+    "corpus/reject-limit",
+    "corpus/reject-state"
+  ],
+  "casesWithoutRecordedExpansion": [
+    "dup-timeout"
+  ],
+  "expansionMissedNeeded": [],
+  "summary": {
+    "lexical@16": {
+      "cases": 58,
+      "neededCases": 49,
+      "losingCases": [
+        "para-token-lifetime",
+        "old-paraphrase",
+        "old-verbose"
+      ],
+      "lostRecords": 3,
+      "meanCandidates": 10.379310344827585,
+      "maxCandidates": 16
+    },
+    "vector@16": {
+      "cases": 58,
+      "neededCases": 49,
+      "losingCases": [
+        "old-verbose",
+        "deep-passage"
+      ],
+      "lostRecords": 2,
+      "meanCandidates": 16,
+      "maxCandidates": 16
+    },
+    "rrf@16": {
+      "cases": 58,
+      "neededCases": 49,
+      "losingCases": [
+        "old-verbose"
+      ],
+      "lostRecords": 1,
+      "meanCandidates": 16,
+      "maxCandidates": 16
+    },
+    "lexical@24": {
+      "cases": 58,
+      "neededCases": 49,
+      "losingCases": [
+        "old-paraphrase",
+        "old-verbose"
+      ],
+      "lostRecords": 2,
+      "meanCandidates": 15.068965517241379,
+      "maxCandidates": 24
+    },
+    "vector@24": {
+      "cases": 58,
+      "neededCases": 49,
+      "losingCases": [
+        "old-verbose",
+        "deep-passage"
+      ],
+      "lostRecords": 2,
+      "meanCandidates": 23.948275862068964,
+      "maxCandidates": 24
+    },
+    "rrf@24": {
+      "cases": 58,
+      "neededCases": 49,
+      "losingCases": [
+        "old-verbose"
+      ],
+      "lostRecords": 1,
+      "meanCandidates": 23.948275862068964,
+      "maxCandidates": 24
+    },
+    "lexical@32": {
+      "cases": 58,
+      "neededCases": 49,
+      "losingCases": [
+        "old-paraphrase",
+        "old-verbose"
+      ],
+      "lostRecords": 2,
+      "meanCandidates": 16.482758620689655,
+      "maxCandidates": 28
+    },
+    "vector@32": {
+      "cases": 58,
+      "neededCases": 49,
+      "losingCases": [
+        "old-verbose",
+        "deep-passage"
+      ],
+      "lostRecords": 2,
+      "meanCandidates": 31.53448275862069,
+      "maxCandidates": 32
+    },
+    "rrf@32": {
+      "cases": 58,
+      "neededCases": 49,
+      "losingCases": [
+        "old-verbose"
+      ],
+      "lostRecords": 1,
+      "meanCandidates": 31.53448275862069,
+      "maxCandidates": 32
+    },
+    "lexical@50": {
+      "cases": 58,
+      "neededCases": 49,
+      "losingCases": [
+        "old-paraphrase",
+        "old-verbose"
+      ],
+      "lostRecords": 2,
+      "meanCandidates": 16.482758620689655,
+      "maxCandidates": 28
+    },
+    "vector@50": {
+      "cases": 58,
+      "neededCases": 49,
+      "losingCases": [
+        "old-verbose",
+        "deep-passage"
+      ],
+      "lostRecords": 2,
+      "meanCandidates": 48.60344827586207,
+      "maxCandidates": 50
+    },
+    "rrf@50": {
+      "cases": 58,
+      "neededCases": 49,
+      "losingCases": [
+        "old-verbose"
+      ],
+      "lostRecords": 1,
+      "meanCandidates": 48.60344827586207,
+      "maxCandidates": 50
+    }
+  },
+  "limits": [
+    "Expansion candidates are the first 32 discover() results from the recorded queries; the provider byte budget can cut that set further, so expansion is credited generously.",
+    "Local sources rank the whole eligible scope; context() scans only the newest 200 records.",
+    "Oracle selection admits only needed records, so it cannot admit an irrelevant one; irrelevant counts show what a selector would have to reject."
+  ],
+  "rows": [
+    {
+      "set": "corpus",
+      "id": "exact-error-code",
+      "expected": [
+        "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+      ],
+      "expansionQueries": [
+        "E4012",
+        "Alpha",
+        "billing",
+        "worker",
+        "error"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "exact-ticket",
+      "expected": [
+        "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+      ],
+      "expansionQueries": [
+        "ALP-1182"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "exact-person",
+      "expected": [
+        "01M7AM0CS9SDKQ810AT364S63E@1"
+      ],
+      "expansionQueries": [
+        "Mira",
+        "Okafor"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CS9SDKQ810AT364S63E@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "exact-cluster",
+      "expected": [
+        "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+      ],
+      "expansionQueries": [
+        "kestrel-staging",
+        "kestrel",
+        "staging"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "para-token-lifetime",
+      "expected": [
+        "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "credentials",
+        "validity",
+        "expiration",
+        "duration",
+        "lifetime",
+        "expiry"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+      ],
+      "lexical@16": {
+        "found": [],
+        "lost": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "para-price-cache",
+      "expected": [
+        "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+      ],
+      "expansionQueries": [
+        "price",
+        "quote",
+        "cache",
+        "pricing",
+        "expiration",
+        "TTL",
+        "retention",
+        "duration"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "para-billing-owner",
+      "expected": [
+        "01M7AM0CS9SDKQ810AT364S63E@1"
+      ],
+      "expansionQueries": [
+        "invoicing",
+        "worker",
+        "maintainer",
+        "owner",
+        "billing"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CS9SDKQ810AT364S63E@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 3
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 3
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 3
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 3
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "para-snapshots",
+      "expected": [
+        "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "database",
+        "snapshot",
+        "backup",
+        "schedule",
+        "timing"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "para-rotation-day",
+      "expected": [
+        "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "on-call",
+        "shift",
+        "change",
+        "rotation",
+        "handover",
+        "schedule",
+        "day"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 27
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 27
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "para-toggles",
+      "expected": [
+        "01M7AM0CSKP51628XF8FNEXW75@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "feature",
+        "toggles",
+        "flags",
+        "configuration",
+        "settings"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CSKP51628XF8FNEXW75@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CSKP51628XF8FNEXW75@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CSKP51628XF8FNEXW75@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CSKP51628XF8FNEXW75@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CSKP51628XF8FNEXW75@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CSKP51628XF8FNEXW75@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CSKP51628XF8FNEXW75@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CSKP51628XF8FNEXW75@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CSKP51628XF8FNEXW75@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CSKP51628XF8FNEXW75@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CSKP51628XF8FNEXW75@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CSKP51628XF8FNEXW75@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CSKP51628XF8FNEXW75@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "para-log-shape",
+      "expected": [
+        "01M7AM0CSNR09YANFX8W5NKSAM@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "logs",
+        "logging",
+        "format",
+        "schema",
+        "encoding"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CSNR09YANFX8W5NKSAM@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "correct-release-new",
+      "expected": [
+        "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "releases",
+        "release",
+        "launch",
+        "Thursday"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "correct-release-stale",
+      "expected": [
+        "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "releases",
+        "ship",
+        "Tuesday",
+        "schedule"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "correct-session-store",
+      "expected": [
+        "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "session",
+        "data",
+        "sessions",
+        "records",
+        "history"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 26
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 26
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "correct-postgres",
+      "expected": [
+        "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+      ],
+      "expansionQueries": [
+        "PostgreSQL",
+        "session",
+        "data",
+        "connection",
+        "activity",
+        "backend",
+        "authentication",
+        "state"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 2
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 2
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 2
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 2
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "correct-rabbitmq",
+      "expected": [
+        "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+      ],
+      "expansionQueries": [
+        "queue",
+        "RabbitMQ",
+        "broker",
+        "messaging"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "state-failover-default",
+      "expected": [
+        "01M7AM0CST6G31QD1QG6N47TZ6@1"
+      ],
+      "expansionQueries": [
+        "failover",
+        "runbook",
+        "recovery",
+        "switchover",
+        "outage",
+        "disaster",
+        "procedure",
+        "playbook"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CST6G31QD1QG6N47TZ6@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "state-staging-default",
+      "expected": [
+        "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "staging",
+        "cluster",
+        "environment",
+        "preproduction"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "noise-tokens",
+      "expected": [
+        "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "API",
+        "tokens",
+        "expiration",
+        "expiry",
+        "retention",
+        "lifetime"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 26
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 26
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "noise-release",
+      "expected": [
+        "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "release",
+        "ship",
+        "schedule",
+        "launch",
+        "cadence",
+        "rollout"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "noise-backup",
+      "expected": [
+        "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "database",
+        "backup",
+        "schedule",
+        "retention"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "noise-stale-cache",
+      "expected": [
+        "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "cache",
+        "prices",
+        "TTL",
+        "expiration",
+        "checkout",
+        "stale",
+        "duration"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "noise-session",
+      "expected": [
+        "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "session",
+        "database",
+        "storage"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 26
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 26
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "scope-tokens",
+      "expected": [
+        "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+      ],
+      "expansionQueries": [
+        "API",
+        "tokens",
+        "expire",
+        "expiration",
+        "expiry",
+        "credentials",
+        "authentication",
+        "validity"
+      ],
+      "expansionCandidates": 23,
+      "expansionFound": [
+        "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 22
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 22
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 22
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 22
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 22
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 22
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "scope-session",
+      "expected": [
+        "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+      ],
+      "expansionQueries": [
+        "session",
+        "data",
+        "state",
+        "storage",
+        "cookies",
+        "tokens",
+        "cache",
+        "persistence"
+      ],
+      "expansionCandidates": 23,
+      "expansionFound": [
+        "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 22
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 22
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 22
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 22
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 22
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 22
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "large-architecture",
+      "expected": [
+        "01M7AM0CYQ8T8G9HYN67MXKAFR@1",
+        "01M7AM0CYYNSZX8EWM8Z21QYGW@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "architecture",
+        "gateway",
+        "proxy",
+        "router",
+        "ingress"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CYQ8T8G9HYN67MXKAFR@1",
+        "01M7AM0CYYNSZX8EWM8Z21QYGW@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CYQ8T8G9HYN67MXKAFR@1",
+          "01M7AM0CYYNSZX8EWM8Z21QYGW@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 14
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CYQ8T8G9HYN67MXKAFR@1",
+          "01M7AM0CYYNSZX8EWM8Z21QYGW@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 14
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CYQ8T8G9HYN67MXKAFR@1",
+          "01M7AM0CYYNSZX8EWM8Z21QYGW@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 14
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CYQ8T8G9HYN67MXKAFR@1",
+          "01M7AM0CYYNSZX8EWM8Z21QYGW@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 22
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CYQ8T8G9HYN67MXKAFR@1",
+          "01M7AM0CYYNSZX8EWM8Z21QYGW@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 22
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CYQ8T8G9HYN67MXKAFR@1",
+          "01M7AM0CYYNSZX8EWM8Z21QYGW@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 22
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CYQ8T8G9HYN67MXKAFR@1",
+          "01M7AM0CYYNSZX8EWM8Z21QYGW@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CYQ8T8G9HYN67MXKAFR@1",
+          "01M7AM0CYYNSZX8EWM8Z21QYGW@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 30
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CYQ8T8G9HYN67MXKAFR@1",
+          "01M7AM0CYYNSZX8EWM8Z21QYGW@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 30
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CYQ8T8G9HYN67MXKAFR@1",
+          "01M7AM0CYYNSZX8EWM8Z21QYGW@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CYQ8T8G9HYN67MXKAFR@1",
+          "01M7AM0CYYNSZX8EWM8Z21QYGW@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 48
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CYQ8T8G9HYN67MXKAFR@1",
+          "01M7AM0CYYNSZX8EWM8Z21QYGW@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 48
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "none-autoscaling",
+      "expected": [],
+      "expansionQueries": [
+        "Alpha",
+        "Kubernetes",
+        "autoscaling",
+        "policy",
+        "scaling",
+        "HPA",
+        "VPA",
+        "replicas"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [],
+      "lexical@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "vector@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "rrf@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "lexical@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "vector@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "rrf@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "lexical@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 26
+      },
+      "vector@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 32
+      },
+      "rrf@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 32
+      },
+      "lexical@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 26
+      },
+      "vector@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 50
+      },
+      "rrf@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 50
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "none-budget",
+      "expected": [],
+      "expansionQueries": [
+        "Gamma",
+        "project",
+        "budget",
+        "funding",
+        "allocation",
+        "cost"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [],
+      "lexical@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "rrf@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "lexical@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "rrf@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "lexical@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 32
+      },
+      "rrf@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 32
+      },
+      "lexical@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 50
+      },
+      "rrf@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 50
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "none-queue-current",
+      "expected": [],
+      "expansionQueries": [
+        "message",
+        "queue",
+        "broker",
+        "messaging",
+        "RabbitMQ",
+        "Kafka",
+        "SQS",
+        "ActiveMQ"
+      ],
+      "expansionCandidates": 23,
+      "expansionFound": [],
+      "lexical@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "rrf@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "lexical@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "none-scattered-words",
+      "expected": [],
+      "expansionQueries": [
+        "Mira",
+        "Okafor",
+        "Kafka"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [],
+      "lexical@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 2
+      },
+      "vector@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "rrf@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "lexical@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 2
+      },
+      "vector@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "rrf@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "lexical@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 2
+      },
+      "vector@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 32
+      },
+      "rrf@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 32
+      },
+      "lexical@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 2
+      },
+      "vector@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 50
+      },
+      "rrf@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 50
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "dup-timeout",
+      "expected": [
+        "01M7AM0CT1613XTMS3PQSP249D@1",
+        "01M7AM0CT3MBKP0MWW2C1YMW0F@1"
+      ],
+      "expansionQueries": [],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CT1613XTMS3PQSP249D@1",
+        "01M7AM0CT3MBKP0MWW2C1YMW0F@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CT1613XTMS3PQSP249D@1",
+          "01M7AM0CT3MBKP0MWW2C1YMW0F@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 14
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CT1613XTMS3PQSP249D@1",
+          "01M7AM0CT3MBKP0MWW2C1YMW0F@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 14
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CT1613XTMS3PQSP249D@1",
+          "01M7AM0CT3MBKP0MWW2C1YMW0F@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 14
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CT1613XTMS3PQSP249D@1",
+          "01M7AM0CT3MBKP0MWW2C1YMW0F@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 22
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CT1613XTMS3PQSP249D@1",
+          "01M7AM0CT3MBKP0MWW2C1YMW0F@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 22
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CT1613XTMS3PQSP249D@1",
+          "01M7AM0CT3MBKP0MWW2C1YMW0F@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 22
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CT1613XTMS3PQSP249D@1",
+          "01M7AM0CT3MBKP0MWW2C1YMW0F@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CT1613XTMS3PQSP249D@1",
+          "01M7AM0CT3MBKP0MWW2C1YMW0F@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 30
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CT1613XTMS3PQSP249D@1",
+          "01M7AM0CT3MBKP0MWW2C1YMW0F@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 30
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CT1613XTMS3PQSP249D@1",
+          "01M7AM0CT3MBKP0MWW2C1YMW0F@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CT1613XTMS3PQSP249D@1",
+          "01M7AM0CT3MBKP0MWW2C1YMW0F@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 48
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CT1613XTMS3PQSP249D@1",
+          "01M7AM0CT3MBKP0MWW2C1YMW0F@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 48
+      }
+    },
+    {
+      "set": "corpus",
+      "id": "contra-audit",
+      "expected": [
+        "01M7AM0CT6F8SY007QEF6PW34Q@1",
+        "01M7AM0CT9J83V8CWV1NMXS75S@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "audit",
+        "logs",
+        "logging",
+        "events",
+        "trail"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CT6F8SY007QEF6PW34Q@1",
+        "01M7AM0CT9J83V8CWV1NMXS75S@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CT6F8SY007QEF6PW34Q@1",
+          "01M7AM0CT9J83V8CWV1NMXS75S@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 14
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CT6F8SY007QEF6PW34Q@1",
+          "01M7AM0CT9J83V8CWV1NMXS75S@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 14
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CT6F8SY007QEF6PW34Q@1",
+          "01M7AM0CT9J83V8CWV1NMXS75S@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 14
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CT6F8SY007QEF6PW34Q@1",
+          "01M7AM0CT9J83V8CWV1NMXS75S@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 22
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CT6F8SY007QEF6PW34Q@1",
+          "01M7AM0CT9J83V8CWV1NMXS75S@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 22
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CT6F8SY007QEF6PW34Q@1",
+          "01M7AM0CT9J83V8CWV1NMXS75S@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 22
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CT6F8SY007QEF6PW34Q@1",
+          "01M7AM0CT9J83V8CWV1NMXS75S@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CT6F8SY007QEF6PW34Q@1",
+          "01M7AM0CT9J83V8CWV1NMXS75S@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 30
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CT6F8SY007QEF6PW34Q@1",
+          "01M7AM0CT9J83V8CWV1NMXS75S@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 30
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CT6F8SY007QEF6PW34Q@1",
+          "01M7AM0CT9J83V8CWV1NMXS75S@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CT6F8SY007QEF6PW34Q@1",
+          "01M7AM0CT9J83V8CWV1NMXS75S@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 48
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CT6F8SY007QEF6PW34Q@1",
+          "01M7AM0CT9J83V8CWV1NMXS75S@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 48
+      }
+    },
+    {
+      "set": "heldout",
+      "id": "held-para-key-renewal",
+      "expected": [
+        "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "API",
+        "keys",
+        "renewal",
+        "expiration",
+        "rotation",
+        "expiry"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 26
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 26
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "heldout",
+      "id": "held-para-invoice-backlog",
+      "expected": [
+        "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+      ],
+      "expansionQueries": [
+        "invoice",
+        "queue",
+        "backlog",
+        "overflow",
+        "capacity",
+        "full",
+        "processing",
+        "billing"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 2
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 2
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 2
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 2
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "heldout",
+      "id": "held-para-schema-signoff",
+      "expected": [
+        "01M7AM0CS9SDKQ810AT364S63E@1"
+      ],
+      "expansionQueries": [
+        "billing",
+        "schema",
+        "changes",
+        "approval",
+        "approver",
+        "authorization",
+        "signoff"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CS9SDKQ810AT364S63E@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 8
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 8
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 8
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 8
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CS9SDKQ810AT364S63E@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "heldout",
+      "id": "held-para-backup-retention",
+      "expected": [
+        "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "database",
+        "backup",
+        "retention",
+        "days"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 26
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 26
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "heldout",
+      "id": "held-para-oncall-handover",
+      "expected": [
+        "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "on-call",
+        "rotation",
+        "handover",
+        "schedule",
+        "shift"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CSE4CGG1A0SVR2QJAAN@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "heldout",
+      "id": "held-para-log-request-id",
+      "expected": [
+        "01M7AM0CSNR09YANFX8W5NKSAM@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "log",
+        "logging",
+        "request",
+        "id",
+        "identifier",
+        "correlation"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CSNR09YANFX8W5NKSAM@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CSNR09YANFX8W5NKSAM@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "heldout",
+      "id": "held-para-failover-steps",
+      "expected": [
+        "01M7AM0CST6G31QD1QG6N47TZ6@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "failover",
+        "standby",
+        "switchover",
+        "recovery",
+        "replica"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CST6G31QD1QG6N47TZ6@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CST6G31QD1QG6N47TZ6@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "heldout",
+      "id": "held-para-reindex-blocker",
+      "expected": [
+        "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "search",
+        "index",
+        "migration",
+        "blocker",
+        "dependency",
+        "impediment"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CS6K4X08CBDHRPNFGM0@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "heldout",
+      "id": "held-para-stale-totals",
+      "expected": [
+        "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+      ],
+      "expansionQueries": [
+        "checkout",
+        "totals",
+        "stale",
+        "cache",
+        "invalidation",
+        "refresh",
+        "pricing",
+        "cart"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CSBB97T0SV6RAE6YWK9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "heldout",
+      "id": "held-correct-session-engine",
+      "expected": [
+        "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "sessions",
+        "database",
+        "storage",
+        "migration"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 26
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 26
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "heldout",
+      "id": "held-correct-release-afternoon",
+      "expected": [
+        "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "release",
+        "launch",
+        "rollout",
+        "Tuesday",
+        "afternoon"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "heldout",
+      "id": "held-correct-shared-broker",
+      "expected": [
+        "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "Beta",
+        "queue",
+        "message",
+        "broker",
+        "messaging"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 27
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 27
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CZBM8BQ9MXCNKK41ZW9@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "heldout",
+      "id": "held-correct-staging-name",
+      "expected": [
+        "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "staging",
+        "cluster",
+        "rename",
+        "renamed"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 26
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 26
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CSY6DDKQYGMBGKZPBEG@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "heldout",
+      "id": "held-noise-token-expiry",
+      "expected": [
+        "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "token",
+        "expiry",
+        "expiration",
+        "TTL",
+        "lifetime",
+        "timeout"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 26
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 26
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CS0VRD69H2S9RAQBT1B@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "heldout",
+      "id": "held-noise-session-storage",
+      "expected": [
+        "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "session",
+        "data",
+        "storage"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 26
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 26
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CZ0HXYPGQEHM8TXX7DZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "heldout",
+      "id": "held-noise-nightly-backups",
+      "expected": [
+        "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "nightly",
+        "backup",
+        "snapshot",
+        "retention",
+        "schedule"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CSGC8TBX9FCAW3ZKKJ1@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "heldout",
+      "id": "held-noise-e4012-restart",
+      "expected": [
+        "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+      ],
+      "expansionQueries": [
+        "billing",
+        "worker",
+        "E4012",
+        "restart"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 7
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 7
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 7
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 7
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CS34MRQHV62E4PJP5BZ@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "heldout",
+      "id": "held-noise-release-schedule",
+      "expected": [
+        "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+      ],
+      "expansionQueries": [
+        "Alpha",
+        "release",
+        "schedule",
+        "launch",
+        "timeline",
+        "milestone",
+        "rollout"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 25
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0CRY2V70WSV7RC5H96VQ@2"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "heldout",
+      "id": "held-none-cdn",
+      "expected": [],
+      "expansionQueries": [
+        "Alpha",
+        "CDN",
+        "static",
+        "assets",
+        "content",
+        "delivery",
+        "network"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [],
+      "lexical@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "vector@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "rrf@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "lexical@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "vector@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "rrf@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "lexical@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 26
+      },
+      "vector@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 32
+      },
+      "rrf@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 32
+      },
+      "lexical@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 26
+      },
+      "vector@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 50
+      },
+      "rrf@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 50
+      }
+    },
+    {
+      "set": "heldout",
+      "id": "held-none-gamma-owner",
+      "expected": [],
+      "expansionQueries": [
+        "Gamma",
+        "payroll",
+        "owner",
+        "ownership",
+        "maintainer"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [],
+      "lexical@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 6
+      },
+      "vector@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "rrf@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "lexical@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 6
+      },
+      "vector@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "rrf@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "lexical@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 6
+      },
+      "vector@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 32
+      },
+      "rrf@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 32
+      },
+      "lexical@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 6
+      },
+      "vector@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 50
+      },
+      "rrf@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 50
+      }
+    },
+    {
+      "set": "heldout",
+      "id": "held-none-certificate",
+      "expected": [],
+      "expansionQueries": [
+        "Alpha",
+        "TLS",
+        "certificate",
+        "expiry",
+        "expiration",
+        "renewal"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [],
+      "lexical@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "vector@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "rrf@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "lexical@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "vector@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "rrf@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "lexical@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 27
+      },
+      "vector@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 32
+      },
+      "rrf@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 32
+      },
+      "lexical@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 27
+      },
+      "vector@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 50
+      },
+      "rrf@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 50
+      }
+    },
+    {
+      "set": "heldout",
+      "id": "held-none-beta-backups",
+      "expected": [],
+      "expansionQueries": [
+        "Beta",
+        "database",
+        "backup",
+        "retention"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [],
+      "lexical@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 5
+      },
+      "vector@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "rrf@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "lexical@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 5
+      },
+      "vector@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "rrf@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "lexical@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 5
+      },
+      "vector@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 32
+      },
+      "rrf@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 32
+      },
+      "lexical@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 5
+      },
+      "vector@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 50
+      },
+      "rrf@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 50
+      }
+    },
+    {
+      "set": "scale-adversarial",
+      "id": "old-paraphrase",
+      "expected": [
+        "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+      ],
+      "expansionQueries": [
+        "bicycle",
+        "helmet",
+        "pump",
+        "lock",
+        "cycling",
+        "equipment"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+      ],
+      "lexical@16": {
+        "found": [],
+        "lost": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@16": {
+        "found": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [],
+        "lost": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@24": {
+        "found": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [],
+        "lost": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@32": {
+        "found": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [],
+        "lost": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@50": {
+        "found": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "scale-adversarial",
+      "id": "old-verbose",
+      "expected": [
+        "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+      ],
+      "expansionQueries": [
+        "bicycle",
+        "helmet",
+        "pump",
+        "lock",
+        "cycling",
+        "equipment"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+      ],
+      "lexical@16": {
+        "found": [],
+        "lost": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@16": {
+        "found": [],
+        "lost": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "rrf@16": {
+        "found": [],
+        "lost": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "lexical@24": {
+        "found": [],
+        "lost": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@24": {
+        "found": [],
+        "lost": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "rrf@24": {
+        "found": [],
+        "lost": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "lexical@32": {
+        "found": [],
+        "lost": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@32": {
+        "found": [],
+        "lost": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "missedByBoth": [],
+        "irrelevant": 32
+      },
+      "rrf@32": {
+        "found": [],
+        "lost": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "missedByBoth": [],
+        "irrelevant": 32
+      },
+      "lexical@50": {
+        "found": [],
+        "lost": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@50": {
+        "found": [],
+        "lost": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "missedByBoth": [],
+        "irrelevant": 50
+      },
+      "rrf@50": {
+        "found": [],
+        "lost": [
+          "01M7AM0D04BXKW2Z1F18D5Q67C@1"
+        ],
+        "missedByBoth": [],
+        "irrelevant": 50
+      }
+    },
+    {
+      "set": "scale-adversarial",
+      "id": "deep-passage",
+      "expected": [
+        "01M7AM0D0D9T0RYSAJD2YEYYRE@1"
+      ],
+      "expansionQueries": [
+        "Zephyr",
+        "rollout",
+        "port",
+        "network",
+        "deployment"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [
+        "01M7AM0D0D9T0RYSAJD2YEYYRE@1"
+      ],
+      "lexical@16": {
+        "found": [
+          "01M7AM0D0D9T0RYSAJD2YEYYRE@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@16": {
+        "found": [],
+        "lost": [
+          "01M7AM0D0D9T0RYSAJD2YEYYRE@1"
+        ],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "rrf@16": {
+        "found": [
+          "01M7AM0D0D9T0RYSAJD2YEYYRE@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 15
+      },
+      "lexical@24": {
+        "found": [
+          "01M7AM0D0D9T0RYSAJD2YEYYRE@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@24": {
+        "found": [],
+        "lost": [
+          "01M7AM0D0D9T0RYSAJD2YEYYRE@1"
+        ],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "rrf@24": {
+        "found": [
+          "01M7AM0D0D9T0RYSAJD2YEYYRE@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 23
+      },
+      "lexical@32": {
+        "found": [
+          "01M7AM0D0D9T0RYSAJD2YEYYRE@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@32": {
+        "found": [],
+        "lost": [
+          "01M7AM0D0D9T0RYSAJD2YEYYRE@1"
+        ],
+        "missedByBoth": [],
+        "irrelevant": 32
+      },
+      "rrf@32": {
+        "found": [
+          "01M7AM0D0D9T0RYSAJD2YEYYRE@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 31
+      },
+      "lexical@50": {
+        "found": [
+          "01M7AM0D0D9T0RYSAJD2YEYYRE@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 0
+      },
+      "vector@50": {
+        "found": [],
+        "lost": [
+          "01M7AM0D0D9T0RYSAJD2YEYYRE@1"
+        ],
+        "missedByBoth": [],
+        "irrelevant": 50
+      },
+      "rrf@50": {
+        "found": [
+          "01M7AM0D0D9T0RYSAJD2YEYYRE@1"
+        ],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 49
+      }
+    },
+    {
+      "set": "scale-adversarial",
+      "id": "no-answer-adversarial",
+      "expected": [],
+      "expansionQueries": [
+        "deployment",
+        "password",
+        "credentials",
+        "secret"
+      ],
+      "expansionCandidates": 32,
+      "expansionFound": [],
+      "lexical@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "rrf@16": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 16
+      },
+      "lexical@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "rrf@24": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 24
+      },
+      "lexical@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 32
+      },
+      "rrf@32": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 32
+      },
+      "lexical@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 1
+      },
+      "vector@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 50
+      },
+      "rrf@50": {
+        "found": [],
+        "lost": [],
+        "missedByBoth": [],
+        "irrelevant": 50
+      }
+    }
+  ]
+}
