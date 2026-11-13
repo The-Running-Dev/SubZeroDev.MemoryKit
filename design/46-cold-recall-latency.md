@@ -61,7 +61,7 @@ All are measurement before build, as in S18 and S21. Evidence is synthetic.
   missing from the candidate set, and no case gains an irrelevant record into the verified
   answer.
 - **S32 One read.** A single select-and-verify call over the S31 candidates, same validators.
-  Gate: Codex 58/58; Qwen at least 52 with no unsupported context and the adversarial case
+  Gate: Qwen at least 52 (Codex dropped after S30) with no unsupported context and the adversarial case
   abstaining; stated p95 per phase.
 - **S33 Build and qualify**, only for what S31 and S32 passed: optional provider-neutral
   candidate source (the embedder interfaces removed when Stage 5 closed return only as narrowly
