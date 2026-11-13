@@ -7,6 +7,7 @@ S30–S33 re-plan Stage 5 for S26's cold recall latency: [design](46-cold-recall
 
 Ordered riskiest assumption first. Each slice is one reviewable PR and leaves the system runnable. Each slice adds its scenarios to the shared conformance suite, and that suite runs against every adapter that exists at the time. Criterion ids are stable.
 
+> S33 was retired unbuilt on 2026-11-13: S31 and S32 failed their gates for Qwen, so the S30–S33 re-plan closed with daily automatic recall opt-in (90-decisions). Its id is not reused.
 > S19 and S20 were retired unbuilt on 2026-10-28, when Stage 5 closed with S17's `retrieve` after S21's gate failed (90-decisions). Their text is in `git show 7366e48:design/30-slices.md`. Their ids are not reused.
 
 ## S1 — Persist and retrieve a memory without a server
@@ -374,7 +375,7 @@ Acceptance:
 Out of scope: removing quote or revision validation; raising any deadline.
 
 ## S33 — Build and qualify what S31 and S32 passed
-Status: todo
+Status: retired (nothing to build: S31 and S32 failed for Qwen; 90-decisions 2026-11-13)
 Delivers: the chosen candidate source and single read, qualified under the full S26 gate.
 Touches: workflow (recall), providers, doctor, docs
 Depends on: S32
