@@ -2,6 +2,15 @@
 
 Append-only. Newest at the top. The rejected alternatives are the point — without them, every future session relitigates the same choice.
 
+## 2026-11-13 — Stage 5 re-plan closed: S33 retired, daily automatic recall stays opt-in
+
+- **Context:** S30 excluded Codex (`gpt-6-sol` unmeasured, `gpt-6.1-sol` unavailable) and left resident Qwen 2.5 7B. S31 found no local candidate source that keeps every record the expansion call finds. S32 found one read passes 49 of 58 (gate 52) at cold p95 13,186 ms (limit 10,000 ms).
+- **Chosen:** retire S33 unbuilt. Nothing passed S31 or S32 for Qwen, so there is no candidate source or single read to build or qualify. S26 stays as shipped: three serial calls, quality passes, cold p95 above 10 s on this host, so daily automatic recall stays opt-in and manual. The 10 s limit, verification, abstention, exact quotes and revision checks are unchanged.
+- **Rejected:**
+  - Building S33 anyway as an opt-in variant: it would ship a slower, lower-quality path than S26 for no gain.
+  - Raising the limit or retuning prompts to pass: the stop rules forbid weakening the gate.
+- **Revisit:** a faster host, a larger resident model, or a Codex model that passes S30's 8 s floor reopens S31 and S32 as new candidates (`scripts/measure-local-candidates.ts`, `scripts/verify-recall-quality.ts --single-read`) under a new slice id.
+
 ## 2026-11-13 — S32: one read fails the quality gate on Qwen; the separate verification call stays
 
 - **Context:** S32 ran resident Qwen 2.5 7B (21 GPU layers, 4 threads, 4,096 context, 12 passages of 384 characters) with expansion kept (S31) and `select` returning indices with exact quotes, no `verify` call, under the unchanged quote and revision validators. 58 cases, SQLite, 1,000 newer fillers, uncached, zero retries ([report](../docs/validation/s32-single-read-qwen.md)). Codex was not measured: S30 excluded it.
