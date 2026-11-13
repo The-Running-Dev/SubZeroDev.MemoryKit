@@ -363,12 +363,12 @@ Acceptance:
 Out of scope: product code; a similarity floor as the final answer (S18 and S21 stand).
 
 ## S32 — Measure one read that selects and verifies
-Status: todo
+Status: done
 Delivers: whether a single call returning indices and exact quotes, under the existing deterministic validators, keeps the S26 quality.
 Touches: examples (adapter prompts), scripts, docs/validation
 Depends on: S31
 Acceptance:
-  - S32.1 On the 58 cases Codex passes 58 and Qwen passes at least 52, with no unsupported context and the adversarial no-answer case returning nothing.
+  - S32.1 On the 58 cases resident Qwen 2.5 7B passes at least 52 (the S26 shipped-verifier result), with no unsupported context and the adversarial no-answer case returning nothing. Codex is not measured: S30 excluded `gpt-6-sol` and `gpt-6.1-sol` is unavailable.
   - S32.2 The report gives each phase's p50 and p95, and the end-to-end cold p95 against 10,000 ms.
   - S32.3 A 90-decisions entry records pass or fail. A failed gate keeps the separate verification call.
 Out of scope: removing quote or revision validation; raising any deadline.

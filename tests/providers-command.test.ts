@@ -35,7 +35,12 @@ describe('optional command providers', () => {
       const schema = body.format?.properties;
       let output;
       if (schema?.citations)
-        output = { citations: [{ i: 0, quote: 'SQLite' }, { i: 1, quote: 'unsupported' }] };
+        output = {
+          citations: [
+            { i: 0, quote: 'SQLite' },
+            { i: 1, quote: 'unsupported' },
+          ],
+        };
       else if (schema?.queries) output = { subject: 'storage engine', queries: ['database'] };
       else if (schema?.matches) output = { matches: [0] };
       else output = { observations: [{ sourceId: 'one', content: 'Use SQLite.' }] };
@@ -86,16 +91,40 @@ describe('optional command providers', () => {
       const selector = new CommandRecallSelector('ollama-test', tuned, true, true);
       assert.deepEqual(await selector.expand!('Which storage engine?'), ['database']);
       const passages = ['Use SQLite.', 'Use Markdown.'].map((content, index) => ({
-        id: String(index), revision: 1, namespace: 'demo', content, truncated: false,
+        id: String(index),
+        revision: 1,
+        namespace: 'demo',
+        content,
+        truncated: false,
       }));
-      const proposed = passages.map(({ id, revision, content }) => ({ id, revision, quote: content }));
+      const proposed = passages.map(({ id, revision, content }) => ({
+        id,
+        revision,
+        quote: content,
+      }));
       assert.deepEqual(
         await selector.verify!({ query: 'database', limit: 2, passages }, proposed),
         [{ id: '0', revision: 1, quote: 'SQLite' }]
       );
       assert.deepEqual(requests[3]!.body.options, {
-        temperature: 0, num_ctx: 16384, num_predict: 1024, num_thread: 4, num_gpu: 0,
+        temperature: 0,
+        num_ctx: 16384,
+        num_predict: 1024,
+        num_thread: 4,
+        num_gpu: 0,
       });
+      // Single read: select returns exact quotes in one call; an unsupported quote is dropped.
+      const single = new CommandRecallSelector('ollama-single', {
+        ...config,
+        args: [...config.args, '--single-read'],
+      });
+      assert.deepEqual(await single.select({ query: 'database', limit: 2, passages }), [
+        { id: '0', revision: 1, quote: 'SQLite' },
+      ]);
+      assert.deepEqual(
+        Object.keys((requests.at(-1)!.body.format as { properties: object }).properties),
+        ['citations']
+      );
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve()))

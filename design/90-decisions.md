@@ -2,6 +2,17 @@
 
 Append-only. Newest at the top. The rejected alternatives are the point — without them, every future session relitigates the same choice.
 
+## 2026-11-13 — S32: one read fails the quality gate on Qwen; the separate verification call stays
+
+- **Context:** S32 ran resident Qwen 2.5 7B (21 GPU layers, 4 threads, 4,096 context, 12 passages of 384 characters) with expansion kept (S31) and `select` returning indices with exact quotes, no `verify` call, under the unchanged quote and revision validators. 58 cases, SQLite, 1,000 newer fillers, uncached, zero retries ([report](../docs/validation/s32-single-read-qwen.md)). Codex was not measured: S30 excluded it.
+- **Chosen:** record fail and keep the separate verification call. 49 of 58 pass, below the 52 the shipped verifier reached. Every failure is a wrongly empty selection or a missed second record; no case admitted unsupported context and the adversarial no-answer case returned nothing. Cold end-to-end p95 was 13,186 ms against 10,000 ms (p50 9,248): expansion p50/p95 2,321/3,968 ms, select p50/p95 6,850/10,122 ms. The single read removes one call, but its quoted output is slower than index-only selection and still misses the limit.
+- **Rejected:**
+  - Retuning the prompt until 52 pass: S32 measures one read as specified; a retuned prompt is a new candidate that needs its own held-out check, and the latency gap would remain.
+  - Counting resident-weights timing as the cold result for hosts that unload Qwen: S30 measured that at p95 12.4 s for one call.
+- **Revisit:** if a larger resident model or a faster Qwen host passes quality, rerun `scripts/verify-recall-quality.ts` with `--single-read`. S33 builds nothing from S31 or S32 for Qwen; daily automatic recall stays opt-in and the 10 s limit is unchanged.
+
+---
+
 ## 2026-11-13 — S31: expansion stays; no local source finds every needed record
 
 - **Context:** S31 replayed the expansion queries recorded by the S26 Codex run through the real `discover`, on a rebuilt store with 1,000 newer fillers, and compared its candidates with S17 lexical, MiniLM vectors and RRF at depths 16, 24, 32 and 50 ([report](../docs/validation/s31-local-candidates.md)). No provider was called. 58 cases, 49 with a needed record; expansion found every one.
