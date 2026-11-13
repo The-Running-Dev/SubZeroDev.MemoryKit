@@ -14,7 +14,7 @@ any host. [45-git-memory-sources](45-git-memory-sources.md) holds the contract.
 | `SubZeroDev.Journal/`       |    30 | Excluded. The owner's blog and journal.                       |
 | `**/raw/` transcripts       |   106 | Excluded at first. Verbatim, up to 570 KB, and the noisiest.  |
 | other `SubZeroDev.*` dirs   |  ~120 | Included. One namespace per project folder.                   |
-| `Stoic`, `General`, `Notes` |    25 | Included. `Notes` and `General` map by their subfolder.       |
+| `Stoic`, `General`, `Notes` |    25 | Included. Each maps as one folder (first segment only).       |
 | `.json`                     |   135 | Skipped by file type and counted.                             |
 | `.md` and `.txt`            |   364 | The candidate set, before the excludes above. 313 md, 51 txt. |
 
@@ -23,8 +23,10 @@ any host. [45-git-memory-sources](45-git-memory-sources.md) holds the contract.
 1. **Consent.** The repository is `The-Running-Dev/SubZeroDev.Notes`. Exclude `Journal/**`,
    `SubZeroDev.Journal/**` and every `raw/` transcript. Anything not named in `include` is
    never read.
-2. **Namespaces.** One per project folder. `Notes/` and `General/` hold subfolders, so those
-   two map by their first two path segments. Unmapped folders are skipped and reported.
+2. **Namespaces.** One per top-level folder, by first path segment (the only folder mapping
+   the source supports). `SubZeroDev.X` maps to `project/the-running-dev/subzerodev.x`, so that
+   project's sessions recall its notes; other folders, including `Notes/` and `General/` with
+   their subfolders, map to `personal/notes/<folder>`. Unmapped folders are skipped and reported.
 3. **Sync.** `auto` is on from the start: every Notes commit is synced by the bounded
    SessionStart check, all the time. Records land as `candidate` and stay reviewable; the
    owner can switch the source to `accepted` after the first review.
