@@ -2,6 +2,18 @@
 
 Append-only. Newest at the top. The rejected alternatives are the point — without them, every future session relitigates the same choice.
 
+## 2026-11-13 — S31: expansion stays; no local source finds every needed record
+
+- **Context:** S31 replayed the expansion queries recorded by the S26 Codex run through the real `discover`, on a rebuilt store with 1,000 newer fillers, and compared its candidates with S17 lexical, MiniLM vectors and RRF at depths 16, 24, 32 and 50 ([report](../docs/validation/s31-local-candidates.md)). No provider was called. 58 cases, 49 with a needed record; expansion found every one.
+- **Chosen:** expansion stays. S31.2 fails for every source and depth. RRF is best and loses only `old-verbose` at every depth (the long task sentence buries "cycling equipment" for lexical and for MiniLM, and "bicycle" appears only in the expansion queries). Vectors alone also lose `deep-passage` (MiniLM truncates it); lexical alone also loses `old-paraphrase`, and at depth 16 `para-token-lifetime`. More depth does not help: the miss persists at 50. S32 (one read that selects and verifies) is the remaining route to fewer calls.
+- **Rejected:**
+  - Dropping expansion on RRF at depth 24 because 48 of 49 needed cases pass: S31.2 requires none lost, and the lost case is the paraphrased one expansion exists for.
+  - Raising depth or adding a similarity floor to rescue `old-verbose`: depth 50 still misses it, and a floor is out of scope (S18 and S21 stand).
+  - Reading oracle selection as proof that no irrelevant record is admitted: it admits only needed records by construction, so S32 is the real test.
+- **Revisit:** if a stronger embedding model or a query rewrite that needs no model call recovers `old-verbose` and `deep-passage`, rerun `scripts/measure-local-candidates.ts`. The expansion queries are from `gpt-6.1-sol`; a resident Qwen expansion set was not replayed.
+
+---
+
 ## 2026-11-12 — S30: one Codex call is already above 8 s; resident Qwen is not
 
 - **Context:** S30 measured one minimal provider call, 30 samples per profile ([report](../docs/validation/s30-floor.md)). `gpt-6.1-sol`, the model S26 qualified, is rejected for this ChatGPT account, so Codex was measured as `gpt-6-sol`, a different identity.

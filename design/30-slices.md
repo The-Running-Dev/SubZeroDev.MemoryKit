@@ -352,7 +352,7 @@ Acceptance:
 Out of scope: changing prompts, models, the 10 s limit or any gate.
 
 ## S31 — Measure candidates without the expansion call
-Status: todo
+Status: done
 Delivers: whether S17 lexical, MiniLM vectors or RRF find, without a model call, every record the expansion call finds on the 58 cases.
 Touches: scripts, eval/retrieval, docs/validation (no product code)
 Depends on: S30
